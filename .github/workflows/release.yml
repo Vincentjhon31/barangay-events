@@ -33,7 +33,7 @@ jobs:
 
       - name: Build APK (release)
         run: |
-          flutter build apk --release --no-split-per-abi
+          flutter build apk --release --split-per-abi=false
 
       - name: Verify APK exists
         run: |
