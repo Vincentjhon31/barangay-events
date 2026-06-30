@@ -1,10 +1,9 @@
-name: Build and Release APK
+name: Release
 
 on:
   push:
-    branches:
-      - main
-      - master
+    tags:
+      - 'v*'
 
 jobs:
   build:
@@ -14,7 +13,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Needed for tags
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -26,43 +25,11 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'  # or latest stable
+          flutter-version: '3.24.0'
           channel: 'stable'
 
       - name: Get Flutter dependencies
         run: flutter pub get
-
-      - name: Extract version from pubspec.yaml
-        id: version
-        run: |
-          VERSION=$(grep '^version:' pubspec.yaml | head -1 | awk -F': ' '{print $2}' | tr -d '\r')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Set up signing configuration
-        id: signing
-        run: |
-          if [ -n "${{ secrets.KEYSTORE_FILE }}" ] && [ -n "${{ secrets.KEYSTORE_PASSWORD }}" ] && [ -n "${{ secrets.KEY_ALIAS }}" ] && [ -n "${{ secrets.KEY_PASSWORD }}" ]; then
-            echo "Using provided keystore for release signing"
-            echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > keystore.jks
-            echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" > key.properties
-            echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> key.properties
-            echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> key.properties
-            echo "storeFile=$(pwd)/keystore.jks" >> key.properties
-            echo "signing_mode=provided" >> $GITHUB_OUTPUT
-          else
-            echo "Generating debug keystore for release build (not signed for production)"
-            keytool -genkeypair               -v               -keystore debug.keystore               -storetype JKS               -keyalg RSA               -keysize 2048               -validity 10000               -alias androiddebugkey               -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, S=Debug, C=Debug"               -storepass android               -keypass android               -noprompt
-            echo "storePassword=android" > key.properties
-            echo "keyPassword=android" >> key.properties
-            echo "keyAlias=androiddebugkey" >> key.properties
-            echo "storeFile=$(pwd)/debug.keystore" >> key.properties
-            echo "signing_mode=debug" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Set up Android signing
-        run: |
-          mkdir -p android
-          cp key.properties android/key.properties
 
       - name: Build APK (release)
         run: |
@@ -76,8 +43,8 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: Release v${{ steps.version.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
           draft: false
           prerelease: false
           generate_release_notes: true
@@ -87,7 +54,7 @@ jobs:
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
+          tag_name: ${{ github.ref_name }}
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
