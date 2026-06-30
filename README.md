@@ -1,17 +1,32 @@
-# barangay_events
+# Barangay Events
 
-A new Flutter project.
+A Flutter calendar app for barangay event scheduling and sharing.
 
-## Getting Started
+## Local Build
 
-This project is a starting point for a Flutter application.
+```powershell
+flutter pub get
+flutter test
+flutter build apk --release --no-split-per-abi
+```
 
-A few resources to get you started if this is your first Flutter project:
+The APK is written to `build/app/outputs/flutter-apk/app-release.apk`.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Update-Safe Releases
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The app checks the latest GitHub Release for this repository and shows an update prompt when a newer APK is available.
+
+Android can update the app without uninstalling only when every APK has:
+
+- the same `applicationId`
+- a higher `version` / build number in `pubspec.yaml`
+- the same signing key
+
+For GitHub Actions releases, add these repository secrets in **Settings > Secrets and variables > Actions**:
+
+- `KEYSTORE_FILE`: base64-encoded contents of your `.jks` keystore
+- `KEYSTORE_PASSWORD`: keystore password
+- `KEY_ALIAS`: key alias
+- `KEY_PASSWORD`: key password
+
+After the secrets are set, each push to `main` or `master` builds a signed APK and creates a GitHub Release tagged from `pubspec.yaml`.
