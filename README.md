@@ -7,7 +7,7 @@ A Flutter calendar app for barangay event scheduling and sharing.
 ```powershell
 flutter pub get
 flutter test
-flutter build apk --release --no-split-per-abi
+flutter build apk --release
 ```
 
 The APK is written to `build/app/outputs/flutter-apk/app-release.apk`.

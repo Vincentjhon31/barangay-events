@@ -1,0 +1,155 @@
+name: Build & Deploy to Firebase App Distribution
+
+on:
+    push:
+        tags:
+            - "v*.*.*" # Triggers on version tags like v1.0.0, v1.0.1, etc.
+
+permissions:
+    contents: write # Required for creating GitHub releases
+
+jobs:
+    build-and-distribute:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Set up JDK 17
+              uses: actions/setup-java@v4
+              with:
+                  distribution: "temurin"
+                  java-version: "17"
+                  cache: "gradle"
+
+            - name: Decode google-services.json
+              env:
+                  GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+              run: |
+                  echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
+
+            - name: Grant execute permission for gradlew
+              run: chmod +x gradlew
+
+            - name: Get version from tag
+              id: get_version
+              run: |
+                  VERSION=${GITHUB_REF#refs/tags/v}
+                  echo "version=$VERSION" >> $GITHUB_OUTPUT
+                  echo "Version: $VERSION"
+                  # Extract version code from tag (e.g., v1.1.1 -> 111)
+                  VERSION_CODE=$(echo $VERSION | tr -d '.')
+                  echo "versionCode=$VERSION_CODE" >> $GITHUB_OUTPUT
+                  echo "Version Code: $VERSION_CODE"
+
+            - name: Update version in build.gradle.kts
+              run: |
+                  VERSION=${{ steps.get_version.outputs.version }}
+                  VERSION_CODE=${{ steps.get_version.outputs.versionCode }}
+
+                  # Update versionName
+                  sed -i "s/versionName = \".*\"/versionName = \"$VERSION\"/" app/build.gradle.kts
+
+                  # Update versionCode
+                  sed -i "s/versionCode = [0-9]*/versionCode = $VERSION_CODE/" app/build.gradle.kts
+
+                  echo "✅ Updated build.gradle.kts:"
+                  echo "  versionName = \"$VERSION\""
+                  echo "  versionCode = $VERSION_CODE"
+
+                  # Show the changes
+                  grep -A 2 "versionCode = " app/build.gradle.kts
+
+            - name: Build Release APK
+              run: ./gradlew assembleRelease --no-daemon
+
+            - name: Rename APK with version
+              run: |
+                  VERSION=${{ steps.get_version.outputs.version }}
+                  cp app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/SumviltadConnect_v${VERSION}.apk
+                  echo "✅ Created: SumviltadConnect_v${VERSION}.apk"
+
+            - name: Upload to Firebase App Distribution
+              uses: wzieba/Firebase-Distribution-Github-Action@v1
+              with:
+                  appId: ${{ secrets.FIREBASE_APP_ID }}
+                  serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+                  groups: testers
+                  file: app/build/outputs/apk/release/SumviltadConnect_v${{ steps.get_version.outputs.version }}.apk
+                  releaseNotes: |
+                      🌾 SUMVILTAD Connect v${{ steps.get_version.outputs.version }}
+
+                      Rice Disease Detection & Farm Management System
+
+                      📦 Build: ${{ github.sha }}
+                      📅 Released: ${{ github.event.head_commit.timestamp }}
+                      👤 By: ${{ github.event.head_commit.author.name }}
+
+                      Recent Changes:
+                      ${{ github.event.head_commit.message }}
+
+                      Installation:
+                      1. Open the Firebase App Tester app
+                      2. Find "SUMVILTAD Connect" in your apps list
+                      3. Tap "Download" then "Install"
+
+                      Need help? Contact: sumviltadconnect@gmail.com
+
+            - name: Print distribution info
+              if: success()
+              run: |
+                  echo "✅ APK successfully uploaded to Firebase App Distribution!"
+                  echo "📧 Testers will receive email notifications"
+                  echo "🔗 Check Firebase Console for distribution links"
+
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v1
+              if: success()
+              with:
+                  files: app/build/outputs/apk/release/SumviltadConnect_v${{ steps.get_version.outputs.version }}.apk
+                  name: SUMVILTAD Connect v${{ steps.get_version.outputs.version }}
+                  body: |
+                      ## 🌾 SUMVILTAD Connect v${{ steps.get_version.outputs.version }}
+
+                      **Rice Disease Detection & Farm Management System for Sumviltad Farmers**
+
+                      ### 📥 Download & Installation
+
+                      > **💡 Tip**: If you're unsure what to download, just download the **`SumviltadConnect_v${{ steps.get_version.outputs.version }}.apk`** file below!
+
+                      1. **Download APK**: Click the `SumviltadConnect_v${{ steps.get_version.outputs.version }}.apk` file below
+                      2. **Enable Installation**: Go to Settings → Security → Enable "Install from unknown sources"
+                      3. **Install**: Open the downloaded APK and tap "Install"
+                      4. **Done**: Launch SUMVILTAD Connect!
+
+                      ### 📱 System Requirements
+                      - Android 7.0 (Nougat) or higher
+                      - Minimum 2GB RAM
+                      - 500MB free storage
+                      - Internet connection (for weather, notifications, and online features)
+
+                      ### 🆕 What's New in v${{ steps.get_version.outputs.version }}
+
+                      ${{ github.event.head_commit.message }}
+
+                      ### 📊 Build Information
+                      - **Build Date**: ${{ github.event.head_commit.timestamp }}
+                      - **Build ID**: `${{ github.sha }}`
+                      - **Built by**: ${{ github.event.head_commit.author.name }}
+
+                      ### 🐛 Found a Bug?
+                      Report issues at: https://github.com/${{ github.repository }}/issues
+
+                      ### 📞 Support
+                      Need help? Contact: sumviltadconnect@gmail.com
+                  draft: false
+                  prerelease: false
+
+            - name: Upload APK artifact (backup)
+              uses: actions/upload-artifact@v4
+              if: success()
+              with:
+                  name: SumviltadConnect-v${{ steps.get_version.outputs.version }}
+                  path: app/build/outputs/apk/release/SumviltadConnect_v${{ steps.get_version.outputs.version }}.apk
+                  retention-days: 90
