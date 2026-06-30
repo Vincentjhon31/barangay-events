@@ -35,7 +35,7 @@ jobs:
       - name: Extract version from pubspec.yaml
         id: version
         run: |
-          VERSION=$(grep '^version:' pubspec.yaml | head -1 | awk -F': ' '{print $2}' | tr -d '')
+          VERSION=$(grep '^version:' pubspec.yaml | head -1 | awk -F': ' '{print $2}' | tr -d '\r')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Set up signing configuration
