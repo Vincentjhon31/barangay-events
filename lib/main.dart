@@ -619,9 +619,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
             });
           },
           onFormatChanged: (format) {
-            if (format == null) {
-              return;
-            }
             setState(() {
               _calendarFormat = format;
             });
