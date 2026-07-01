@@ -836,6 +836,416 @@ class _CalendarScreenState extends State<CalendarScreen> {
     displayNameController.dispose();
   }
 
+  Future<void> _showEventDetails(BarangayEvent event) async {
+    final startTime = event.startTime;
+    final endTime = event.endTime;
+    final formattedDate = _formatDate(startTime);
+    final startTimeStr = _formatTime(startTime);
+    final endTimeStr = _formatTime(endTime);
+
+    return showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.75,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) => Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: CustomScrollView(
+            controller: scrollController,
+            slivers: [
+              // Header with close button
+              SliverAppBar(
+                pinned: true,
+                elevation: 0,
+                backgroundColor: Theme.of(context).colorScheme.surface,
+                title: Text(
+                  'Event Details',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                centerTitle: true,
+                leading: IconButton(
+                  icon: const FaIcon(FontAwesomeIcons.xmark),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+              // Event details content
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Event title with icon
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          CircleAvatar(
+                            radius: 28,
+                            backgroundColor: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.1),
+                            child: FaIcon(
+                              _getEventIcon(event.title),
+                              color: Theme.of(context).colorScheme.primary,
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  event.title,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineSmall
+                                      ?.copyWith(fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  formattedDate,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 28),
+
+                      // Time section
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primaryContainer
+                              .withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            FaIcon(
+                              FontAwesomeIcons.clock,
+                              color: Theme.of(context).colorScheme.primary,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Time',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '$startTimeStr - $endTimeStr',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyLarge
+                                        ?.copyWith(fontWeight: FontWeight.w500),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Location section
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .secondaryContainer
+                              .withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            FaIcon(
+                              FontAwesomeIcons.locationDot,
+                              color: Theme.of(context).colorScheme.secondary,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Location',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    event.location,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyLarge
+                                        ?.copyWith(fontWeight: FontWeight.w500),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Description section (if not empty)
+                      if (event.description.isNotEmpty) ...[
+                        Text(
+                          'Description',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelMedium
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainer,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant,
+                            ),
+                          ),
+                          child: Text(
+                            event.description,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // Attachment section (if available)
+                      if (event.hasAttachment) ...[
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .tertiaryContainer
+                                .withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .tertiary
+                                  .withValues(alpha: 0.5),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              FaIcon(
+                                _getFileIcon(
+                                    event.attachmentType ??
+                                        'application/octet-stream'),
+                                color: Theme.of(context).colorScheme.tertiary,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Attachment',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _getFileTypeName(
+                                          event.attachmentType ??
+                                              'application/octet-stream'),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              FilledButton.icon(
+                                onPressed: () {
+                                  // TODO: Implement attachment download
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                        content: Text(
+                                            'Download attachment coming soon')),
+                                  );
+                                },
+                                icon: const FaIcon(
+                                  FontAwesomeIcons.download,
+                                  size: 16,
+                                ),
+                                label: const Text('View'),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+
+                      // Attendance status section
+                      Text(
+                        'Your Status',
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelMedium
+                            ?.copyWith(
+                              color:
+                                  Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                await _handleEventAction('going', event);
+                                if (context.mounted) Navigator.pop(context);
+                              },
+                              icon: const FaIcon(
+                                FontAwesomeIcons.check,
+                                size: 16,
+                              ),
+                              label: const Text('Going'),
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor:
+                                    event.attendanceStatus == 'going'
+                                        ? Theme.of(context)
+                                            .colorScheme
+                                            .primaryContainer
+                                        : null,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                await _handleEventAction('maybe', event);
+                                if (context.mounted) Navigator.pop(context);
+                              },
+                              icon: const FaIcon(
+                                FontAwesomeIcons.question,
+                                size: 16,
+                              ),
+                              label: const Text('Maybe'),
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor:
+                                    event.attendanceStatus == 'maybe'
+                                        ? Theme.of(context)
+                                            .colorScheme
+                                            .secondaryContainer
+                                        : null,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                await _handleEventAction('not_going', event);
+                                if (context.mounted) Navigator.pop(context);
+                              },
+                              icon: const FaIcon(
+                                FontAwesomeIcons.xmark,
+                                size: 16,
+                              ),
+                              label: const Text('Not Going'),
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor:
+                                    event.attendanceStatus == 'not_going'
+                                        ? Theme.of(context)
+                                            .colorScheme
+                                            .errorContainer
+                                        : null,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _getFileTypeName(String mimeType) {
+    if (mimeType.contains('pdf')) return 'PDF Document';
+    if (mimeType.contains('image')) return 'Image';
+    if (mimeType.contains('video')) return 'Video';
+    if (mimeType.contains('word') || mimeType.contains('document')) {
+      return 'Word Document';
+    }
+    if (mimeType.contains('sheet') || mimeType.contains('spreadsheet')) {
+      return 'Spreadsheet';
+    }
+    return 'Attachment';
+  }
+
   Widget _buildEventList() {
     final events = _getEventsForDay(_selectedDay ?? _focusedDay);
 
@@ -864,124 +1274,127 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final startTime = event.startTime;
     final endTime = event.endTime;
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      elevation: 2,
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
-        leading: CircleAvatar(
-          backgroundColor:
-              Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-          child: FaIcon(
-            _getEventIcon(event.title),
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
-        title: Text(
-          event.title,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                FaIcon(
-                  FontAwesomeIcons.locationDot,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    event.location,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
+    return GestureDetector(
+      onTap: () => _showEventDetails(event),
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        elevation: 2,
+        child: ListTile(
+          contentPadding: const EdgeInsets.all(16),
+          leading: CircleAvatar(
+            backgroundColor:
+                Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+            child: FaIcon(
+              _getEventIcon(event.title),
+              color: Theme.of(context).colorScheme.primary,
             ),
-            const SizedBox(height: 2),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                FaIcon(
-                  FontAwesomeIcons.clock,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    '${_formatTime(startTime)} - ${_formatTime(endTime)}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
+          ),
+          title: Text(
+            event.title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
             ),
-            const SizedBox(height: 4),
-            if (event.description.isNotEmpty)
-              Text(
-                event.description,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            if (event.hasAttachment)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Row(
-                  children: [
-                    FaIcon(
-                      _getFileIcon(event.attachmentType ?? 'application/octet-stream'),
-                      size: 16,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Attachment available',
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 4),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  FaIcon(
+                    FontAwesomeIcons.locationDot,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      event.location,
                       style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.primary,
+                        fontSize: 14,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-          ],
-        ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (value) => unawaited(_handleEventAction(value, event)),
-          itemBuilder: (context) => [
-            const PopupMenuItem(
-              value: 'going',
-              child: Text('Going'),
-            ),
-            const PopupMenuItem(
-              value: 'maybe',
-              child: Text('Maybe'),
-            ),
-            const PopupMenuItem(
-              value: 'not_going',
-              child: Text('Not Going'),
-            ),
+              const SizedBox(height: 2),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  FaIcon(
+                    FontAwesomeIcons.clock,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      '${_formatTime(startTime)} - ${_formatTime(endTime)}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              if (event.description.isNotEmpty)
+                Text(
+                  event.description,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              if (event.hasAttachment)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    children: [
+                      FaIcon(
+                        _getFileIcon(event.attachmentType ?? 'application/octet-stream'),
+                        size: 16,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Attachment available',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          trailing: PopupMenuButton<String>(
+            onSelected: (value) => unawaited(_handleEventAction(value, event)),
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'going',
+                child: Text('Going'),
+              ),
+              const PopupMenuItem(
+                value: 'maybe',
+                child: Text('Maybe'),
+              ),
+              const PopupMenuItem(
+                value: 'not_going',
+                child: Text('Not Going'),
+              ),
           ],
           icon: const FaIcon(FontAwesomeIcons.ellipsisVertical),
         ),
       ),
+    ),
     );
   }
 
@@ -1021,6 +1434,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   String _formatTime(DateTime time) {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _formatDate(DateTime date) {
+    return DateFormat('EEEE, MMM d, yyyy').format(date);
   }
 
   Future<void> _handleEventAction(String action, BarangayEvent event) async {
@@ -1234,7 +1651,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     });
 
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(this.context).showSnackBar(
+                    ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text('Added "$title" to the calendar.'),
                       ),
