@@ -11,6 +11,9 @@ permissions:
 jobs:
     build-and-distribute:
         runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: android
 
         steps:
             - name: Checkout code
