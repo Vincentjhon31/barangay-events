@@ -12,6 +12,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'auth_service.dart';
 import 'event_store.dart';
+import 'liquid_glass_components.dart';
+import 'theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,9 +21,11 @@ Future<void> main() async {
     url: 'https://xuxnoydakqembrytdbyz.supabase.co',
     anonKey: 'sb_publishable_XnqlZ-m2efmbasNuZ7fyVg_74qTnghA',
   );
+  final themeController = await ThemeController.load();
 
   runApp(
     BarangayCalendarApp(
+      themeController: themeController,
       updateService: GitHubReleaseUpdateService(
         repositoryOwner: 'Vincentjhon31',
         repositoryName: 'barangay-events',
@@ -30,17 +34,31 @@ Future<void> main() async {
   );
 }
 
+ThemeData _buildTheme(Brightness brightness) {
+  final isDark = brightness == Brightness.dark;
+  return ThemeData(
+    colorScheme: ColorScheme.fromSeed(
+      seedColor: const Color(0xFF2B7FFF),
+      brightness: brightness,
+    ),
+    scaffoldBackgroundColor: isDark ? const Color(0xFF05070C) : const Color(0xFFF8FCFF),
+    useMaterial3: true,
+  );
+}
+
 class BarangayCalendarApp extends StatefulWidget {
-  const BarangayCalendarApp({
+  BarangayCalendarApp({
     super.key,
     this.updateService,
     this.authServiceFactory,
     this.eventRepositoryFactory,
-  });
+    ThemeController? themeController,
+  }) : themeController = themeController ?? ThemeController();
 
   final AppUpdateService? updateService;
   final Future<AppAuthService> Function()? authServiceFactory;
   final Future<EventRepository> Function()? eventRepositoryFactory;
+  final ThemeController themeController;
 
   @override
   State<BarangayCalendarApp> createState() => _BarangayCalendarAppState();
@@ -70,48 +88,53 @@ class _BarangayCalendarAppState extends State<BarangayCalendarApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Barangay Calendar',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-        useMaterial3: true,
-      ),
-      home: FutureBuilder<AppAuthService>(
-        future: _authServiceFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
-
-          final authService = snapshot.data;
-          if (authService == null) {
-            return const Scaffold(
-              body: Center(child: Text('Could not load authentication.')),
-            );
-          }
-
-          return StreamBuilder<bool>(
-            stream: authService.authStateChanges(),
-            initialData: authService.isSignedIn,
-            builder: (context, authSnapshot) {
-              final signedIn = authSnapshot.data ?? false;
-
-              if (!signedIn) {
-                return SignInScreen(authService: authService);
+    return ListenableBuilder(
+      listenable: widget.themeController,
+      builder: (context, _) {
+        return MaterialApp(
+          title: 'Barangay Calendar',
+          theme: _buildTheme(Brightness.light),
+          darkTheme: _buildTheme(Brightness.dark),
+          themeMode: widget.themeController.themeMode,
+          home: FutureBuilder<AppAuthService>(
+            future: _authServiceFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
               }
 
-              return AuthenticatedShell(
-                updateService: widget.updateService,
-                authService: authService,
-                eventRepositoryFactory:
-                    widget.eventRepositoryFactory ?? createEventRepository,
+              final authService = snapshot.data;
+              if (authService == null) {
+                return const Scaffold(
+                  body: Center(child: Text('Could not load authentication.')),
+                );
+              }
+
+              return StreamBuilder<bool>(
+                stream: authService.authStateChanges(),
+                initialData: authService.isSignedIn,
+                builder: (context, authSnapshot) {
+                  final signedIn = authSnapshot.data ?? false;
+
+                  if (!signedIn) {
+                    return SignInScreen(authService: authService);
+                  }
+
+                  return AuthenticatedShell(
+                    updateService: widget.updateService,
+                    authService: authService,
+                    themeController: widget.themeController,
+                    eventRepositoryFactory:
+                        widget.eventRepositoryFactory ?? createEventRepository,
+                  );
+                },
               );
             },
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -121,11 +144,13 @@ class AuthenticatedShell extends StatefulWidget {
     super.key,
     required this.updateService,
     required this.authService,
+    required this.themeController,
     required this.eventRepositoryFactory,
   });
 
   final AppUpdateService? updateService;
   final AppAuthService authService;
+  final ThemeController themeController;
   final Future<EventRepository> Function() eventRepositoryFactory;
 
   @override
@@ -174,6 +199,7 @@ class _AuthenticatedShellState extends State<AuthenticatedShell> {
         return CalendarScreen(
           updateService: widget.updateService,
           authService: widget.authService,
+          themeController: widget.themeController,
           eventRepository: repository,
         );
       },
@@ -267,93 +293,154 @@ class _SignInScreenState extends State<SignInScreen> {
     }
   }
 
+  Widget _buildGlassField({
+    required TextEditingController controller,
+    required String label,
+    required FaIconData icon,
+    TextInputType? keyboardType,
+    bool obscureText = false,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final borderColor = colorScheme.onSurface.withValues(alpha: 0.14);
+
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      obscureText: obscureText,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: FaIcon(icon, size: 16),
+        filled: true,
+        fillColor: colorScheme.onSurface.withValues(alpha: 0.05),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: borderColor),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: borderColor),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: colorScheme.primary, width: 1.6),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Theme.of(context).colorScheme.primaryContainer,
-              Theme.of(context).colorScheme.surface,
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Card(
-                elevation: 6,
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: LiquidGlassBackdrop()),
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      Center(
+                        child: IconBadge(
+                          icon: FontAwesomeIcons.landmark,
+                          tint: colorScheme.primary,
+                          size: 72,
+                          iconSize: 28,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       Text(
-                        _isSignUpMode ? 'Create an account' : 'Login',
-                        style: Theme.of(context).textTheme.headlineSmall,
+                        'Barangay Calendar',
                         textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
                       Text(
-                        'Use your Supabase account to access and publish barangay events.',
-                        style: Theme.of(context).textTheme.bodyMedium,
+                        'Community events, at a glance.',
                         textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
                       ),
-                      const SizedBox(height: 24),
-                      if (_isSignUpMode) ...[
-                        TextField(
-                          controller: _displayNameController,
-                          decoration: const InputDecoration(
-                            labelText: 'Name',
-                            prefixIcon: FaIcon(FontAwesomeIcons.user),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      TextField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(
-                          labelText: 'Email',
-                          prefixIcon: FaIcon(FontAwesomeIcons.envelope),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _passwordController,
-                        obscureText: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Password',
-                          prefixIcon: FaIcon(FontAwesomeIcons.lock),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      FilledButton(
-                        onPressed: _isSubmitting ? null : _submit,
-                        child: Text(
-                          _isSubmitting
-                              ? 'Please wait...'
-                              : (_isSignUpMode ? 'Create account' : 'Login'),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: _isSubmitting
-                            ? null
-                            : () {
-                                setState(() {
-                                  _isSignUpMode = !_isSignUpMode;
-                                });
-                              },
-                        child: Text(
-                          _isSignUpMode
-                              ? 'Already have an account? Login'
-                              : 'Need an account? Create one',
+                      const SizedBox(height: 28),
+                      GlassPanel(
+                        borderRadius: 30,
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              _isSignUpMode ? 'Create an account' : 'Login',
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Use your account to access and publish barangay events.',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 22),
+                            if (_isSignUpMode) ...[
+                              _buildGlassField(
+                                controller: _displayNameController,
+                                label: 'Name',
+                                icon: FontAwesomeIcons.user,
+                              ),
+                              const SizedBox(height: 14),
+                            ],
+                            _buildGlassField(
+                              controller: _emailController,
+                              label: 'Email',
+                              icon: FontAwesomeIcons.envelope,
+                              keyboardType: TextInputType.emailAddress,
+                            ),
+                            const SizedBox(height: 14),
+                            _buildGlassField(
+                              controller: _passwordController,
+                              label: 'Password',
+                              icon: FontAwesomeIcons.lock,
+                              obscureText: true,
+                            ),
+                            const SizedBox(height: 22),
+                            FilledButton(
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                              ),
+                              onPressed: _isSubmitting ? null : _submit,
+                              child: Text(
+                                _isSubmitting
+                                    ? 'Please wait...'
+                                    : (_isSignUpMode ? 'Create account' : 'Login'),
+                                style: const TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _isSubmitting
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _isSignUpMode = !_isSignUpMode;
+                                      });
+                                    },
+                              child: Text(
+                                _isSignUpMode
+                                    ? 'Already have an account? Login'
+                                    : 'Need an account? Create one',
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -362,7 +449,7 @@ class _SignInScreenState extends State<SignInScreen> {
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -373,11 +460,13 @@ class CalendarScreen extends StatefulWidget {
     super.key,
     this.updateService,
     this.authService,
+    required this.themeController,
     required this.eventRepository,
   });
 
   final AppUpdateService? updateService;
   final AppAuthService? authService;
+  final ThemeController themeController;
   final EventRepository eventRepository;
 
   @override
@@ -491,48 +580,384 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
+  BarangayEvent? get _nextUpcomingEvent {
+    final now = DateTime.now();
+    final upcoming = _events.where((event) => event.endTime.isAfter(now)).toList()
+      ..sort((a, b) => a.startTime.compareTo(b.startTime));
+    return upcoming.isEmpty ? null : upcoming.first;
+  }
+
+  void _handleTabSelected(int index) {
+    switch (index) {
+      case 0:
+        break;
+      case 1:
+        _showAnnouncementsSheet();
+        break;
+      case 2:
+        _showSettingsSheet();
+        break;
+      case 3:
+        unawaited(_showProfileSheet());
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Barangay Events Calendar'),
-        centerTitle: true,
-        elevation: 0,
-        actions: [
-          if (widget.authService != null)
-            IconButton(
-              tooltip: 'Profile',
-              onPressed: _showProfileSheet,
-              icon: const FaIcon(FontAwesomeIcons.circleUser),
-            ),
-          if (widget.authService != null)
-            IconButton(
-              tooltip: 'Sign out',
-              onPressed: () => unawaited(widget.authService!.signOut()),
-              icon: const FaIcon(FontAwesomeIcons.arrowRightFromBracket),
-            ),
-        ],
-      ),
-      body: Column(
+      extendBody: true,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: Stack(
         children: [
-          if (_availableUpdate != null) _buildUpdateBanner(_availableUpdate!),
-
-          // Calendar Section
-          _buildCalendar(),
-
-          // Divider
-          const Divider(height: 1),
-
-          // Events List
-          Expanded(
-            child: _buildEventList(),
+          const Positioned.fill(child: LiquidGlassBackdrop()),
+          SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                if (_availableUpdate != null) _buildUpdateBanner(_availableUpdate!),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
+                    children: [
+                      _buildHeader(),
+                      const SizedBox(height: 18),
+                      _buildAnnouncementBanner(),
+                      const SizedBox(height: 18),
+                      _buildCalendar(),
+                      const SizedBox(height: 22),
+                      _buildUpcomingHeader(),
+                      const SizedBox(height: 12),
+                      ..._buildUpcomingEventCards(),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 20,
+            right: 20,
+            bottom: 20,
+            child: SafeArea(
+              top: false,
+              child: LiquidTabBar(
+                items: const [
+                  (icon: FontAwesomeIcons.calendarDays, label: 'Calendar'),
+                  (icon: FontAwesomeIcons.bullhorn, label: 'Announce'),
+                  (icon: FontAwesomeIcons.gear, label: 'Settings'),
+                  (icon: FontAwesomeIcons.user, label: 'Profile'),
+                ],
+                selectedIndex: 0,
+                onSelect: _handleTabSelected,
+              ),
+            ),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddEventDialog(context),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        child: const FaIcon(FontAwesomeIcons.plus),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 96),
+        child: FloatingActionButton(
+          onPressed: () => _showAddEventDialog(context),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          child: const FaIcon(FontAwesomeIcons.plus),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    final profile = widget.authService?.currentUser;
+    final barangayName = profile?.barangay?.trim().isNotEmpty == true
+        ? profile!.barangay!.toUpperCase()
+        : 'BARANGAY';
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                barangayName,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      letterSpacing: 1.2,
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Community Calendar',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+            ],
+          ),
+        ),
+        if (widget.authService != null)
+          InkWell(
+            onTap: _showProfileSheet,
+            borderRadius: BorderRadius.circular(24),
+            child: IconBadge(
+              icon: FontAwesomeIcons.circleUser,
+              tint: Theme.of(context).colorScheme.primary,
+              size: 48,
+              iconSize: 20,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildAnnouncementBanner() {
+    final event = _nextUpcomingEvent;
+    if (event == null) {
+      return GlassPanel(
+        child: Row(
+          children: [
+            IconBadge(icon: FontAwesomeIcons.calendarCheck, tint: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Text(
+                'No upcoming events right now. Check back soon!',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(28),
+      onTap: () => _showEventDetails(event),
+      child: GlassPanel(
+        tint: _getEventTint(event.title),
+        tintAlpha: 0.16,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            IconBadge(icon: _getEventIcon(event.title), tint: _getEventTint(event.title)),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Next up',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.6,
+                        ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    event.title,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${event.location} • ${_formatDate(event.startTime)}, ${_formatTime(event.startTime)}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            FaIcon(
+              FontAwesomeIcons.chevronRight,
+              size: 14,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUpcomingHeader() {
+    final selected = _selectedDay;
+    final isToday = selected == null || isSameDay(selected, DateTime.now());
+    return Row(
+      children: [
+        Text(
+          isToday ? 'Upcoming' : 'Events for ${_formatDate(selected)}',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildUpcomingEventCards() {
+    final events = _getEventsForDay(_selectedDay ?? _focusedDay);
+
+    if (events.isEmpty) {
+      return [
+        GlassPanel(
+          child: Text(
+            'No events for ${_formatDate(_selectedDay ?? _focusedDay)}',
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+        ),
+      ];
+    }
+
+    return [
+      for (final event in events) ...[
+        _buildEventCard(event),
+        const SizedBox(height: 12),
+      ],
+    ];
+  }
+
+  Future<void> _showAnnouncementsSheet() async {
+    final upcoming = _events.where((event) => event.endTime.isAfter(DateTime.now())).toList()
+      ..sort((a, b) => a.startTime.compareTo(b.startTime));
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Announcements',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 14),
+                Flexible(
+                  child: upcoming.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 24),
+                          child: Text(
+                            'No upcoming announcements.',
+                            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          ),
+                        )
+                      : ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: upcoming.length,
+                          separatorBuilder: (context, index) => const SizedBox(height: 12),
+                          itemBuilder: (context, index) => _buildEventCard(upcoming[index]),
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showSettingsSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Settings',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Appearance',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        letterSpacing: 0.6,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 10),
+                ListenableBuilder(
+                  listenable: widget.themeController,
+                  builder: (context, _) {
+                    final mode = widget.themeController.themeMode;
+                    return Column(
+                      children: [
+                        _buildThemeOption(
+                          icon: FontAwesomeIcons.circleHalfStroke,
+                          label: 'System default',
+                          selected: mode == ThemeMode.system,
+                          onTap: () => widget.themeController.setThemeMode(ThemeMode.system),
+                        ),
+                        const SizedBox(height: 10),
+                        _buildThemeOption(
+                          icon: FontAwesomeIcons.sun,
+                          label: 'Light',
+                          selected: mode == ThemeMode.light,
+                          onTap: () => widget.themeController.setThemeMode(ThemeMode.light),
+                        ),
+                        const SizedBox(height: 10),
+                        _buildThemeOption(
+                          icon: FontAwesomeIcons.moon,
+                          label: 'Dark',
+                          selected: mode == ThemeMode.dark,
+                          onTap: () => widget.themeController.setThemeMode(ThemeMode.dark),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildThemeOption({
+    required FaIconData icon,
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      child: GlassPanel(
+        borderRadius: 20,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        tint: selected ? colorScheme.primary : null,
+        tintAlpha: selected ? 0.18 : null,
+        child: Row(
+          children: [
+            IconBadge(icon: icon, tint: colorScheme.primary, size: 40, iconSize: 16),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (selected)
+              FaIcon(FontAwesomeIcons.circleCheck, size: 18, color: colorScheme.primary),
+          ],
+        ),
       ),
     );
   }
@@ -577,144 +1002,164 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildCalendar() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: SegmentedButton<CalendarFormat>(
-            segments: const [
-              ButtonSegment<CalendarFormat>(
-                value: CalendarFormat.month,
-                icon: FaIcon(FontAwesomeIcons.calendarDays),
-                label: Text('Monthly'),
-              ),
-              ButtonSegment<CalendarFormat>(
-                value: CalendarFormat.week,
-                icon: FaIcon(FontAwesomeIcons.calendarWeek),
-                label: Text('Weekly'),
-              ),
-            ],
-            selected: {_calendarFormat},
-            onSelectionChanged: (selection) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return GlassPanel(
+      borderRadius: 28,
+      padding: const EdgeInsets.fromLTRB(12, 14, 12, 6),
+      child: Column(
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: _buildFormatToggle(),
+          ),
+          TableCalendar(
+            firstDay: DateTime.utc(2020, 1, 1),
+            lastDay: DateTime.utc(2030, 12, 31),
+            focusedDay: _focusedDay,
+            calendarFormat: _calendarFormat,
+            availableCalendarFormats: const {
+              CalendarFormat.month: 'Monthly',
+              CalendarFormat.week: 'Weekly',
+            },
+            selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+            onDaySelected: (selectedDay, focusedDay) {
               setState(() {
-                _calendarFormat = selection.first;
+                _selectedDay = selectedDay;
+                _focusedDay = focusedDay;
               });
             },
-          ),
-        ),
-        TableCalendar(
-          firstDay: DateTime.utc(2020, 1, 1),
-          lastDay: DateTime.utc(2030, 12, 31),
-          focusedDay: _focusedDay,
-          calendarFormat: _calendarFormat,
-          availableCalendarFormats: const {
-            CalendarFormat.month: 'Monthly',
-            CalendarFormat.week: 'Weekly',
-          },
-          selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-          onDaySelected: (selectedDay, focusedDay) {
-            setState(() {
-              _selectedDay = selectedDay;
+            onFormatChanged: (format) {
+              setState(() {
+                _calendarFormat = format;
+              });
+            },
+            onPageChanged: (focusedDay) {
               _focusedDay = focusedDay;
-            });
-          },
-          onFormatChanged: (format) {
-            setState(() {
-              _calendarFormat = format;
-            });
-          },
-          onPageChanged: (focusedDay) {
-            _focusedDay = focusedDay;
-          },
-          calendarBuilders: CalendarBuilders(
-            // Show event markers below dates
-            markerBuilder: (context, date, events) {
-              final dayEvents = _getEventsForDay(date);
-              if (dayEvents.isEmpty) return null;
+            },
+            calendarBuilders: CalendarBuilders(
+              // Show event markers below dates
+              markerBuilder: (context, date, events) {
+                final dayEvents = _getEventsForDay(date);
+                if (dayEvents.isEmpty) return null;
 
-              return Positioned(
-                right: 1,
-                bottom: 1,
-                child: Container(
-                  width: 8,
-                  height: 8,
+                return Positioned(
+                  bottom: 3,
+                  child: Container(
+                    width: 5,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                );
+              },
+
+              // Highlight today
+              todayBuilder: (context, day, focusedDay) {
+                return Container(
+                  margin: const EdgeInsets.all(4.0),
+                  alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.secondary,
+                    color: colorScheme.primary,
                     shape: BoxShape.circle,
                   ),
-                ),
-              );
-            },
-
-            // Highlight today
-            todayBuilder: (context, day, focusedDay) {
-              return Container(
-                margin: const EdgeInsets.all(4.0),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  day.day.toString(),
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    fontWeight: FontWeight.bold,
+                  child: Text(
+                    day.day.toString(),
+                    style: TextStyle(
+                      color: colorScheme.onPrimary,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
 
-            // Customize selected day
-            selectedBuilder: (context, day, focusedDay) {
-              return Container(
-                margin: const EdgeInsets.all(4.0),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary,
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  day.day.toString(),
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onPrimary,
-                    fontWeight: FontWeight.bold,
+              // Customize selected day
+              selectedBuilder: (context, day, focusedDay) {
+                return Container(
+                  margin: const EdgeInsets.all(4.0),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary.withValues(alpha: 0.16),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: colorScheme.primary, width: 1.6),
                   ),
-                ),
-              );
-            },
-          ),
-          // Styling
-          headerStyle: HeaderStyle(
-            formatButtonVisible: false,
-            titleCentered: true,
-            formatButtonShowsNext: false,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                  child: Text(
+                    day.day.toString(),
+                    style: TextStyle(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                );
+              },
+            ),
+            // Styling
+            headerStyle: HeaderStyle(
+              formatButtonVisible: false,
+              titleCentered: true,
+              formatButtonShowsNext: false,
+              leftChevronIcon: FaIcon(FontAwesomeIcons.chevronLeft, size: 15, color: colorScheme.onSurfaceVariant),
+              rightChevronIcon: FaIcon(FontAwesomeIcons.chevronRight, size: 15, color: colorScheme.onSurfaceVariant),
+              titleTextStyle: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: colorScheme.onSurface),
+              decoration: const BoxDecoration(),
+            ),
+            daysOfWeekStyle: DaysOfWeekStyle(
+              weekdayStyle: TextStyle(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+              weekendStyle: TextStyle(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            calendarStyle: CalendarStyle(
+              outsideDaysVisible: false,
+              defaultTextStyle: TextStyle(color: colorScheme.onSurface),
+              weekendTextStyle: TextStyle(color: colorScheme.onSurface),
+              todayDecoration: BoxDecoration(
+                color: colorScheme.primary,
+                shape: BoxShape.circle,
+              ),
+              selectedDecoration: BoxDecoration(
+                color: colorScheme.primary.withValues(alpha: 0.16),
+                shape: BoxShape.circle,
+              ),
+              markerDecoration: BoxDecoration(
+                color: colorScheme.primary,
+                shape: BoxShape.circle,
+              ),
             ),
           ),
-          daysOfWeekStyle: DaysOfWeekStyle(
-            weekdayStyle: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            weekendStyle: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          calendarStyle: CalendarStyle(
-            todayDecoration: BoxDecoration(
-              color: Theme.of(
-                context,
-              ).colorScheme.primaryContainer.withValues(alpha: 0.3),
-              shape: BoxShape.circle,
-            ),
-            selectedDecoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary,
-              shape: BoxShape.circle,
-            ),
-          ),
-        ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFormatToggle() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return SegmentedButton<CalendarFormat>(
+      style: SegmentedButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        backgroundColor: colorScheme.onSurface.withValues(alpha: 0.06),
+        foregroundColor: colorScheme.onSurfaceVariant,
+        selectedForegroundColor: colorScheme.onPrimary,
+        selectedBackgroundColor: colorScheme.primary.withValues(alpha: 0.4),
+        side: BorderSide(color: colorScheme.onSurface.withValues(alpha: 0.12)),
+      ),
+      showSelectedIcon: false,
+      segments: const [
+        ButtonSegment<CalendarFormat>(value: CalendarFormat.month, label: Text('Month')),
+        ButtonSegment<CalendarFormat>(value: CalendarFormat.week, label: Text('Week')),
       ],
+      selected: {_calendarFormat},
+      onSelectionChanged: (selection) {
+        setState(() {
+          _calendarFormat = selection.first;
+        });
+      },
     );
   }
 
@@ -724,9 +1169,25 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return;
     }
 
-    final profile = authService.currentUser;
+    final profile = await (authService as SupabaseAuthService).fetchUserProfile();
+    
     final displayNameController = TextEditingController(
       text: profile?.displayName ?? '',
+    );
+    final phoneController = TextEditingController(
+      text: profile?.phoneNumber ?? '',
+    );
+    final streetAddressController = TextEditingController(
+      text: profile?.streetAddress ?? '',
+    );
+    final barangayController = TextEditingController(
+      text: profile?.barangay ?? '',
+    );
+    final cityController = TextEditingController(
+      text: profile?.city ?? '',
+    );
+    final bioController = TextEditingController(
+      text: profile?.bio ?? '',
     );
 
     await showModalBottomSheet<void>(
@@ -743,81 +1204,148 @@ class _CalendarScreenState extends State<CalendarScreen> {
             final email = currentProfile?.email ?? 'No email available';
 
             return SafeArea(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  left: 20,
-                  right: 20,
-                  bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-                  top: 8,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Center(
-                      child: CircleAvatar(
-                        radius: 34,
-                        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                        child: currentProfile?.avatarUrl != null
-                            ? null
-                            : Text(
-                                currentProfile?.initials ?? 'B',
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w700,
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: 20,
+                    right: 20,
+                    bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+                    top: 8,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: CircleAvatar(
+                          radius: 34,
+                          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                          child: currentProfile?.avatarUrl != null
+                              ? null
+                              : Text(
+                                  currentProfile?.initials ?? 'B',
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
-                              ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      displayName,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      email,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 20),
-                    TextField(
-                      controller: displayNameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Display name',
-                        prefixIcon: FaIcon(FontAwesomeIcons.userPen),
+                      const SizedBox(height: 16),
+                      Text(
+                        displayName,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleLarge,
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: () async {
-                        final nextName = displayNameController.text.trim();
-                        if (nextName.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Display name cannot be empty.')),
+                      const SizedBox(height: 4),
+                      Text(
+                        email,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Personal Information',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: displayNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Display name',
+                          prefixIcon: FaIcon(FontAwesomeIcons.userPen),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: phoneController,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(
+                          labelText: 'Phone number',
+                          prefixIcon: FaIcon(FontAwesomeIcons.phone),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: bioController,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Bio / About you',
+                          prefixIcon: FaIcon(FontAwesomeIcons.alignLeft),
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        'Address',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: streetAddressController,
+                        decoration: const InputDecoration(
+                          labelText: 'Street address',
+                          prefixIcon: FaIcon(FontAwesomeIcons.houseChimney),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: barangayController,
+                        decoration: const InputDecoration(
+                          labelText: 'Barangay',
+                          prefixIcon: FaIcon(FontAwesomeIcons.mapPin),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: cityController,
+                        decoration: const InputDecoration(
+                          labelText: 'City',
+                          prefixIcon: FaIcon(FontAwesomeIcons.buildingFlag),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      FilledButton.icon(
+                        onPressed: () async {
+                          final nextName = displayNameController.text.trim();
+                          if (nextName.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Display name cannot be empty.')),
+                            );
+                            return;
+                          }
+
+                          final updatedProfile = AppUserProfile(
+                            id: profile?.id ?? currentProfile?.id ?? '',
+                            email: profile?.email ?? currentProfile?.email ?? '',
+                            displayName: nextName,
+                            phoneNumber: phoneController.text.trim().isEmpty ? null : phoneController.text.trim(),
+                            streetAddress: streetAddressController.text.trim().isEmpty ? null : streetAddressController.text.trim(),
+                            barangay: barangayController.text.trim().isEmpty ? null : barangayController.text.trim(),
+                            city: cityController.text.trim().isEmpty ? null : cityController.text.trim(),
+                            bio: bioController.text.trim().isEmpty ? null : bioController.text.trim(),
+                            avatarUrl: profile?.avatarUrl,
                           );
-                          return;
-                        }
 
-                        await authService.updateDisplayName(nextName);
-                        if (!mounted) {
-                          return;
-                        }
+                          await (authService as SupabaseAuthService).createOrUpdateProfile(updatedProfile);
+                          
+                          if (!mounted) {
+                            return;
+                          }
 
-                        setState(() {});
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(this.context).showSnackBar(
-                          const SnackBar(content: Text('Profile updated.')),
-                        );
-                      },
-                      icon: const FaIcon(FontAwesomeIcons.floppyDisk),
-                      label: const Text('Save profile'),
-                    ),
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: () async {
+                          setState(() {});
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(this.context).showSnackBar(
+                            const SnackBar(content: Text('Profile updated.')),
+                          );
+                        },
+                        icon: const FaIcon(FontAwesomeIcons.floppyDisk),
+                        label: const Text('Save profile'),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: () async {
                         Navigator.pop(context);
                         await authService.signOut();
                       },
@@ -826,6 +1354,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     ),
                   ],
                 ),
+              ),
               ),
             );
           },
@@ -1246,182 +1775,183 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return 'Attachment';
   }
 
-  Widget _buildEventList() {
-    final events = _getEventsForDay(_selectedDay ?? _focusedDay);
-
-    if (events.isEmpty) {
-      return Center(
-        child: Text(
-          'No events for ${DateFormat('EEEE, MMM d, yyyy').format(_selectedDay ?? _focusedDay)}',
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontSize: 16,
-          ),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      itemCount: events.length,
-      itemBuilder: (context, index) {
-        final event = events[index];
-        return _buildEventCard(event);
-      },
-    );
-  }
-
   Widget _buildEventCard(BarangayEvent event) {
     final startTime = event.startTime;
     final endTime = event.endTime;
+    final tint = _getEventTint(event.title);
 
-    return GestureDetector(
+    return InkWell(
+      borderRadius: BorderRadius.circular(26),
       onTap: () => _showEventDetails(event),
-      child: Card(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        elevation: 2,
-        child: ListTile(
-          contentPadding: const EdgeInsets.all(16),
-          leading: CircleAvatar(
-            backgroundColor:
-                Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-            child: FaIcon(
-              _getEventIcon(event.title),
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-          title: Text(
-            event.title,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 4),
-              Row(
+      child: GlassPanel(
+        borderRadius: 26,
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            IconBadge(icon: _getEventIcon(event.title), tint: tint),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  FaIcon(
-                    FontAwesomeIcons.locationDot,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  Text(
+                    event.title,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
                   ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      event.location,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 2),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  FaIcon(
-                    FontAwesomeIcons.clock,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      '${_formatTime(startTime)} - ${_formatTime(endTime)}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              if (event.description.isNotEmpty)
-                Text(
-                  event.description,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              if (event.hasAttachment)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Row(
+                  const SizedBox(height: 4),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       FaIcon(
-                        _getFileIcon(event.attachmentType ?? 'application/octet-stream'),
-                        size: 16,
-                        color: Theme.of(context).colorScheme.primary,
+                        FontAwesomeIcons.locationDot,
+                        size: 13,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Attachment available',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.primary,
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          event.location,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
                         ),
                       ),
                     ],
                   ),
-                ),
-            ],
-          ),
-          trailing: PopupMenuButton<String>(
-            onSelected: (value) => unawaited(_handleEventAction(value, event)),
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'going',
-                child: Text('Going'),
+                  const SizedBox(height: 3),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FaIcon(
+                        FontAwesomeIcons.clock,
+                        size: 13,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          '${_formatDate(startTime)} • ${_formatTime(startTime)} - ${_formatTime(endTime)}',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (event.description.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      event.description,
+                      style: Theme.of(context).textTheme.bodySmall,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (event.hasAttachment) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        FaIcon(
+                          _getFileIcon(event.attachmentType ?? 'application/octet-stream'),
+                          size: 14,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Attachment available',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
               ),
-              const PopupMenuItem(
-                value: 'maybe',
-                child: Text('Maybe'),
+            ),
+            PopupMenuButton<String>(
+              onSelected: (value) => unawaited(_handleEventAction(value, event)),
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'going', child: Text('Going')),
+                const PopupMenuItem(value: 'maybe', child: Text('Maybe')),
+                const PopupMenuItem(value: 'not_going', child: Text('Not Going')),
+              ],
+              icon: FaIcon(
+                FontAwesomeIcons.ellipsisVertical,
+                size: 16,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
-              const PopupMenuItem(
-                value: 'not_going',
-                child: Text('Not Going'),
-              ),
+            ),
           ],
-          icon: const FaIcon(FontAwesomeIcons.ellipsisVertical),
         ),
       ),
-    ),
     );
   }
 
   FaIconData _getEventIcon(String title) {
     final lowerTitle = title.toLowerCase();
     if (lowerTitle.contains('meeting') || lowerTitle.contains('assembly')) {
-      return FontAwesomeIcons.users;
+      return FontAwesomeIcons.peopleGroup;
     }
     if (lowerTitle.contains('basketball') ||
         lowerTitle.contains('sport') ||
         lowerTitle.contains('tournament')) {
       return FontAwesomeIcons.basketball;
     }
-    if (lowerTitle.contains('health') ||
+    if (lowerTitle.contains('vaccin') ||
+        lowerTitle.contains('health') ||
         lowerTitle.contains('checkup') ||
         lowerTitle.contains('medical')) {
-      return FontAwesomeIcons.heartPulse;
+      return FontAwesomeIcons.syringe;
+    }
+    if (lowerTitle.contains('garbage') ||
+        lowerTitle.contains('waste') ||
+        lowerTitle.contains('collection') ||
+        lowerTitle.contains('cleanup') ||
+        lowerTitle.contains('clean-up')) {
+      return FontAwesomeIcons.truckFast;
     }
     if (lowerTitle.contains('fiesta') ||
         lowerTitle.contains('parade') ||
         lowerTitle.contains('festival')) {
-      return FontAwesomeIcons.flag;
-    }
-    if (lowerTitle.contains('health')) {
-      return FontAwesomeIcons.heartPulse;
+      return FontAwesomeIcons.fireFlameCurved;
     }
     return FontAwesomeIcons.calendarDays;
+  }
+
+  Color _getEventTint(String title) {
+    final lowerTitle = title.toLowerCase();
+    if (lowerTitle.contains('meeting') || lowerTitle.contains('assembly')) {
+      return const Color(0xFF7C4DFF);
+    }
+    if (lowerTitle.contains('basketball') ||
+        lowerTitle.contains('sport') ||
+        lowerTitle.contains('tournament')) {
+      return const Color(0xFFFF7043);
+    }
+    if (lowerTitle.contains('vaccin') ||
+        lowerTitle.contains('health') ||
+        lowerTitle.contains('checkup') ||
+        lowerTitle.contains('medical')) {
+      return const Color(0xFF2B7FFF);
+    }
+    if (lowerTitle.contains('garbage') ||
+        lowerTitle.contains('waste') ||
+        lowerTitle.contains('collection') ||
+        lowerTitle.contains('cleanup') ||
+        lowerTitle.contains('clean-up')) {
+      return const Color(0xFF1F9D65);
+    }
+    if (lowerTitle.contains('fiesta') ||
+        lowerTitle.contains('parade') ||
+        lowerTitle.contains('festival')) {
+      return const Color(0xFFFFA726);
+    }
+    return const Color(0xFF2B7FFF);
   }
 
   FaIconData _getFileIcon(String mimeType) {
@@ -1651,7 +2181,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     });
 
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    ScaffoldMessenger.of(this.context).showSnackBar(
                       SnackBar(
                         content: Text('Added "$title" to the calendar.'),
                       ),

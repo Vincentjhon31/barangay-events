@@ -3,90 +3,55 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-const List<_AnnouncementNotice> announcementCards = [
-  _AnnouncementNotice(
-    icon: FontAwesomeIcons.syringe,
-    tint: Color(0xFF2B7FFF),
-    title: 'Vaccination Drive',
-    body: 'Free immunization and health screening at the barangay health center.',
-    meta: 'Friday • 8:00 AM - 2:00 PM',
-  ),
-  _AnnouncementNotice(
-    icon: FontAwesomeIcons.truckFast,
-    tint: Color(0xFF1F9D65),
-    title: 'Garbage Collection Schedule',
-    body: 'Remember to place segregated waste outside before the collection window.',
-    meta: 'Monday, Wednesday, Friday',
-  ),
-  _AnnouncementNotice(
-    icon: FontAwesomeIcons.fireFlameCurved,
-    tint: Color(0xFFFFA726),
-    title: 'Fiesta Announcement',
-    body: 'Save the date for the barangay fiesta parade and evening program.',
-    meta: 'Next week • Parade starts at 4:00 PM',
-  ),
-  _AnnouncementNotice(
-    icon: FontAwesomeIcons.peopleGroup,
-    tint: Color(0xFF7C4DFF),
-    title: 'Barangay Assembly',
-    body: 'Residents are invited to discuss schedules, safety, and community updates.',
-    meta: 'This Saturday • 5:00 PM',
-  ),
-];
+bool isDarkContext(BuildContext context) => Theme.of(context).brightness == Brightness.dark;
 
-class _AnnouncementNotice {
-  const _AnnouncementNotice({
-    required this.icon,
-    required this.tint,
-    required this.title,
-    required this.body,
-    required this.meta,
-  });
-
-  final FaIconData icon;
-  final Color tint;
-  final String title;
-  final String body;
-  final String meta;
-}
-
+/// A frosted backdrop with soft color blobs — the base layer for the
+/// iOS 26 "Liquid Glass" look. Adapts its palette to light/dark mode.
 class LiquidGlassBackdrop extends StatelessWidget {
   const LiquidGlassBackdrop({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final dark = isDarkContext(context);
+
     return Stack(
       children: [
         Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                Color(0xFFF8FCFF),
-                Color(0xFFF0F6FB),
-                Color(0xFFF7FBF6),
-              ],
+              colors: dark
+                  ? const [
+                      Color(0xFF05070C),
+                      Color(0xFF0A0D14),
+                      Color(0xFF06080D),
+                    ]
+                  : const [
+                      Color(0xFFF8FCFF),
+                      Color(0xFFF0F6FB),
+                      Color(0xFFF7FBF6),
+                    ],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
           ),
         ),
         Positioned(
-          top: -40,
-          right: -20,
-          child: BlurOrb(color: const Color(0xFF6EA8FF).withValues(alpha: 0.24), size: 180),
+          top: -60,
+          right: -30,
+          child: BlurOrb(color: const Color(0xFF2B7FFF).withValues(alpha: dark ? 0.28 : 0.20), size: 220),
         ),
         Positioned(
-          top: 180,
-          left: -35,
-          child: BlurOrb(color: const Color(0xFF7BE0B2).withValues(alpha: 0.22), size: 160),
+          top: 220,
+          left: -50,
+          child: BlurOrb(color: const Color(0xFF1F9D65).withValues(alpha: dark ? 0.22 : 0.18), size: 200),
         ),
         Positioned(
-          bottom: 120,
-          right: 10,
-          child: BlurOrb(color: const Color(0xFFF7C873).withValues(alpha: 0.18), size: 140),
+          bottom: 160,
+          right: 0,
+          child: BlurOrb(color: const Color(0xFFFFA726).withValues(alpha: dark ? 0.14 : 0.14), size: 160),
         ),
         BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+          filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
           child: const SizedBox.expand(),
         ),
       ],
@@ -111,8 +76,8 @@ class BlurOrb extends StatelessWidget {
         boxShadow: [
           BoxShadow(
             color: color,
-            blurRadius: 50,
-            spreadRadius: 18,
+            blurRadius: 60,
+            spreadRadius: 24,
           ),
         ],
       ),
@@ -120,42 +85,84 @@ class BlurOrb extends StatelessWidget {
   }
 }
 
+/// A frosted glass panel with soft refraction. Adapts contrast to
+/// light/dark mode so it reads correctly on either backdrop.
 class GlassPanel extends StatelessWidget {
   const GlassPanel({
     super.key,
     this.child,
     this.padding = const EdgeInsets.all(18),
-    this.borderRadius = 30,
+    this.borderRadius = 28,
     this.tint,
+    this.tintAlpha,
   });
 
   final Widget? child;
   final EdgeInsets padding;
   final double borderRadius;
   final Color? tint;
+  final double? tintAlpha;
 
   @override
   Widget build(BuildContext context) {
+    final dark = isDarkContext(context);
+    final baseTint = tint ?? Colors.white;
+    final alpha = tintAlpha ?? (dark ? 0.12 : 0.55);
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
         child: Container(
           padding: padding,
           decoration: BoxDecoration(
-            color: (tint ?? Colors.white).withValues(alpha: 0.58),
+            color: baseTint.withValues(alpha: alpha),
             borderRadius: BorderRadius.circular(borderRadius),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.68)),
+            border: Border.all(
+              color: dark ? Colors.white.withValues(alpha: 0.14) : Colors.white.withValues(alpha: 0.75),
+            ),
             boxShadow: [
               BoxShadow(
-                color: Colors.blueGrey.withValues(alpha: 0.08),
-                blurRadius: 24,
-                offset: const Offset(0, 10),
+                color: Colors.black.withValues(alpha: dark ? 0.35 : 0.08),
+                blurRadius: dark ? 28 : 24,
+                offset: const Offset(0, 12),
               ),
             ],
           ),
           child: child,
         ),
+      ),
+    );
+  }
+}
+
+/// A rounded, tinted icon badge used on announcement and event cards.
+class IconBadge extends StatelessWidget {
+  const IconBadge({
+    super.key,
+    required this.icon,
+    required this.tint,
+    this.size = 46,
+    this.iconSize = 19,
+  });
+
+  final FaIconData icon;
+  final Color tint;
+  final double size;
+  final double iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: tint.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(size * 0.32),
+        border: Border.all(color: tint.withValues(alpha: 0.35)),
+      ),
+      child: Center(
+        child: FaIcon(icon, size: iconSize, color: tint),
       ),
     );
   }
@@ -217,21 +224,7 @@ class QuickActionTile extends StatelessWidget {
         padding: const EdgeInsets.all(4),
         child: Row(
           children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Center(
-                child: FaIcon(
-                  icon,
-                  size: 18,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            ),
+            IconBadge(icon: icon, tint: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -281,35 +274,78 @@ class TabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dark = isDarkContext(context);
     final color = selected
         ? Theme.of(context).colorScheme.primary
-        : Theme.of(context).colorScheme.onSurfaceVariant;
+        : (dark ? Colors.white.withValues(alpha: 0.55) : Colors.black.withValues(alpha: 0.45));
 
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(24),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
         decoration: BoxDecoration(
-          color: selected ? Colors.white.withValues(alpha: 0.55) : Colors.transparent,
+          color: selected
+              ? (dark ? Colors.white.withValues(alpha: 0.14) : Colors.white.withValues(alpha: 0.9))
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(24),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             FaIcon(icon, color: color, size: 20),
-            const SizedBox(height: 5),
+            const SizedBox(height: 4),
             Text(
               label,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: color,
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                   ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The floating, semi-transparent bottom tab bar that hovers above the
+/// screen edge rather than sitting flush against it.
+class LiquidTabBar extends StatelessWidget {
+  const LiquidTabBar({
+    super.key,
+    required this.items,
+    required this.selectedIndex,
+    required this.onSelect,
+  });
+
+  final List<({FaIconData icon, String label})> items;
+  final int selectedIndex;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = isDarkContext(context);
+    return GlassPanel(
+      borderRadius: 30,
+      tint: dark ? Colors.black : Colors.white,
+      tintAlpha: dark ? 0.32 : 0.55,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          for (var i = 0; i < items.length; i++)
+            Expanded(
+              child: TabButton(
+                icon: items[i].icon,
+                label: items[i].label,
+                selected: i == selectedIndex,
+                onTap: () => onSelect(i),
+              ),
+            ),
+        ],
       ),
     );
   }

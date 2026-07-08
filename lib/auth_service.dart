@@ -4,13 +4,25 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AppUserProfile {
   const AppUserProfile({
+    required this.id,
     required this.email,
-    required this.displayName,
+    this.displayName,
+    this.phoneNumber,
+    this.streetAddress,
+    this.barangay,
+    this.city,
+    this.bio,
     this.avatarUrl,
   });
 
-  final String? email;
+  final String id;
+  final String email;
   final String? displayName;
+  final String? phoneNumber;
+  final String? streetAddress;
+  final String? barangay;
+  final String? city;
+  final String? bio;
   final String? avatarUrl;
 
   String get initials {
@@ -30,6 +42,34 @@ class AppUserProfile {
     }
 
     return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'.toUpperCase();
+  }
+
+  factory AppUserProfile.fromJson(Map<String, dynamic> json) {
+    return AppUserProfile(
+      id: json['id'] as String,
+      email: json['email'] as String,
+      displayName: json['display_name'] as String?,
+      phoneNumber: json['phone_number'] as String?,
+      streetAddress: json['street_address'] as String?,
+      barangay: json['barangay'] as String?,
+      city: json['city'] as String?,
+      bio: json['bio'] as String?,
+      avatarUrl: json['avatar_url'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'email': email,
+      'display_name': displayName,
+      'phone_number': phoneNumber,
+      'street_address': streetAddress,
+      'barangay': barangay,
+      'city': city,
+      'bio': bio,
+      'avatar_url': avatarUrl,
+    };
   }
 }
 
@@ -69,10 +109,43 @@ class SupabaseAuthService implements AppAuthService {
     }
 
     return AppUserProfile(
-      email: user.email,
+      id: user.id,
+      email: user.email ?? '',
       displayName: user.userMetadata?['display_name'] as String?,
       avatarUrl: user.userMetadata?['avatar_url'] as String?,
     );
+  }
+
+  Future<AppUserProfile?> fetchUserProfile() async {
+    try {
+      final user = _client.auth.currentUser;
+      if (user == null) {
+        return null;
+      }
+
+      final response = await _client
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .single();
+
+      return AppUserProfile.fromJson(response);
+    } catch (e) {
+      // Profile doesn't exist yet, return basic profile from auth
+      return currentUser;
+    }
+  }
+
+  Future<void> createOrUpdateProfile(AppUserProfile profile) async {
+    try {
+      await _client.from('profiles').upsert(
+        profile.toJson(),
+        onConflict: 'id',
+      );
+    } catch (e) {
+      print('Error saving profile: $e');
+      rethrow;
+    }
   }
 
   @override
@@ -89,23 +162,47 @@ class SupabaseAuthService implements AppAuthService {
     required String password,
     String? displayName,
   }) async {
-    await _client.auth.signUp(
+    final response = await _client.auth.signUp(
       email: email,
       password: password,
       data: displayName == null || displayName.isEmpty
           ? null
           : {'display_name': displayName},
     );
-  }
 
-    @override
-    Future<void> updateDisplayName(String displayName) async {
-      await _client.auth.updateUser(
-        UserAttributes(
-          data: {'display_name': displayName},
+    // Create profile entry
+    if (response.user != null) {
+      await createOrUpdateProfile(
+        AppUserProfile(
+          id: response.user!.id,
+          email: email,
+          displayName: displayName,
         ),
       );
     }
+  }
+
+  @override
+  Future<void> updateDisplayName(String displayName) async {
+    final user = _client.auth.currentUser;
+    if (user == null) return;
+
+    // Update auth metadata
+    await _client.auth.updateUser(
+      UserAttributes(
+        data: {'display_name': displayName},
+      ),
+    );
+
+    // Update profiles table
+    await createOrUpdateProfile(
+      AppUserProfile(
+        id: user.id,
+        email: user.email ?? '',
+        displayName: displayName,
+      ),
+    );
+  }
 
   @override
   Future<void> signOut() async {
@@ -124,7 +221,7 @@ class MemoryAuthService implements AppAuthService {
   factory MemoryAuthService.signedIn() {
     return MemoryAuthService._(
       true,
-      const AppUserProfile(email: 'user@example.com', displayName: 'Barangay Officer'),
+      AppUserProfile(id: 'mock-user-id', email: 'user@example.com', displayName: 'Barangay Officer'),
     );
   }
 
@@ -151,7 +248,7 @@ class MemoryAuthService implements AppAuthService {
   @override
   Future<void> signIn({required String email, required String password}) async {
     _signedIn = true;
-    _currentUser = AppUserProfile(email: email, displayName: email.split('@').first);
+    _currentUser = AppUserProfile(id: 'mock-user-id', email: email, displayName: email.split('@').first);
     _controller.add(true);
   }
 
@@ -163,6 +260,7 @@ class MemoryAuthService implements AppAuthService {
   }) async {
     _signedIn = true;
     _currentUser = AppUserProfile(
+      id: 'mock-user-id',
       email: email,
       displayName: displayName?.isNotEmpty == true ? displayName : email.split('@').first,
     );
@@ -171,10 +269,20 @@ class MemoryAuthService implements AppAuthService {
 
   @override
   Future<void> updateDisplayName(String displayName) async {
+    final current = _currentUser;
+    if (current == null) {
+      return;
+    }
     _currentUser = AppUserProfile(
-      email: _currentUser?.email,
+      id: current.id,
+      email: current.email,
       displayName: displayName,
-      avatarUrl: _currentUser?.avatarUrl,
+      phoneNumber: current.phoneNumber,
+      streetAddress: current.streetAddress,
+      barangay: current.barangay,
+      city: current.city,
+      bio: current.bio,
+      avatarUrl: current.avatarUrl,
     );
     _controller.add(true);
   }

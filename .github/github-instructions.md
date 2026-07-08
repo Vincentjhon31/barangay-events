@@ -1,6 +1,6 @@
 # SUMVILTAD Android App - Copilot Instructions
 
-## Current Version: v1.2.1
+## Current Version: v1.1.0+7
 
 ---
 
@@ -253,5 +253,5 @@ git push origin v1.1.5
 
 ---
 
-**Last Updated:** November 26, 2025  
+**Last Updated:** July 8, 2026  
 **Maintained by:** GitHub Copilot Agent

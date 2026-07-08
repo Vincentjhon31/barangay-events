@@ -35,7 +35,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Barangay Events Calendar'), findsOneWidget);
+    expect(find.text('Community Calendar'), findsOneWidget);
     expect(find.byType(CalendarScreen), findsOneWidget);
   });
 
@@ -59,6 +59,13 @@ void main() {
     await tester.enterText(textFields.at(2), 'Bring gloves and trash bags');
 
     await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Community Cleanup'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Community Cleanup'), findsOneWidget);
