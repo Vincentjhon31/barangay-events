@@ -1,6 +1,6 @@
 # SUMVILTAD Android App - Copilot Instructions
 
-## Current Version: v1.1.0+7
+## Current Version: v1.1.1+8
 
 ---
 
