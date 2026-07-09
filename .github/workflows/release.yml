@@ -61,13 +61,17 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release
 
-      - name: Verify APK
-        run: ls -lh build/app/outputs/flutter-apk/app-release.apk
+      - name: Rename APK to e-calendar-<version>.apk
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${VERSION%%+*}"
+          cp build/app/outputs/flutter-apk/app-release.apk "build/app/outputs/flutter-apk/e-calendar-${VERSION}.apk"
+          ls -lh build/app/outputs/flutter-apk/e-calendar-${VERSION}.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/app/outputs/flutter-apk/app-release.apk
+          files: build/app/outputs/flutter-apk/e-calendar-*.apk
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
