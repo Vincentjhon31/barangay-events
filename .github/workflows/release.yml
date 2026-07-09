@@ -66,12 +66,16 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           VERSION="${VERSION%%+*}"
           cp build/app/outputs/flutter-apk/app-release.apk "build/app/outputs/flutter-apk/e-calendar-${VERSION}.apk"
-          ls -lh build/app/outputs/flutter-apk/e-calendar-${VERSION}.apk
+          # Fixed-name copy so the permanent QR/download link always works:
+          # https://github.com/Vincentjhon31/barangay-events/releases/latest/download/e-calendar-latest.apk
+          cp build/app/outputs/flutter-apk/app-release.apk "build/app/outputs/flutter-apk/e-calendar-latest.apk"
+          ls -lh build/app/outputs/flutter-apk/e-calendar-*.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/app/outputs/flutter-apk/e-calendar-*.apk
+          files: |
+            build/app/outputs/flutter-apk/e-calendar-*.apk
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
