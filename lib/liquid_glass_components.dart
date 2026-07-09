@@ -14,47 +14,57 @@ class LiquidGlassBackdrop extends StatelessWidget {
   Widget build(BuildContext context) {
     final dark = isDarkContext(context);
 
-    return Stack(
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: dark
-                  ? const [
-                      Color(0xFF05070C),
-                      Color(0xFF0A0D14),
-                      Color(0xFF06080D),
-                    ]
-                  : const [
-                      Color(0xFFF8FCFF),
-                      Color(0xFFF0F6FB),
-                      Color(0xFFF7FBF6),
-                    ],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
+    // The whole backdrop is static, so it renders once into a cached layer
+    // instead of re-blurring the screen every frame.
+    return RepaintBoundary(
+      child: Stack(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: dark
+                    ? const [
+                        Color(0xFF05070C),
+                        Color(0xFF0A0D14),
+                        Color(0xFF06080D),
+                      ]
+                    : const [
+                        Color(0xFFF8FCFF),
+                        Color(0xFFF0F6FB),
+                        Color(0xFFF7FBF6),
+                      ],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
             ),
           ),
-        ),
-        Positioned(
-          top: -60,
-          right: -30,
-          child: BlurOrb(color: const Color(0xFF2B7FFF).withValues(alpha: dark ? 0.28 : 0.20), size: 220),
-        ),
-        Positioned(
-          top: 220,
-          left: -50,
-          child: BlurOrb(color: const Color(0xFF1F9D65).withValues(alpha: dark ? 0.22 : 0.18), size: 200),
-        ),
-        Positioned(
-          bottom: 160,
-          right: 0,
-          child: BlurOrb(color: const Color(0xFFFFA726).withValues(alpha: dark ? 0.14 : 0.14), size: 160),
-        ),
-        BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
-          child: const SizedBox.expand(),
-        ),
-      ],
+          Positioned.fill(
+            child: ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    top: -60,
+                    right: -30,
+                    child: BlurOrb(color: const Color(0xFF2B7FFF).withValues(alpha: dark ? 0.28 : 0.20), size: 220),
+                  ),
+                  Positioned(
+                    top: 220,
+                    left: -50,
+                    child: BlurOrb(color: const Color(0xFF1F9D65).withValues(alpha: dark ? 0.22 : 0.18), size: 200),
+                  ),
+                  Positioned(
+                    bottom: 160,
+                    right: 0,
+                    child: BlurOrb(color: const Color(0xFFFFA726).withValues(alpha: dark ? 0.14 : 0.14), size: 160),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

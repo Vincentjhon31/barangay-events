@@ -479,6 +479,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   CalendarFormat _calendarFormat = CalendarFormat.month;
   AppUpdateInfo? _availableUpdate;
   bool _checkingForUpdate = false;
+  int _selectedTab = 0;
 
   List<BarangayEvent> _events = const [];
   late final StreamSubscription<List<BarangayEvent>> _eventSubscription;
@@ -588,19 +589,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void _handleTabSelected(int index) {
-    switch (index) {
-      case 0:
-        break;
-      case 1:
-        _showAnnouncementsSheet();
-        break;
-      case 2:
-        _showSettingsSheet();
-        break;
-      case 3:
-        unawaited(_showProfileSheet());
-        break;
-    }
+    if (index == _selectedTab) return;
+    setState(() => _selectedTab = index);
   }
 
   @override
@@ -617,18 +607,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
               children: [
                 if (_availableUpdate != null) _buildUpdateBanner(_availableUpdate!),
                 Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
+                  child: IndexedStack(
+                    index: _selectedTab,
                     children: [
-                      _buildHeader(),
-                      const SizedBox(height: 18),
-                      _buildAnnouncementBanner(),
-                      const SizedBox(height: 18),
-                      _buildCalendar(),
-                      const SizedBox(height: 22),
-                      _buildUpcomingHeader(),
-                      const SizedBox(height: 12),
-                      ..._buildUpcomingEventCards(),
+                      _buildCalendarTab(),
+                      _buildAnnouncementsTab(),
+                      _buildSettingsTab(),
+                      if (widget.authService != null)
+                        ProfileTab(
+                          authService: widget.authService!,
+                          onProfileSaved: () {
+                            if (mounted) setState(() {});
+                          },
+                        )
+                      else
+                        const SizedBox.shrink(),
                     ],
                   ),
                 ),
@@ -648,21 +641,61 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   (icon: FontAwesomeIcons.gear, label: 'Settings'),
                   (icon: FontAwesomeIcons.user, label: 'Profile'),
                 ],
-                selectedIndex: 0,
+                selectedIndex: _selectedTab,
                 onSelect: _handleTabSelected,
               ),
             ),
           ),
         ],
       ),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 96),
-        child: FloatingActionButton(
-          onPressed: () => _showAddEventDialog(context),
-          backgroundColor: Theme.of(context).colorScheme.primary,
-          child: const FaIcon(FontAwesomeIcons.plus),
+      floatingActionButton: _selectedTab == 0
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 96),
+              child: FloatingActionButton(
+                onPressed: () => _showAddEventDialog(context),
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                child: const FaIcon(FontAwesomeIcons.plus),
+              ),
+            )
+          : null,
+    );
+  }
+
+  Widget _buildCalendarTab() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
+      children: [
+        _buildHeader(),
+        const SizedBox(height: 18),
+        _buildAnnouncementBanner(),
+        const SizedBox(height: 18),
+        _buildCalendar(),
+        const SizedBox(height: 22),
+        _buildUpcomingHeader(),
+        const SizedBox(height: 12),
+        ..._buildUpcomingEventCards(),
+      ],
+    );
+  }
+
+  Widget _buildPageHeader(String title, String subtitle) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
         ),
-      ),
+        const SizedBox(height: 4),
+        Text(
+          subtitle,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+      ],
     );
   }
 
@@ -699,7 +732,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
         if (widget.authService != null)
           InkWell(
-            onTap: _showProfileSheet,
+            onTap: () => _handleTabSelected(3),
             borderRadius: BorderRadius.circular(24),
             child: IconBadge(
               icon: FontAwesomeIcons.circleUser,
@@ -817,115 +850,77 @@ class _CalendarScreenState extends State<CalendarScreen> {
     ];
   }
 
-  Future<void> _showAnnouncementsSheet() async {
+  Widget _buildAnnouncementsTab() {
     final upcoming = _events.where((event) => event.endTime.isAfter(DateTime.now())).toList()
       ..sort((a, b) => a.startTime.compareTo(b.startTime));
 
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Announcements',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 14),
-                Flexible(
-                  child: upcoming.isEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 24),
-                          child: Text(
-                            'No upcoming announcements.',
-                            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                          ),
-                        )
-                      : ListView.separated(
-                          shrinkWrap: true,
-                          itemCount: upcoming.length,
-                          separatorBuilder: (context, index) => const SizedBox(height: 12),
-                          itemBuilder: (context, index) => _buildEventCard(upcoming[index]),
-                        ),
-                ),
-              ],
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
+      children: [
+        _buildPageHeader('Announcements', 'Upcoming events and community notices.'),
+        const SizedBox(height: 18),
+        if (upcoming.isEmpty)
+          GlassPanel(
+            child: Text(
+              'No upcoming announcements.',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
-          ),
-        );
-      },
+          )
+        else
+          for (final event in upcoming) ...[
+            _buildEventCard(event),
+            const SizedBox(height: 12),
+          ],
+      ],
     );
   }
 
-  Future<void> _showSettingsSheet() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildSettingsTab() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
+      children: [
+        _buildPageHeader('Settings', 'Personalize how the app looks.'),
+        const SizedBox(height: 18),
+        Text(
+          'Appearance',
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                letterSpacing: 0.6,
+                fontWeight: FontWeight.w700,
+              ),
+        ),
+        const SizedBox(height: 10),
+        ListenableBuilder(
+          listenable: widget.themeController,
+          builder: (context, _) {
+            final mode = widget.themeController.themeMode;
+            return Column(
               children: [
-                Text(
-                  'Settings',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Appearance',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        letterSpacing: 0.6,
-                        fontWeight: FontWeight.w700,
-                      ),
+                _buildThemeOption(
+                  icon: FontAwesomeIcons.circleHalfStroke,
+                  label: 'System default',
+                  selected: mode == ThemeMode.system,
+                  onTap: () => widget.themeController.setThemeMode(ThemeMode.system),
                 ),
                 const SizedBox(height: 10),
-                ListenableBuilder(
-                  listenable: widget.themeController,
-                  builder: (context, _) {
-                    final mode = widget.themeController.themeMode;
-                    return Column(
-                      children: [
-                        _buildThemeOption(
-                          icon: FontAwesomeIcons.circleHalfStroke,
-                          label: 'System default',
-                          selected: mode == ThemeMode.system,
-                          onTap: () => widget.themeController.setThemeMode(ThemeMode.system),
-                        ),
-                        const SizedBox(height: 10),
-                        _buildThemeOption(
-                          icon: FontAwesomeIcons.sun,
-                          label: 'Light',
-                          selected: mode == ThemeMode.light,
-                          onTap: () => widget.themeController.setThemeMode(ThemeMode.light),
-                        ),
-                        const SizedBox(height: 10),
-                        _buildThemeOption(
-                          icon: FontAwesomeIcons.moon,
-                          label: 'Dark',
-                          selected: mode == ThemeMode.dark,
-                          onTap: () => widget.themeController.setThemeMode(ThemeMode.dark),
-                        ),
-                      ],
-                    );
-                  },
+                _buildThemeOption(
+                  icon: FontAwesomeIcons.sun,
+                  label: 'Light',
+                  selected: mode == ThemeMode.light,
+                  onTap: () => widget.themeController.setThemeMode(ThemeMode.light),
+                ),
+                const SizedBox(height: 10),
+                _buildThemeOption(
+                  icon: FontAwesomeIcons.moon,
+                  label: 'Dark',
+                  selected: mode == ThemeMode.dark,
+                  onTap: () => widget.themeController.setThemeMode(ThemeMode.dark),
                 ),
               ],
-            ),
-          ),
-        );
-      },
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -1161,208 +1156,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
         });
       },
     );
-  }
-
-  Future<void> _showProfileSheet() async {
-    final authService = widget.authService;
-    if (authService == null) {
-      return;
-    }
-
-    final profile = await (authService as SupabaseAuthService).fetchUserProfile();
-    
-    final displayNameController = TextEditingController(
-      text: profile?.displayName ?? '',
-    );
-    final phoneController = TextEditingController(
-      text: profile?.phoneNumber ?? '',
-    );
-    final streetAddressController = TextEditingController(
-      text: profile?.streetAddress ?? '',
-    );
-    final barangayController = TextEditingController(
-      text: profile?.barangay ?? '',
-    );
-    final cityController = TextEditingController(
-      text: profile?.city ?? '',
-    );
-    final bioController = TextEditingController(
-      text: profile?.bio ?? '',
-    );
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            final currentProfile = authService.currentUser;
-            final displayName = currentProfile?.displayName?.trim().isNotEmpty == true
-                ? currentProfile!.displayName!
-                : 'Barangay Member';
-            final email = currentProfile?.email ?? 'No email available';
-
-            return SafeArea(
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    left: 20,
-                    right: 20,
-                    bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-                    top: 8,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Center(
-                        child: CircleAvatar(
-                          radius: 34,
-                          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                          child: currentProfile?.avatarUrl != null
-                              ? null
-                              : Text(
-                                  currentProfile?.initials ?? 'B',
-                                  style: TextStyle(
-                                    color: Theme.of(context).colorScheme.onPrimaryContainer,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        displayName,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        email,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'Personal Information',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: displayNameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Display name',
-                          prefixIcon: FaIcon(FontAwesomeIcons.userPen),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: phoneController,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(
-                          labelText: 'Phone number',
-                          prefixIcon: FaIcon(FontAwesomeIcons.phone),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: bioController,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Bio / About you',
-                          prefixIcon: FaIcon(FontAwesomeIcons.alignLeft),
-                          alignLabelWithHint: true,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        'Address',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: streetAddressController,
-                        decoration: const InputDecoration(
-                          labelText: 'Street address',
-                          prefixIcon: FaIcon(FontAwesomeIcons.houseChimney),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: barangayController,
-                        decoration: const InputDecoration(
-                          labelText: 'Barangay',
-                          prefixIcon: FaIcon(FontAwesomeIcons.mapPin),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: cityController,
-                        decoration: const InputDecoration(
-                          labelText: 'City',
-                          prefixIcon: FaIcon(FontAwesomeIcons.buildingFlag),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      FilledButton.icon(
-                        onPressed: () async {
-                          final nextName = displayNameController.text.trim();
-                          if (nextName.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Display name cannot be empty.')),
-                            );
-                            return;
-                          }
-
-                          final updatedProfile = AppUserProfile(
-                            id: profile?.id ?? currentProfile?.id ?? '',
-                            email: profile?.email ?? currentProfile?.email ?? '',
-                            displayName: nextName,
-                            phoneNumber: phoneController.text.trim().isEmpty ? null : phoneController.text.trim(),
-                            streetAddress: streetAddressController.text.trim().isEmpty ? null : streetAddressController.text.trim(),
-                            barangay: barangayController.text.trim().isEmpty ? null : barangayController.text.trim(),
-                            city: cityController.text.trim().isEmpty ? null : cityController.text.trim(),
-                            bio: bioController.text.trim().isEmpty ? null : bioController.text.trim(),
-                            avatarUrl: profile?.avatarUrl,
-                          );
-
-                          await (authService as SupabaseAuthService).createOrUpdateProfile(updatedProfile);
-                          
-                          if (!mounted) {
-                            return;
-                          }
-
-                          setState(() {});
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(this.context).showSnackBar(
-                            const SnackBar(content: Text('Profile updated.')),
-                          );
-                        },
-                        icon: const FaIcon(FontAwesomeIcons.floppyDisk),
-                        label: const Text('Save profile'),
-                      ),
-                      const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        onPressed: () async {
-                        Navigator.pop(context);
-                        await authService.signOut();
-                      },
-                      icon: const FaIcon(FontAwesomeIcons.arrowRightFromBracket),
-                      label: const Text('Sign out'),
-                    ),
-                  ],
-                ),
-              ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    displayNameController.dispose();
   }
 
   Future<void> _showEventDetails(BarangayEvent event) async {
@@ -1972,6 +1765,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Future<void> _handleEventAction(String action, BarangayEvent event) async {
     await widget.eventRepository.updateAttendanceStatus(event.id, action);
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('You selected: ${action.toUpperCase()} for "${event.title}"'),
@@ -2198,6 +1992,268 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   int _timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
+}
+
+class ProfileTab extends StatefulWidget {
+  const ProfileTab({
+    super.key,
+    required this.authService,
+    this.onProfileSaved,
+  });
+
+  final AppAuthService authService;
+  final VoidCallback? onProfileSaved;
+
+  @override
+  State<ProfileTab> createState() => _ProfileTabState();
+}
+
+class _ProfileTabState extends State<ProfileTab> {
+  final _displayNameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _streetAddressController = TextEditingController();
+  final _barangayController = TextEditingController();
+  final _cityController = TextEditingController();
+  final _bioController = TextEditingController();
+
+  AppUserProfile? _profile;
+  bool _loading = true;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadProfile());
+  }
+
+  @override
+  void dispose() {
+    _displayNameController.dispose();
+    _phoneController.dispose();
+    _streetAddressController.dispose();
+    _barangayController.dispose();
+    _cityController.dispose();
+    _bioController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadProfile() async {
+    final authService = widget.authService;
+    AppUserProfile? profile;
+    if (authService is SupabaseAuthService) {
+      profile = await authService.fetchUserProfile();
+    } else {
+      profile = authService.currentUser;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _profile = profile;
+      _displayNameController.text = profile?.displayName ?? '';
+      _phoneController.text = profile?.phoneNumber ?? '';
+      _streetAddressController.text = profile?.streetAddress ?? '';
+      _barangayController.text = profile?.barangay ?? '';
+      _cityController.text = profile?.city ?? '';
+      _bioController.text = profile?.bio ?? '';
+      _loading = false;
+    });
+  }
+
+  Future<void> _saveProfile() async {
+    final authService = widget.authService;
+    final currentProfile = authService.currentUser;
+    final nextName = _displayNameController.text.trim();
+    if (nextName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Display name cannot be empty.')),
+      );
+      return;
+    }
+
+    String? valueOrNull(TextEditingController controller) {
+      final text = controller.text.trim();
+      return text.isEmpty ? null : text;
+    }
+
+    final updatedProfile = AppUserProfile(
+      id: _profile?.id ?? currentProfile?.id ?? '',
+      email: _profile?.email ?? currentProfile?.email ?? '',
+      displayName: nextName,
+      phoneNumber: valueOrNull(_phoneController),
+      streetAddress: valueOrNull(_streetAddressController),
+      barangay: valueOrNull(_barangayController),
+      city: valueOrNull(_cityController),
+      bio: valueOrNull(_bioController),
+      avatarUrl: _profile?.avatarUrl,
+    );
+
+    setState(() => _saving = true);
+
+    try {
+      if (authService is SupabaseAuthService) {
+        await authService.createOrUpdateProfile(updatedProfile);
+      } else {
+        await authService.updateDisplayName(nextName);
+      }
+
+      if (!mounted) return;
+
+      setState(() => _profile = updatedProfile);
+      widget.onProfileSaved?.call();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile updated.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save your profile. Please try again.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final currentProfile = widget.authService.currentUser;
+    final displayName = _profile?.displayName?.trim().isNotEmpty == true
+        ? _profile!.displayName!
+        : (currentProfile?.displayName?.trim().isNotEmpty == true
+            ? currentProfile!.displayName!
+            : 'Barangay Member');
+    final email = _profile?.email.isNotEmpty == true
+        ? _profile!.email
+        : (currentProfile?.email ?? 'No email available');
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
+      children: [
+        Center(
+          child: CircleAvatar(
+            radius: 34,
+            backgroundColor: colorScheme.primaryContainer,
+            child: Text(
+              _profile?.initials ?? currentProfile?.initials ?? 'B',
+              style: TextStyle(
+                color: colorScheme.onPrimaryContainer,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          displayName,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          email,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 24),
+        GlassPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Personal Information',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _displayNameController,
+                decoration: const InputDecoration(
+                  labelText: 'Display name',
+                  prefixIcon: FaIcon(FontAwesomeIcons.userPen),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  labelText: 'Phone number',
+                  prefixIcon: FaIcon(FontAwesomeIcons.phone),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _bioController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Bio / About you',
+                  prefixIcon: FaIcon(FontAwesomeIcons.alignLeft),
+                  alignLabelWithHint: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        GlassPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Address',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _streetAddressController,
+                decoration: const InputDecoration(
+                  labelText: 'Street address',
+                  prefixIcon: FaIcon(FontAwesomeIcons.houseChimney),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _barangayController,
+                decoration: const InputDecoration(
+                  labelText: 'Barangay',
+                  prefixIcon: FaIcon(FontAwesomeIcons.mapPin),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _cityController,
+                decoration: const InputDecoration(
+                  labelText: 'City',
+                  prefixIcon: FaIcon(FontAwesomeIcons.buildingFlag),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        FilledButton.icon(
+          onPressed: _saving ? null : () => unawaited(_saveProfile()),
+          icon: const FaIcon(FontAwesomeIcons.floppyDisk),
+          label: Text(_saving ? 'Saving...' : 'Save profile'),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => unawaited(widget.authService.signOut()),
+          icon: const FaIcon(FontAwesomeIcons.arrowRightFromBracket),
+          label: const Text('Sign out'),
+        ),
+      ],
+    );
+  }
 }
 
 abstract class AppUpdateService {
