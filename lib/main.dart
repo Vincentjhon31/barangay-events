@@ -13,6 +13,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'auth_service.dart';
 import 'event_store.dart';
 import 'liquid_glass_components.dart';
+import 'profile_pages.dart';
 import 'theme_controller.dart';
 
 Future<void> main() async {
@@ -220,6 +221,7 @@ class _SignInScreenState extends State<SignInScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _displayNameController = TextEditingController();
+  final _departmentController = TextEditingController();
   bool _isSignUpMode = false;
   bool _isSubmitting = false;
 
@@ -228,6 +230,7 @@ class _SignInScreenState extends State<SignInScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _displayNameController.dispose();
+    _departmentController.dispose();
     super.dispose();
   }
 
@@ -235,10 +238,18 @@ class _SignInScreenState extends State<SignInScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     final displayName = _displayNameController.text.trim();
+    final department = _departmentController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Email and password are required.')),
+      );
+      return;
+    }
+
+    if (_isSignUpMode && (displayName.isEmpty || department.isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Name and department are required.')),
       );
       return;
     }
@@ -258,6 +269,7 @@ class _SignInScreenState extends State<SignInScreen> {
           email: email,
           password: password,
           displayName: displayName.isEmpty ? null : displayName,
+          department: department.isEmpty ? null : department,
         );
 
         if (!mounted) {
@@ -297,6 +309,7 @@ class _SignInScreenState extends State<SignInScreen> {
     required TextEditingController controller,
     required String label,
     required FaIconData icon,
+    String? hint,
     TextInputType? keyboardType,
     bool obscureText = false,
   }) {
@@ -309,6 +322,7 @@ class _SignInScreenState extends State<SignInScreen> {
       obscureText: obscureText,
       decoration: InputDecoration(
         labelText: label,
+        hintText: hint,
         prefixIcon: FaIcon(icon, size: 16),
         filled: true,
         fillColor: colorScheme.onSurface.withValues(alpha: 0.05),
@@ -398,6 +412,13 @@ class _SignInScreenState extends State<SignInScreen> {
                                 icon: FontAwesomeIcons.user,
                               ),
                               const SizedBox(height: 14),
+                              _buildGlassField(
+                                controller: _departmentController,
+                                label: 'Department / Office',
+                                hint: "e.g. Mayor's Office, HRMO",
+                                icon: FontAwesomeIcons.buildingUser,
+                              ),
+                              const SizedBox(height: 14),
                             ],
                             _buildGlassField(
                               controller: _emailController,
@@ -455,6 +476,10 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 }
 
+/// How the Calendar tab presents events: a month grid, a week strip, or a
+/// month-by-month agenda list.
+enum _CalendarViewMode { month, week, list }
+
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({
     super.key,
@@ -476,19 +501,29 @@ class CalendarScreen extends StatefulWidget {
 class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
-  CalendarFormat _calendarFormat = CalendarFormat.month;
+  _CalendarViewMode _viewMode = _CalendarViewMode.month;
+  DateTime _listMonth = DateTime(DateTime.now().year, DateTime.now().month);
   AppUpdateInfo? _availableUpdate;
   bool _checkingForUpdate = false;
   int _selectedTab = 0;
+  AppUserProfile? _userProfile;
+  final Set<String> _typeFilters = {}; // empty = show all event types
 
   List<BarangayEvent> _events = const [];
-  late final StreamSubscription<List<BarangayEvent>> _eventSubscription;
+  late StreamSubscription<List<BarangayEvent>> _eventSubscription;
+
+  CalendarFormat get _calendarFormat =>
+      _viewMode == _CalendarViewMode.week ? CalendarFormat.week : CalendarFormat.month;
+
+  bool _passesTypeFilter(BarangayEvent event) =>
+      _typeFilters.isEmpty || _typeFilters.contains(event.eventType);
 
   List<BarangayEvent> _getEventsForDay(DateTime day) {
     // Normalize the day to ignore time component
     final normalizedDay = DateTime.utc(day.year, day.month, day.day);
     final events = _events
         .where((event) => isSameDay(event.dayKey, normalizedDay))
+        .where(_passesTypeFilter)
         .toList();
     events.sort((a, b) {
       final aStart = a.startTime;
@@ -502,10 +537,37 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void initState() {
     super.initState();
     unawaited(_checkForUpdates(showDialogWhenAvailable: true));
-    _eventSubscription = widget.eventRepository.watchAllEvents().listen((events) {
+    unawaited(_loadUserProfile());
+    _eventSubscription = _listenToEvents();
+  }
+
+  StreamSubscription<List<BarangayEvent>> _listenToEvents() {
+    return widget.eventRepository.watchAllEvents().listen((events) {
       if (!mounted) return;
       setState(() => _events = events);
     });
+  }
+
+  /// Re-opens the event stream, e.g. after joining a shared calendar makes
+  /// more events visible to this user.
+  void _resubscribeEvents() {
+    unawaited(_eventSubscription.cancel());
+    _eventSubscription = _listenToEvents();
+  }
+
+  Future<void> _loadUserProfile() async {
+    final authService = widget.authService;
+    if (authService == null) return;
+
+    AppUserProfile? profile;
+    if (authService is SupabaseAuthService) {
+      profile = await authService.fetchUserProfile();
+    } else {
+      profile = authService.currentUser;
+    }
+
+    if (!mounted) return;
+    setState(() => _userProfile = profile);
   }
 
   @override
@@ -612,13 +674,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     children: [
                       _buildCalendarTab(),
                       _buildAnnouncementsTab(),
-                      _buildSettingsTab(),
                       if (widget.authService != null)
                         ProfileTab(
                           authService: widget.authService!,
-                          onProfileSaved: () {
-                            if (mounted) setState(() {});
-                          },
+                          themeController: widget.themeController,
+                          onProfileSaved: () => unawaited(_loadUserProfile()),
+                          onCalendarJoined: _resubscribeEvents,
                         )
                       else
                         const SizedBox.shrink(),
@@ -638,7 +699,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 items: const [
                   (icon: FontAwesomeIcons.calendarDays, label: 'Calendar'),
                   (icon: FontAwesomeIcons.bullhorn, label: 'Announce'),
-                  (icon: FontAwesomeIcons.gear, label: 'Settings'),
                   (icon: FontAwesomeIcons.user, label: 'Profile'),
                 ],
                 selectedIndex: _selectedTab,
@@ -669,12 +729,228 @@ class _CalendarScreenState extends State<CalendarScreen> {
         const SizedBox(height: 18),
         _buildAnnouncementBanner(),
         const SizedBox(height: 18),
-        _buildCalendar(),
-        const SizedBox(height: 22),
-        _buildUpcomingHeader(),
-        const SizedBox(height: 12),
-        ..._buildUpcomingEventCards(),
+        Center(child: _buildViewToggle()),
+        const SizedBox(height: 14),
+        _buildTypeFilterChips(),
+        const SizedBox(height: 14),
+        if (_viewMode == _CalendarViewMode.list) ...[
+          _buildMonthNav(),
+          const SizedBox(height: 14),
+          ..._buildMonthListSections(),
+        ] else ...[
+          _buildCalendar(),
+          const SizedBox(height: 22),
+          _buildUpcomingHeader(),
+          const SizedBox(height: 12),
+          ..._buildUpcomingEventCards(),
+        ],
       ],
+    );
+  }
+
+  Widget _buildViewToggle() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return SegmentedButton<_CalendarViewMode>(
+      style: SegmentedButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        backgroundColor: colorScheme.onSurface.withValues(alpha: 0.06),
+        foregroundColor: colorScheme.onSurfaceVariant,
+        selectedForegroundColor: colorScheme.onPrimary,
+        selectedBackgroundColor: colorScheme.primary.withValues(alpha: 0.4),
+        side: BorderSide(color: colorScheme.onSurface.withValues(alpha: 0.12)),
+      ),
+      showSelectedIcon: false,
+      segments: const [
+        ButtonSegment<_CalendarViewMode>(
+          value: _CalendarViewMode.month,
+          label: Text('Month'),
+        ),
+        ButtonSegment<_CalendarViewMode>(
+          value: _CalendarViewMode.week,
+          label: Text('Week'),
+        ),
+        ButtonSegment<_CalendarViewMode>(
+          value: _CalendarViewMode.list,
+          label: Text('List'),
+        ),
+      ],
+      selected: {_viewMode},
+      onSelectionChanged: (selection) {
+        setState(() {
+          _viewMode = selection.first;
+        });
+      },
+    );
+  }
+
+  Widget _buildMonthNav() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return GlassPanel(
+      borderRadius: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      child: Row(
+        children: [
+          IconButton(
+            key: const Key('list-prev-month'),
+            tooltip: 'Previous month',
+            onPressed: () => setState(() {
+              _listMonth = DateTime(_listMonth.year, _listMonth.month - 1);
+            }),
+            icon: FaIcon(
+              FontAwesomeIcons.chevronLeft,
+              size: 15,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              DateFormat('MMMM yyyy').format(_listMonth),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+          ),
+          IconButton(
+            key: const Key('list-next-month'),
+            tooltip: 'Next month',
+            onPressed: () => setState(() {
+              _listMonth = DateTime(_listMonth.year, _listMonth.month + 1);
+            }),
+            icon: FaIcon(
+              FontAwesomeIcons.chevronRight,
+              size: 15,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildMonthListSections() {
+    final monthEvents = _events
+        .where((event) =>
+            event.startTime.year == _listMonth.year &&
+            event.startTime.month == _listMonth.month)
+        .where(_passesTypeFilter)
+        .toList()
+      ..sort((a, b) => a.startTime.compareTo(b.startTime));
+
+    if (monthEvents.isEmpty) {
+      return [
+        GlassPanel(
+          child: Text(
+            'No events in ${DateFormat('MMMM yyyy').format(_listMonth)}.',
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+        ),
+      ];
+    }
+
+    final widgets = <Widget>[];
+    DateTime? currentDay;
+    for (final event in monthEvents) {
+      final day = DateTime(
+        event.startTime.year,
+        event.startTime.month,
+        event.startTime.day,
+      );
+      if (currentDay == null || !day.isAtSameMomentAs(currentDay)) {
+        currentDay = day;
+        widgets.add(Padding(
+          padding: EdgeInsets.only(top: widgets.isEmpty ? 0 : 10, bottom: 8),
+          child: Text(
+            DateFormat('EEEE, MMM d').format(day),
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  letterSpacing: 0.6,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ));
+      }
+      widgets.add(_buildEventCard(event));
+      widgets.add(const SizedBox(height: 12));
+    }
+    return widgets;
+  }
+
+  Widget _buildTypeFilterChips() {
+    final options = <({String? value, String label, FaIconData icon})>[
+      (value: null, label: 'All', icon: FontAwesomeIcons.layerGroup),
+      (value: EventType.public, label: 'Public', icon: FontAwesomeIcons.globe),
+      (value: EventType.shared, label: 'Shared', icon: FontAwesomeIcons.userGroup),
+      (value: EventType.personal, label: 'Personal', icon: FontAwesomeIcons.lock),
+    ];
+    final colorScheme = Theme.of(context).colorScheme;
+
+    // "All" is active when no specific type is checked; the type chips are
+    // checkable so several can be enabled at once.
+    bool isActive(String? value) =>
+        value == null ? _typeFilters.isEmpty : _typeFilters.contains(value);
+
+    void toggle(String? value) {
+      setState(() {
+        if (value == null) {
+          _typeFilters.clear();
+        } else if (_typeFilters.contains(value)) {
+          _typeFilters.remove(value);
+        } else {
+          _typeFilters.add(value);
+        }
+      });
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final option in options) ...[
+            InkWell(
+              borderRadius: BorderRadius.circular(999),
+              onTap: () => toggle(option.value),
+              child: GlassPanel(
+                borderRadius: 999,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                tint: isActive(option.value) ? colorScheme.primary : null,
+                tintAlpha: isActive(option.value) ? 0.22 : null,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    FaIcon(
+                      option.icon,
+                      size: 12,
+                      color: isActive(option.value)
+                          ? colorScheme.primary
+                          : colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      option.label,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: isActive(option.value)
+                                ? colorScheme.primary
+                                : colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                    if (option.value != null && isActive(option.value)) ...[
+                      const SizedBox(width: 6),
+                      FaIcon(
+                        FontAwesomeIcons.circleCheck,
+                        size: 12,
+                        color: colorScheme.primary,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
     );
   }
 
@@ -700,7 +976,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildHeader() {
-    final profile = widget.authService?.currentUser;
+    final profile = _userProfile ?? widget.authService?.currentUser;
     final barangayName = profile?.barangay?.trim().isNotEmpty == true
         ? profile!.barangay!.toUpperCase()
         : 'BARANGAY';
@@ -732,7 +1008,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
         if (widget.authService != null)
           InkWell(
-            onTap: () => _handleTabSelected(3),
+            onTap: () => _handleTabSelected(2),
             borderRadius: BorderRadius.circular(24),
             child: IconBadge(
               icon: FontAwesomeIcons.circleUser,
@@ -875,88 +1151,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _buildSettingsTab() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
-      children: [
-        _buildPageHeader('Settings', 'Personalize how the app looks.'),
-        const SizedBox(height: 18),
-        Text(
-          'Appearance',
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                letterSpacing: 0.6,
-                fontWeight: FontWeight.w700,
-              ),
-        ),
-        const SizedBox(height: 10),
-        ListenableBuilder(
-          listenable: widget.themeController,
-          builder: (context, _) {
-            final mode = widget.themeController.themeMode;
-            return Column(
-              children: [
-                _buildThemeOption(
-                  icon: FontAwesomeIcons.circleHalfStroke,
-                  label: 'System default',
-                  selected: mode == ThemeMode.system,
-                  onTap: () => widget.themeController.setThemeMode(ThemeMode.system),
-                ),
-                const SizedBox(height: 10),
-                _buildThemeOption(
-                  icon: FontAwesomeIcons.sun,
-                  label: 'Light',
-                  selected: mode == ThemeMode.light,
-                  onTap: () => widget.themeController.setThemeMode(ThemeMode.light),
-                ),
-                const SizedBox(height: 10),
-                _buildThemeOption(
-                  icon: FontAwesomeIcons.moon,
-                  label: 'Dark',
-                  selected: mode == ThemeMode.dark,
-                  onTap: () => widget.themeController.setThemeMode(ThemeMode.dark),
-                ),
-              ],
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildThemeOption({
-    required FaIconData icon,
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: onTap,
-      child: GlassPanel(
-        borderRadius: 20,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        tint: selected ? colorScheme.primary : null,
-        tintAlpha: selected ? 0.18 : null,
-        child: Row(
-          children: [
-            IconBadge(icon: icon, tint: colorScheme.primary, size: 40, iconSize: 16),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                label,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-              ),
-            ),
-            if (selected)
-              FaIcon(FontAwesomeIcons.circleCheck, size: 18, color: colorScheme.primary),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildUpdateBanner(AppUpdateInfo update) {
     return Material(
       color: Theme.of(context).colorScheme.secondaryContainer,
@@ -1004,10 +1198,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
       padding: const EdgeInsets.fromLTRB(12, 14, 12, 6),
       child: Column(
         children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: _buildFormatToggle(),
-          ),
           TableCalendar(
             firstDay: DateTime.utc(2020, 1, 1),
             lastDay: DateTime.utc(2030, 12, 31),
@@ -1026,7 +1216,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
             },
             onFormatChanged: (format) {
               setState(() {
-                _calendarFormat = format;
+                _viewMode = format == CalendarFormat.week
+                    ? _CalendarViewMode.week
+                    : _CalendarViewMode.month;
               });
             },
             onPageChanged: (focusedDay) {
@@ -1130,31 +1322,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildFormatToggle() {
-    final colorScheme = Theme.of(context).colorScheme;
-    return SegmentedButton<CalendarFormat>(
-      style: SegmentedButton.styleFrom(
-        visualDensity: VisualDensity.compact,
-        backgroundColor: colorScheme.onSurface.withValues(alpha: 0.06),
-        foregroundColor: colorScheme.onSurfaceVariant,
-        selectedForegroundColor: colorScheme.onPrimary,
-        selectedBackgroundColor: colorScheme.primary.withValues(alpha: 0.4),
-        side: BorderSide(color: colorScheme.onSurface.withValues(alpha: 0.12)),
-      ),
-      showSelectedIcon: false,
-      segments: const [
-        ButtonSegment<CalendarFormat>(value: CalendarFormat.month, label: Text('Month')),
-        ButtonSegment<CalendarFormat>(value: CalendarFormat.week, label: Text('Week')),
-      ],
-      selected: {_calendarFormat},
-      onSelectionChanged: (selection) {
-        setState(() {
-          _calendarFormat = selection.first;
-        });
-      },
     );
   }
 
@@ -1348,6 +1515,57 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
+
+                      // Posted by section (if creator info is available)
+                      if (event.creatorLabel != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .tertiaryContainer
+                                .withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              FaIcon(
+                                FontAwesomeIcons.userPen,
+                                color: Theme.of(context).colorScheme.tertiary,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Posted by',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      event.creatorLabel!,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyLarge
+                                          ?.copyWith(fontWeight: FontWeight.w500),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
 
                       // Description section (if not empty)
                       if (event.description.isNotEmpty) ...[
@@ -1544,6 +1762,32 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           ),
                         ],
                       ),
+
+                      // Delete (only for the event's creator)
+                      if (_canDeleteEvent(event)) ...[
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Theme.of(context).colorScheme.error,
+                              side: BorderSide(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .error
+                                    .withValues(alpha: 0.6),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              unawaited(_confirmDeleteEvent(event));
+                            },
+                            icon: const FaIcon(FontAwesomeIcons.trashCan, size: 16),
+                            label: const Text('Delete event'),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1588,11 +1832,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    event.title,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          event.title,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
                         ),
+                      ),
+                      const SizedBox(width: 8),
+                      _buildEventTypePill(event.eventType),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Row(
@@ -1634,6 +1887,28 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                     ],
                   ),
+                  if (event.creatorLabel != null) ...[
+                    const SizedBox(height: 3),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        FaIcon(
+                          FontAwesomeIcons.userPen,
+                          size: 13,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            'By ${event.creatorLabel}',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   if (event.description.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Text(
@@ -1667,11 +1942,25 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
             ),
             PopupMenuButton<String>(
-              onSelected: (value) => unawaited(_handleEventAction(value, event)),
+              onSelected: (value) {
+                if (value == 'delete') {
+                  unawaited(_confirmDeleteEvent(event));
+                } else {
+                  unawaited(_handleEventAction(value, event));
+                }
+              },
               itemBuilder: (context) => [
                 const PopupMenuItem(value: 'going', child: Text('Going')),
                 const PopupMenuItem(value: 'maybe', child: Text('Maybe')),
                 const PopupMenuItem(value: 'not_going', child: Text('Not Going')),
+                if (_canDeleteEvent(event))
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: Text(
+                      'Delete event',
+                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    ),
+                  ),
               ],
               icon: FaIcon(
                 FontAwesomeIcons.ellipsisVertical,
@@ -1682,6 +1971,104 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  FaIconData _eventTypeIcon(String type) {
+    switch (type) {
+      case EventType.shared:
+        return FontAwesomeIcons.userGroup;
+      case EventType.personal:
+        return FontAwesomeIcons.lock;
+      default:
+        return FontAwesomeIcons.globe;
+    }
+  }
+
+  String _eventTypeLabel(String type) {
+    switch (type) {
+      case EventType.shared:
+        return 'Shared';
+      case EventType.personal:
+        return 'Personal';
+      default:
+        return 'Public';
+    }
+  }
+
+  Color _eventTypeTint(String type) {
+    switch (type) {
+      case EventType.shared:
+        return const Color(0xFF1F9D65);
+      case EventType.personal:
+        return Theme.of(context).colorScheme.onSurfaceVariant;
+      default:
+        return const Color(0xFF2B7FFF);
+    }
+  }
+
+  Widget _buildEventTypePill(String type) {
+    final tint = _eventTypeTint(type);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: tint.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: tint.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FaIcon(_eventTypeIcon(type), size: 9, color: tint),
+          const SizedBox(width: 4),
+          Text(
+            _eventTypeLabel(type),
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: tint,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? get _currentUserId => (_userProfile ?? widget.authService?.currentUser)?.id;
+
+  bool _canDeleteEvent(BarangayEvent event) {
+    final userId = _currentUserId;
+    return userId != null && event.createdById == userId;
+  }
+
+  Future<void> _confirmDeleteEvent(BarangayEvent event) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete event'),
+        content: Text('Delete "${event.title}"? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    await widget.eventRepository.deleteEvent(event.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Deleted "${event.title}".')),
     );
   }
 
@@ -1781,6 +2168,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
     DateTime selectedDate = _selectedDay ?? _focusedDay;
     TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
     TimeOfDay endTime = const TimeOfDay(hour: 10, minute: 0);
+    String eventType = EventType.public;
+
+    String typeHelperText() {
+      switch (eventType) {
+        case EventType.shared:
+          return 'Only people who joined your calendar can see this.';
+        case EventType.personal:
+          return 'Only you can see this.';
+        default:
+          return 'Everyone in the app can see this.';
+      }
+    }
 
     Future<void> pickDate(StateSetter setDialogState) async {
       final pickedDate = await showDatePicker(
@@ -1841,6 +2240,43 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    SegmentedButton<String>(
+                      style: SegmentedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment<String>(
+                          value: EventType.public,
+                          label: Text('Public'),
+                          icon: FaIcon(FontAwesomeIcons.globe, size: 12),
+                        ),
+                        ButtonSegment<String>(
+                          value: EventType.shared,
+                          label: Text('Shared'),
+                          icon: FaIcon(FontAwesomeIcons.userGroup, size: 12),
+                        ),
+                        ButtonSegment<String>(
+                          value: EventType.personal,
+                          label: Text('Personal'),
+                          icon: FaIcon(FontAwesomeIcons.lock, size: 12),
+                        ),
+                      ],
+                      selected: {eventType},
+                      onSelectionChanged: (selection) {
+                        setDialogState(() {
+                          eventType = selection.first;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      typeHelperText(),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                    const SizedBox(height: 16),
                     TextField(
                       controller: titleController,
                       decoration: const InputDecoration(
@@ -1951,19 +2387,36 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     endTime.minute,
                   );
 
+                  final creator = _userProfile ?? widget.authService?.currentUser;
+
                   unawaited(() async {
-                    await widget.eventRepository.addEvent(
-                      BarangayEvent(
-                        id: DateTime.now().microsecondsSinceEpoch.toString(),
-                        title: title,
-                        location: location,
-                        startTime: startDateTime,
-                        endTime: endDateTime,
-                        description: description,
-                        hasAttachment: false,
-                        createdAt: DateTime.now(),
-                      ),
-                    );
+                    try {
+                      await widget.eventRepository.addEvent(
+                        BarangayEvent(
+                          id: DateTime.now().microsecondsSinceEpoch.toString(),
+                          title: title,
+                          location: location,
+                          startTime: startDateTime,
+                          endTime: endDateTime,
+                          description: description,
+                          hasAttachment: false,
+                          createdAt: DateTime.now(),
+                          createdByName: creator?.displayName,
+                          createdByDepartment: creator?.department,
+                          createdById: creator?.id,
+                          eventType: eventType,
+                        ),
+                      );
+                    } catch (error) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(this.context).showSnackBar(
+                        SnackBar(
+                          content: Text('Could not save the event: $error'),
+                          duration: const Duration(seconds: 6),
+                        ),
+                      );
+                      return;
+                    }
 
                     if (!mounted) {
                       return;
@@ -1992,268 +2445,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   int _timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
-}
-
-class ProfileTab extends StatefulWidget {
-  const ProfileTab({
-    super.key,
-    required this.authService,
-    this.onProfileSaved,
-  });
-
-  final AppAuthService authService;
-  final VoidCallback? onProfileSaved;
-
-  @override
-  State<ProfileTab> createState() => _ProfileTabState();
-}
-
-class _ProfileTabState extends State<ProfileTab> {
-  final _displayNameController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _streetAddressController = TextEditingController();
-  final _barangayController = TextEditingController();
-  final _cityController = TextEditingController();
-  final _bioController = TextEditingController();
-
-  AppUserProfile? _profile;
-  bool _loading = true;
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_loadProfile());
-  }
-
-  @override
-  void dispose() {
-    _displayNameController.dispose();
-    _phoneController.dispose();
-    _streetAddressController.dispose();
-    _barangayController.dispose();
-    _cityController.dispose();
-    _bioController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadProfile() async {
-    final authService = widget.authService;
-    AppUserProfile? profile;
-    if (authService is SupabaseAuthService) {
-      profile = await authService.fetchUserProfile();
-    } else {
-      profile = authService.currentUser;
-    }
-
-    if (!mounted) return;
-
-    setState(() {
-      _profile = profile;
-      _displayNameController.text = profile?.displayName ?? '';
-      _phoneController.text = profile?.phoneNumber ?? '';
-      _streetAddressController.text = profile?.streetAddress ?? '';
-      _barangayController.text = profile?.barangay ?? '';
-      _cityController.text = profile?.city ?? '';
-      _bioController.text = profile?.bio ?? '';
-      _loading = false;
-    });
-  }
-
-  Future<void> _saveProfile() async {
-    final authService = widget.authService;
-    final currentProfile = authService.currentUser;
-    final nextName = _displayNameController.text.trim();
-    if (nextName.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Display name cannot be empty.')),
-      );
-      return;
-    }
-
-    String? valueOrNull(TextEditingController controller) {
-      final text = controller.text.trim();
-      return text.isEmpty ? null : text;
-    }
-
-    final updatedProfile = AppUserProfile(
-      id: _profile?.id ?? currentProfile?.id ?? '',
-      email: _profile?.email ?? currentProfile?.email ?? '',
-      displayName: nextName,
-      phoneNumber: valueOrNull(_phoneController),
-      streetAddress: valueOrNull(_streetAddressController),
-      barangay: valueOrNull(_barangayController),
-      city: valueOrNull(_cityController),
-      bio: valueOrNull(_bioController),
-      avatarUrl: _profile?.avatarUrl,
-    );
-
-    setState(() => _saving = true);
-
-    try {
-      if (authService is SupabaseAuthService) {
-        await authService.createOrUpdateProfile(updatedProfile);
-      } else {
-        await authService.updateDisplayName(nextName);
-      }
-
-      if (!mounted) return;
-
-      setState(() => _profile = updatedProfile);
-      widget.onProfileSaved?.call();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile updated.')),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not save your profile. Please try again.')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _saving = false);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    final currentProfile = widget.authService.currentUser;
-    final displayName = _profile?.displayName?.trim().isNotEmpty == true
-        ? _profile!.displayName!
-        : (currentProfile?.displayName?.trim().isNotEmpty == true
-            ? currentProfile!.displayName!
-            : 'Barangay Member');
-    final email = _profile?.email.isNotEmpty == true
-        ? _profile!.email
-        : (currentProfile?.email ?? 'No email available');
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
-      children: [
-        Center(
-          child: CircleAvatar(
-            radius: 34,
-            backgroundColor: colorScheme.primaryContainer,
-            child: Text(
-              _profile?.initials ?? currentProfile?.initials ?? 'B',
-              style: TextStyle(
-                color: colorScheme.onPrimaryContainer,
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          displayName,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          email,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-        ),
-        const SizedBox(height: 24),
-        GlassPanel(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Personal Information',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _displayNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Display name',
-                  prefixIcon: FaIcon(FontAwesomeIcons.userPen),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'Phone number',
-                  prefixIcon: FaIcon(FontAwesomeIcons.phone),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _bioController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Bio / About you',
-                  prefixIcon: FaIcon(FontAwesomeIcons.alignLeft),
-                  alignLabelWithHint: true,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        GlassPanel(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Address',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _streetAddressController,
-                decoration: const InputDecoration(
-                  labelText: 'Street address',
-                  prefixIcon: FaIcon(FontAwesomeIcons.houseChimney),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _barangayController,
-                decoration: const InputDecoration(
-                  labelText: 'Barangay',
-                  prefixIcon: FaIcon(FontAwesomeIcons.mapPin),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _cityController,
-                decoration: const InputDecoration(
-                  labelText: 'City',
-                  prefixIcon: FaIcon(FontAwesomeIcons.buildingFlag),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
-        FilledButton.icon(
-          onPressed: _saving ? null : () => unawaited(_saveProfile()),
-          icon: const FaIcon(FontAwesomeIcons.floppyDisk),
-          label: Text(_saving ? 'Saving...' : 'Save profile'),
-        ),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: () => unawaited(widget.authService.signOut()),
-          icon: const FaIcon(FontAwesomeIcons.arrowRightFromBracket),
-          label: const Text('Sign out'),
-        ),
-      ],
-    );
-  }
 }
 
 abstract class AppUpdateService {

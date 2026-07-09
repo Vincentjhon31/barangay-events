@@ -2,6 +2,13 @@ import 'dart:async';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// Visibility levels for an event.
+abstract final class EventType {
+  static const String public = 'public';
+  static const String shared = 'shared';
+  static const String personal = 'personal';
+}
+
 class BarangayEvent {
   const BarangayEvent({
     required this.id,
@@ -14,6 +21,10 @@ class BarangayEvent {
     required this.createdAt,
     this.attachmentType,
     this.attendanceStatus,
+    this.createdByName,
+    this.createdByDepartment,
+    this.createdById,
+    this.eventType = EventType.public,
   });
 
   final String id;
@@ -26,6 +37,22 @@ class BarangayEvent {
   final String? attachmentType;
   final String? attendanceStatus;
   final DateTime createdAt;
+  final String? createdByName;
+  final String? createdByDepartment;
+  final String? createdById;
+  final String eventType;
+
+  /// "Name • Department", or whichever half is available; null when neither is.
+  String? get creatorLabel {
+    final name = createdByName?.trim();
+    final department = createdByDepartment?.trim();
+    final hasName = name != null && name.isNotEmpty;
+    final hasDepartment = department != null && department.isNotEmpty;
+    if (hasName && hasDepartment) return '$name • $department';
+    if (hasName) return name;
+    if (hasDepartment) return department;
+    return null;
+  }
 
   DateTime get dayKey => DateTime.utc(startTime.year, startTime.month, startTime.day);
 
@@ -43,6 +70,10 @@ class BarangayEvent {
       attachmentType: attachmentType,
       attendanceStatus: attendanceStatus ?? this.attendanceStatus,
       createdAt: createdAt,
+      createdByName: createdByName,
+      createdByDepartment: createdByDepartment,
+      createdById: createdById,
+      eventType: eventType,
     );
   }
 
@@ -58,6 +89,10 @@ class BarangayEvent {
       'attachmentType': attachmentType,
       'attendanceStatus': attendanceStatus,
       'createdAt': createdAt.toIso8601String(),
+      'createdByName': createdByName,
+      'createdByDepartment': createdByDepartment,
+      'createdById': createdById,
+      'eventType': eventType,
     };
   }
 
@@ -74,6 +109,10 @@ class BarangayEvent {
       'attachment_type': attachmentType,
       'attendance_status': attendanceStatus,
       'created_at': createdAt.toIso8601String(),
+      'created_by_name': createdByName,
+      'created_by_department': createdByDepartment,
+      'created_by_id': createdById,
+      'event_type': eventType,
     };
   }
 
@@ -89,6 +128,10 @@ class BarangayEvent {
       attachmentType: json['attachmentType'] as String?,
       attendanceStatus: json['attendanceStatus'] as String?,
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+      createdByName: json['createdByName'] as String?,
+      createdByDepartment: json['createdByDepartment'] as String?,
+      createdById: json['createdById'] as String?,
+      eventType: json['eventType'] as String? ?? EventType.public,
     );
   }
 
@@ -104,6 +147,10 @@ class BarangayEvent {
       attachmentType: row['attachment_type'] as String?,
       attendanceStatus: row['attendance_status'] as String?,
       createdAt: _readDateTime(row['created_at']) ?? DateTime.now(),
+      createdByName: row['created_by_name'] as String?,
+      createdByDepartment: row['created_by_department'] as String?,
+      createdById: row['created_by_id'] as String?,
+      eventType: row['event_type'] as String? ?? EventType.public,
     );
   }
 
@@ -121,6 +168,7 @@ class BarangayEvent {
 abstract class EventRepository {
   Stream<List<BarangayEvent>> watchAllEvents();
   Future<void> addEvent(BarangayEvent event);
+  Future<void> deleteEvent(String eventId);
   Future<void> updateAttendanceStatus(String eventId, String? status);
   Future<void> dispose();
 }
@@ -147,6 +195,12 @@ class MemoryEventRepository implements EventRepository {
   @override
   Future<void> addEvent(BarangayEvent event) async {
     _events = [..._events, event];
+    _updates.add(_sortedEvents);
+  }
+
+  @override
+  Future<void> deleteEvent(String eventId) async {
+    _events = _events.where((event) => event.id != eventId).toList();
     _updates.add(_sortedEvents);
   }
 
@@ -198,6 +252,11 @@ class SupabaseEventRepository implements EventRepository {
   }
 
   @override
+  Future<void> deleteEvent(String eventId) async {
+    await _client.from(tableName).delete().eq('id', eventId);
+  }
+
+  @override
   Future<void> updateAttendanceStatus(String eventId, String? status) async {
     await _client.from(tableName).update({
       'attendance_status': status,
@@ -226,6 +285,10 @@ List<BarangayEvent> _seedEvents() {
       hasAttachment: true,
       attachmentType: 'application/pdf',
       createdAt: DateTime(2026, 6, 1),
+      createdByName: 'Juan Dela Cruz',
+      createdByDepartment: "Mayor's Office",
+      createdById: 'mock-user-id',
+      eventType: EventType.shared,
     ),
     BarangayEvent(
       id: 'seed-basketball',
@@ -247,6 +310,10 @@ List<BarangayEvent> _seedEvents() {
       description: 'Free blood pressure and glucose monitoring',
       hasAttachment: false,
       createdAt: DateTime(2026, 6, 1),
+      createdByName: 'Maria Santos',
+      createdByDepartment: 'HRMO',
+      createdById: 'mock-user-id',
+      eventType: EventType.personal,
     ),
     BarangayEvent(
       id: 'seed-fiesta',
