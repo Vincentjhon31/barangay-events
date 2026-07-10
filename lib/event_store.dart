@@ -25,6 +25,8 @@ class BarangayEvent {
     this.createdByDepartment,
     this.createdById,
     this.eventType = EventType.public,
+    this.groupId,
+    this.groupName,
   });
 
   final String id;
@@ -41,6 +43,11 @@ class BarangayEvent {
   final String? createdByDepartment;
   final String? createdById;
   final String eventType;
+
+  /// For group ("shared") events: which group the event was posted to.
+  /// [groupName] is denormalized for display, like [createdByName].
+  final String? groupId;
+  final String? groupName;
 
   /// "Name • Department", or whichever half is available; null when neither is.
   String? get creatorLabel {
@@ -74,6 +81,8 @@ class BarangayEvent {
       createdByDepartment: createdByDepartment,
       createdById: createdById,
       eventType: eventType,
+      groupId: groupId,
+      groupName: groupName,
     );
   }
 
@@ -93,6 +102,8 @@ class BarangayEvent {
       'createdByDepartment': createdByDepartment,
       'createdById': createdById,
       'eventType': eventType,
+      'groupId': groupId,
+      'groupName': groupName,
     };
   }
 
@@ -113,6 +124,8 @@ class BarangayEvent {
       'created_by_department': createdByDepartment,
       'created_by_id': createdById,
       'event_type': eventType,
+      'group_id': groupId,
+      'group_name': groupName,
     };
   }
 
@@ -132,6 +145,8 @@ class BarangayEvent {
       createdByDepartment: json['createdByDepartment'] as String?,
       createdById: json['createdById'] as String?,
       eventType: json['eventType'] as String? ?? EventType.public,
+      groupId: json['groupId'] as String?,
+      groupName: json['groupName'] as String?,
     );
   }
 
@@ -151,6 +166,8 @@ class BarangayEvent {
       createdByDepartment: row['created_by_department'] as String?,
       createdById: row['created_by_id'] as String?,
       eventType: row['event_type'] as String? ?? EventType.public,
+      groupId: row['group_id'] as String?,
+      groupName: row['group_name'] as String?,
     );
   }
 
@@ -165,11 +182,51 @@ class BarangayEvent {
   }
 }
 
+/// A group (group-chat style): one code, many members; group events are
+/// visible to every member.
+class BarangayGroup {
+  const BarangayGroup({
+    required this.id,
+    required this.name,
+    required this.code,
+    this.memberCount = 0,
+    this.createdBy,
+  });
+
+  final String id;
+  final String name;
+  final String code;
+  final int memberCount;
+  final String? createdBy;
+}
+
 abstract class EventRepository {
   Stream<List<BarangayEvent>> watchAllEvents();
   Future<void> addEvent(BarangayEvent event);
   Future<void> deleteEvent(String eventId);
   Future<void> updateAttendanceStatus(String eventId, String? status);
+
+  /// Groups the current user belongs to.
+  Future<List<BarangayGroup>> listMyGroups();
+
+  /// Searches all groups by name.
+  Future<List<BarangayGroup>> searchGroups(String query);
+
+  /// Creates a group (the creator automatically becomes a member).
+  Future<BarangayGroup> createGroup(String name);
+
+  /// Joins the group behind [code]; returns it for display.
+  Future<BarangayGroup> joinGroupByCode(String code);
+
+  /// Joins [groupId] directly (from search results).
+  Future<void> joinGroup(String groupId);
+
+  /// Leaves [groupId].
+  Future<void> leaveGroup(String groupId);
+
+  /// How many members [groupId] has right now.
+  Future<int> fetchGroupMemberCount(String groupId);
+
   Future<void> dispose();
 }
 
@@ -210,6 +267,92 @@ class MemoryEventRepository implements EventRepository {
         .map((event) => event.id == eventId ? event.copyWith(attendanceStatus: status) : event)
         .toList();
     _updates.add(_sortedEvents);
+  }
+
+  // Group state for the in-memory repo; the "current user" matches
+  // MemoryAuthService's mock account.
+  static const String _mockUserId = 'mock-user-id';
+  final List<BarangayGroup> _allGroups = [
+    const BarangayGroup(
+      id: 'grp-mayor',
+      name: "Mayor's Office Updates",
+      code: 'MAYOR1',
+      memberCount: 24,
+      createdBy: 'mayor-1',
+    ),
+    const BarangayGroup(
+      id: 'grp-basketball',
+      name: 'Basketball League',
+      code: 'B4LL22',
+      memberCount: 12,
+      createdBy: 'hrmo-1',
+    ),
+  ];
+  final Set<String> _myGroupIds = {};
+  int _groupCounter = 0;
+
+  @override
+  Future<List<BarangayGroup>> listMyGroups() async {
+    return _allGroups.where((group) => _myGroupIds.contains(group.id)).toList();
+  }
+
+  @override
+  Future<List<BarangayGroup>> searchGroups(String query) async {
+    final needle = query.trim().toLowerCase();
+    if (needle.isEmpty) return const [];
+    return _allGroups
+        .where((group) => group.name.toLowerCase().contains(needle))
+        .toList();
+  }
+
+  @override
+  Future<BarangayGroup> createGroup(String name) async {
+    _groupCounter++;
+    final group = BarangayGroup(
+      id: 'grp-local-$_groupCounter',
+      name: name,
+      code: 'NEW${_groupCounter.toString().padLeft(3, '0')}',
+      memberCount: 1,
+      createdBy: _mockUserId,
+    );
+    _allGroups.add(group);
+    _myGroupIds.add(group.id);
+    return group;
+  }
+
+  @override
+  Future<BarangayGroup> joinGroupByCode(String code) async {
+    final normalized = code.trim().toUpperCase();
+    final group = _allGroups
+        .where((group) => group.code.toUpperCase() == normalized)
+        .firstOrNull;
+    if (group == null) {
+      throw Exception('Invalid group code');
+    }
+    _myGroupIds.add(group.id);
+    return group;
+  }
+
+  @override
+  Future<void> joinGroup(String groupId) async {
+    if (!_allGroups.any((group) => group.id == groupId)) {
+      throw Exception('Group not found');
+    }
+    _myGroupIds.add(groupId);
+  }
+
+  @override
+  Future<void> leaveGroup(String groupId) async {
+    _myGroupIds.remove(groupId);
+  }
+
+  @override
+  Future<int> fetchGroupMemberCount(String groupId) async {
+    return _allGroups
+            .where((group) => group.id == groupId)
+            .firstOrNull
+            ?.memberCount ??
+        0;
   }
 
   @override
@@ -263,6 +406,132 @@ class SupabaseEventRepository implements EventRepository {
     }).eq('id', eventId);
   }
 
+  BarangayGroup _groupFromRow(Map<String, dynamic> row) {
+    final members = row['group_members'];
+    var memberCount = 0;
+    if (members is List && members.isNotEmpty) {
+      final first = members.first;
+      if (first is Map<String, dynamic>) {
+        memberCount = first['count'] as int? ?? 0;
+      }
+    }
+    return BarangayGroup(
+      id: row['id'] as String,
+      name: row['name'] as String? ?? 'Unnamed group',
+      code: row['code'] as String? ?? '',
+      memberCount: memberCount,
+      createdBy: row['created_by'] as String?,
+    );
+  }
+
+  @override
+  Future<List<BarangayGroup>> listMyGroups() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return const [];
+
+    final memberships = await _client
+        .from('group_members')
+        .select('group_id')
+        .eq('user_id', userId);
+    final groupIds =
+        memberships.map((row) => row['group_id'] as String).toList();
+    if (groupIds.isEmpty) return const [];
+
+    final rows = await _client
+        .from('groups')
+        .select('id, name, code, created_by, group_members(count)')
+        .inFilter('id', groupIds)
+        .order('name', ascending: true);
+    return rows.map(_groupFromRow).toList();
+  }
+
+  @override
+  Future<List<BarangayGroup>> searchGroups(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return const [];
+
+    final rows = await _client
+        .from('groups')
+        .select('id, name, code, created_by, group_members(count)')
+        .ilike('name', '%$trimmed%')
+        .order('name', ascending: true)
+        .limit(20);
+    return rows.map(_groupFromRow).toList();
+  }
+
+  @override
+  Future<BarangayGroup> createGroup(String name) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) {
+      throw Exception('You must be signed in to create a group');
+    }
+
+    final row = await _client
+        .from('groups')
+        .insert({'name': name.trim(), 'created_by': userId})
+        .select('id, name, code, created_by')
+        .single();
+    final groupId = row['id'] as String;
+    await _client
+        .from('group_members')
+        .insert({'group_id': groupId, 'user_id': userId});
+
+    return BarangayGroup(
+      id: groupId,
+      name: row['name'] as String? ?? name,
+      code: row['code'] as String? ?? '',
+      memberCount: 1,
+      createdBy: userId,
+    );
+  }
+
+  @override
+  Future<BarangayGroup> joinGroupByCode(String code) async {
+    final row = await _client
+        .from('groups')
+        .select('id, name, code, created_by, group_members(count)')
+        .eq('code', code.trim().toUpperCase())
+        .maybeSingle();
+    if (row == null) {
+      throw Exception('Invalid group code');
+    }
+
+    final group = _groupFromRow(row);
+    await joinGroup(group.id);
+    return group;
+  }
+
+  @override
+  Future<void> joinGroup(String groupId) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return;
+    await _client.from('group_members').upsert(
+      {'group_id': groupId, 'user_id': userId},
+      onConflict: 'group_id,user_id',
+      ignoreDuplicates: true,
+    );
+  }
+
+  @override
+  Future<void> leaveGroup(String groupId) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return;
+    await _client
+        .from('group_members')
+        .delete()
+        .eq('group_id', groupId)
+        .eq('user_id', userId);
+  }
+
+  @override
+  Future<int> fetchGroupMemberCount(String groupId) async {
+    final rows = await _client
+        .from('group_members')
+        .select('user_id')
+        .eq('group_id', groupId);
+    return rows.length;
+  }
+
   @override
   Future<void> dispose() async {
   }
@@ -314,6 +583,22 @@ List<BarangayEvent> _seedEvents() {
       createdByDepartment: 'HRMO',
       createdById: 'mock-user-id',
       eventType: EventType.personal,
+    ),
+    BarangayEvent(
+      id: 'seed-mayor-meeting',
+      title: 'Mayor Staff Meeting',
+      location: "Mayor's Office",
+      startTime: DateTime(2026, 7, 15, 10, 0),
+      endTime: DateTime(2026, 7, 15, 11, 0),
+      description: 'Weekly coordination meeting with department heads',
+      hasAttachment: false,
+      createdAt: DateTime(2026, 7, 8),
+      createdByName: 'Juan Dela Cruz',
+      createdByDepartment: "Mayor's Office",
+      createdById: 'mayor-1',
+      eventType: EventType.shared,
+      groupId: 'grp-mayor',
+      groupName: "Mayor's Office Updates",
     ),
     BarangayEvent(
       id: 'seed-fiesta',

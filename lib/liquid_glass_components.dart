@@ -5,6 +5,28 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 bool isDarkContext(BuildContext context) => Theme.of(context).brightness == Brightness.dark;
 
+/// The app's visual style: the fancy translucent "Liquid Glass" look, or a
+/// plain solid palette that renders much faster on low-end phones.
+enum UiStyle { liquid, solid }
+
+/// Makes the chosen [UiStyle] available to every glass component without
+/// threading it through constructors. Defaults to [UiStyle.liquid] when no
+/// scope is present (e.g. in isolated widget tests).
+class AppStyleScope extends InheritedWidget {
+  const AppStyleScope({super.key, required this.style, required super.child});
+
+  final UiStyle style;
+
+  static UiStyle of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<AppStyleScope>()?.style ??
+      UiStyle.liquid;
+
+  @override
+  bool updateShouldNotify(AppStyleScope oldWidget) => oldWidget.style != style;
+}
+
+bool isSolidStyle(BuildContext context) => AppStyleScope.of(context) == UiStyle.solid;
+
 /// A frosted backdrop with soft color blobs — the base layer for the
 /// iOS 26 "Liquid Glass" look. Adapts its palette to light/dark mode.
 class LiquidGlassBackdrop extends StatelessWidget {
@@ -13,6 +35,14 @@ class LiquidGlassBackdrop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = isDarkContext(context);
+
+    if (isSolidStyle(context)) {
+      // Solid palette: a flat background, no orbs, no blur — the cheapest
+      // thing a GPU can draw.
+      return ColoredBox(
+        color: dark ? const Color(0xFF05070C) : const Color(0xFFF8FCFF),
+      );
+    }
 
     // The whole backdrop is static, so it renders once into a cached layer
     // instead of re-blurring the screen every frame.
@@ -97,6 +127,13 @@ class BlurOrb extends StatelessWidget {
 
 /// A frosted glass panel with soft refraction. Adapts contrast to
 /// light/dark mode so it reads correctly on either backdrop.
+///
+/// By default the panel is plain translucency: a real `BackdropFilter` blur
+/// on every card forces the GPU to re-blur that region every frame, which
+/// makes scrolling lists visibly laggy on phones. Because the backdrop
+/// behind panels is a static gradient, translucency looks nearly identical.
+/// Set [frosted] only on surfaces that content actually scrolls underneath
+/// (the floating tab bar), where one live blur is affordable.
 class GlassPanel extends StatelessWidget {
   const GlassPanel({
     super.key,
@@ -105,6 +142,7 @@ class GlassPanel extends StatelessWidget {
     this.borderRadius = 28,
     this.tint,
     this.tintAlpha,
+    this.frosted = false,
   });
 
   final Widget? child;
@@ -112,35 +150,74 @@ class GlassPanel extends StatelessWidget {
   final double borderRadius;
   final Color? tint;
   final double? tintAlpha;
+  final bool frosted;
 
   @override
   Widget build(BuildContext context) {
     final dark = isDarkContext(context);
+
+    if (isSolidStyle(context)) {
+      // Solid palette: opaque cards, light borders, small shadows. Accent
+      // tints (selected states, warnings) are blended into the card color
+      // so they still read clearly.
+      final cardColor = dark ? const Color(0xFF121826) : Colors.white;
+      final color = tint == null
+          ? cardColor
+          : Color.alphaBlend(tint!.withValues(alpha: tintAlpha ?? 0.16), cardColor);
+
+      return Container(
+        padding: padding,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(borderRadius),
+          border: Border.all(
+            color: dark
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.06),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: dark ? 0.25 : 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: child,
+      );
+    }
+
     final baseTint = tint ?? Colors.white;
     final alpha = tintAlpha ?? (dark ? 0.12 : 0.55);
+
+    final panel = Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: baseTint.withValues(alpha: alpha),
+        borderRadius: BorderRadius.circular(borderRadius),
+        border: Border.all(
+          color: dark ? Colors.white.withValues(alpha: 0.14) : Colors.white.withValues(alpha: 0.75),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: dark ? 0.35 : 0.08),
+            blurRadius: dark ? 28 : 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: child,
+    );
+
+    if (!frosted) {
+      return panel;
+    }
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            color: baseTint.withValues(alpha: alpha),
-            borderRadius: BorderRadius.circular(borderRadius),
-            border: Border.all(
-              color: dark ? Colors.white.withValues(alpha: 0.14) : Colors.white.withValues(alpha: 0.75),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: dark ? 0.35 : 0.08),
-                blurRadius: dark ? 28 : 24,
-                offset: const Offset(0, 12),
-              ),
-            ],
-          ),
-          child: child,
-        ),
+        child: panel,
       ),
     );
   }
@@ -275,12 +352,16 @@ class TabButton extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.showDot = false,
   });
 
   final FaIconData icon;
   final String label;
   final bool selected;
   final VoidCallback onTap;
+
+  /// Shows a small notification dot on the icon (e.g. unseen feed items).
+  final bool showDot;
 
   @override
   Widget build(BuildContext context) {
@@ -304,7 +385,29 @@ class TabButton extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            FaIcon(icon, color: color, size: 20),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                FaIcon(icon, color: color, size: 20),
+                if (showDot)
+                  Positioned(
+                    top: -2,
+                    right: -4,
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE53935),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: dark ? const Color(0xFF05070C) : Colors.white,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(height: 4),
             Text(
               label,
@@ -329,11 +432,15 @@ class LiquidTabBar extends StatelessWidget {
     required this.items,
     required this.selectedIndex,
     required this.onSelect,
+    this.dotIndices = const {},
   });
 
   final List<({FaIconData icon, String label})> items;
   final int selectedIndex;
   final ValueChanged<int> onSelect;
+
+  /// Tab indices that should show a notification dot.
+  final Set<int> dotIndices;
 
   @override
   Widget build(BuildContext context) {
@@ -342,6 +449,7 @@ class LiquidTabBar extends StatelessWidget {
       borderRadius: 30,
       tint: dark ? Colors.black : Colors.white,
       tintAlpha: dark ? 0.32 : 0.55,
+      frosted: true,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -353,6 +461,7 @@ class LiquidTabBar extends StatelessWidget {
                 label: items[i].label,
                 selected: i == selectedIndex,
                 onTap: () => onSelect(i),
+                showDot: dotIndices.contains(i),
               ),
             ),
         ],

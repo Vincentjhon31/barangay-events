@@ -24,17 +24,17 @@ git status
 git commit -m "fix: describe what you changed here"
 
 # 5. Push to GitHub
-git push origin main
+  git push origin main
 ```
 
 ### Commit message style used in this repo
 
-| Prefix      | When to use                                  | Example                                      |
-|-------------|----------------------------------------------|----------------------------------------------|
-| `feat:`     | New feature                                  | `feat: add event details view modal`          |
-| `fix:`      | Bug fix                                      | `fix: tab bar highlight not updating`         |
-| `chore:`    | Maintenance, configs, cleanup                | `chore: remove unused CI workflow`            |
-| `refactor:` | Code restructure, no behavior change         | `refactor: extract liquid-glass components`   |
+| Prefix      | When to use                          | Example                                     |
+| ----------- | ------------------------------------ | ------------------------------------------- |
+| `feat:`     | New feature                          | `feat: add event details view modal`        |
+| `fix:`      | Bug fix                              | `fix: tab bar highlight not updating`       |
+| `chore:`    | Maintenance, configs, cleanup        | `chore: remove unused CI workflow`          |
+| `refactor:` | Code restructure, no behavior change | `refactor: extract liquid-glass components` |
 
 > Pushing to `main` alone does **NOT** build an APK or notify users.
 > Only a **tag** starting with `v` triggers the release workflow.

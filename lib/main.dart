@@ -1,8 +1,9 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -97,6 +98,10 @@ class _BarangayCalendarAppState extends State<BarangayCalendarApp> {
           theme: _buildTheme(Brightness.light),
           darkTheme: _buildTheme(Brightness.dark),
           themeMode: widget.themeController.themeMode,
+          builder: (context, child) => AppStyleScope(
+            style: widget.themeController.uiStyle,
+            child: child ?? const SizedBox.shrink(),
+          ),
           home: FutureBuilder<AppAuthService>(
             future: _authServiceFuture,
             builder: (context, snapshot) {
@@ -509,8 +514,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
   AppUserProfile? _userProfile;
   final Set<String> _typeFilters = {}; // empty = show all event types
 
+  static const String _feedLastSeenKey = 'feed_last_seen';
+  int _feedLastSeenMillis = 0; // persisted; drives the tab dot
+  int _feedNewThreshold = 0; // snapshot at feed-open; drives the NEW pills
+
   List<BarangayEvent> _events = const [];
   late StreamSubscription<List<BarangayEvent>> _eventSubscription;
+
+  bool get _hasUnseenFeedItems => _events
+      .any((event) => event.createdAt.millisecondsSinceEpoch > _feedLastSeenMillis);
 
   CalendarFormat get _calendarFormat =>
       _viewMode == _CalendarViewMode.week ? CalendarFormat.week : CalendarFormat.month;
@@ -538,7 +550,24 @@ class _CalendarScreenState extends State<CalendarScreen> {
     super.initState();
     unawaited(_checkForUpdates(showDialogWhenAvailable: true));
     unawaited(_loadUserProfile());
+    unawaited(_loadFeedLastSeen());
     _eventSubscription = _listenToEvents();
+  }
+
+  Future<void> _loadFeedLastSeen() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _feedLastSeenMillis = prefs.getInt(_feedLastSeenKey) ?? 0;
+      _feedNewThreshold = _feedLastSeenMillis;
+    });
+  }
+
+  Future<void> _markFeedSeen() async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    setState(() => _feedLastSeenMillis = now);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_feedLastSeenKey, now);
   }
 
   StreamSubscription<List<BarangayEvent>> _listenToEvents() {
@@ -653,6 +682,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void _handleTabSelected(int index) {
     if (index == _selectedTab) return;
     setState(() => _selectedTab = index);
+    if (index == 1) {
+      // Entering the feed: keep NEW pills relative to the previous visit,
+      // then persist "seen now" so the tab dot clears.
+      _feedNewThreshold = _feedLastSeenMillis;
+      unawaited(_markFeedSeen());
+    }
   }
 
   @override
@@ -673,13 +708,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     index: _selectedTab,
                     children: [
                       _buildCalendarTab(),
-                      _buildAnnouncementsTab(),
+                      _buildFeedTab(),
+                      GroupsTab(
+                        eventRepository: widget.eventRepository,
+                        onGroupsChanged: _resubscribeEvents,
+                      ),
                       if (widget.authService != null)
                         ProfileTab(
                           authService: widget.authService!,
                           themeController: widget.themeController,
                           onProfileSaved: () => unawaited(_loadUserProfile()),
-                          onCalendarJoined: _resubscribeEvents,
                         )
                       else
                         const SizedBox.shrink(),
@@ -698,11 +736,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
               child: LiquidTabBar(
                 items: const [
                   (icon: FontAwesomeIcons.calendarDays, label: 'Calendar'),
-                  (icon: FontAwesomeIcons.bullhorn, label: 'Announce'),
+                  (icon: FontAwesomeIcons.newspaper, label: 'Feed'),
+                  (icon: FontAwesomeIcons.peopleGroup, label: 'Groups'),
                   (icon: FontAwesomeIcons.user, label: 'Profile'),
                 ],
                 selectedIndex: _selectedTab,
                 onSelect: _handleTabSelected,
+                dotIndices: _hasUnseenFeedItems ? const {1} : const <int>{},
               ),
             ),
           ),
@@ -880,7 +920,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final options = <({String? value, String label, FaIconData icon})>[
       (value: null, label: 'All', icon: FontAwesomeIcons.layerGroup),
       (value: EventType.public, label: 'Public', icon: FontAwesomeIcons.globe),
-      (value: EventType.shared, label: 'Shared', icon: FontAwesomeIcons.userGroup),
+      (value: EventType.shared, label: 'Group', icon: FontAwesomeIcons.userGroup),
       (value: EventType.personal, label: 'Personal', icon: FontAwesomeIcons.lock),
     ];
     final colorScheme = Theme.of(context).colorScheme;
@@ -1008,7 +1048,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
         if (widget.authService != null)
           InkWell(
-            onTap: () => _handleTabSelected(2),
+            onTap: () => _handleTabSelected(3),
             borderRadius: BorderRadius.circular(24),
             child: IconBadge(
               icon: FontAwesomeIcons.circleUser,
@@ -1126,28 +1166,122 @@ class _CalendarScreenState extends State<CalendarScreen> {
     ];
   }
 
-  Widget _buildAnnouncementsTab() {
-    final upcoming = _events.where((event) => event.endTime.isAfter(DateTime.now())).toList()
-      ..sort((a, b) => a.startTime.compareTo(b.startTime));
+  Widget _buildFeedTab() {
+    final feedEvents = List<BarangayEvent>.from(_events)
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
       children: [
-        _buildPageHeader('Announcements', 'Upcoming events and community notices.'),
+        _buildPageHeader('Feed', 'New events from people you follow and the community.'),
         const SizedBox(height: 18),
-        if (upcoming.isEmpty)
+        if (feedEvents.isEmpty)
           GlassPanel(
             child: Text(
-              'No upcoming announcements.',
+              'Nothing here yet. Join groups from the Groups tab to see their '
+              'events, or check back for public announcements.',
               style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           )
         else
-          for (final event in upcoming) ...[
-            _buildEventCard(event),
+          for (final event in feedEvents) ...[
+            _buildFeedCard(event),
             const SizedBox(height: 12),
           ],
       ],
+    );
+  }
+
+  String _relativeTime(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return DateFormat('MMM d').format(time);
+  }
+
+  Widget _buildFeedCard(BarangayEvent event) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isNew =
+        event.createdAt.millisecondsSinceEpoch > _feedNewThreshold;
+    final postedBy = event.creatorLabel ?? 'Community calendar';
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(26),
+      onTap: () => _showEventDetails(event),
+      child: GlassPanel(
+        borderRadius: 26,
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            IconBadge(icon: _getEventIcon(event.title), tint: _getEventTint(event.title)),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          event.title,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ),
+                      if (isNew) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE53935).withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: const Color(0xFFE53935).withValues(alpha: 0.4),
+                            ),
+                          ),
+                          child: const Text(
+                            'NEW',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFFE53935),
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: 8),
+                      _buildEventTypePill(event.eventType),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Posted by $postedBy • ${_relativeTime(event.createdAt)}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${_formatDate(event.startTime)} • ${_formatTime(event.startTime)} - ${_formatTime(event.endTime)}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            FaIcon(
+              FontAwesomeIcons.chevronRight,
+              size: 14,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1563,6 +1697,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
                               ),
                             ],
                           ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // Group info (group events): which group + member count.
+                      if (event.eventType == EventType.shared) ...[
+                        _GroupInfoSection(
+                          event: event,
+                          repository: widget.eventRepository,
                         ),
                         const SizedBox(height: 16),
                       ],
@@ -1988,7 +2131,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   String _eventTypeLabel(String type) {
     switch (type) {
       case EventType.shared:
-        return 'Shared';
+        return 'Group';
       case EventType.personal:
         return 'Personal';
       default:
@@ -2161,7 +2304,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  void _showAddEventDialog(BuildContext context) {
+  Future<void> _showAddEventDialog(BuildContext context) async {
+    List<BarangayGroup> myGroups = const [];
+    try {
+      myGroups = await widget.eventRepository.listMyGroups();
+    } catch (_) {
+      // Groups unavailable (e.g. migration not run) — dialog still works
+      // for public/personal events.
+    }
+    if (!context.mounted) return;
+
     final titleController = TextEditingController();
     final locationController = TextEditingController();
     final descriptionController = TextEditingController();
@@ -2169,11 +2321,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
     TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
     TimeOfDay endTime = const TimeOfDay(hour: 10, minute: 0);
     String eventType = EventType.public;
+    BarangayGroup? selectedGroup = myGroups.isNotEmpty ? myGroups.first : null;
 
     String typeHelperText() {
       switch (eventType) {
         case EventType.shared:
-          return 'Only people who joined your calendar can see this.';
+          return 'Only members of the group you pick can see this.';
         case EventType.personal:
           return 'Only you can see this.';
         default:
@@ -2253,7 +2406,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         ),
                         ButtonSegment<String>(
                           value: EventType.shared,
-                          label: Text('Shared'),
+                          label: Text('Group'),
                           icon: FaIcon(FontAwesomeIcons.userGroup, size: 12),
                         ),
                         ButtonSegment<String>(
@@ -2276,6 +2429,36 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                     ),
+                    if (eventType == EventType.shared) ...[
+                      const SizedBox(height: 12),
+                      if (myGroups.isEmpty)
+                        Text(
+                          'You have no groups yet — create one in the Groups tab first.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                        )
+                      else
+                        DropdownButtonFormField<BarangayGroup>(
+                          initialValue: selectedGroup,
+                          decoration: const InputDecoration(
+                            labelText: 'Post to group',
+                            prefixIcon: FaIcon(FontAwesomeIcons.userGroup, size: 14),
+                          ),
+                          items: [
+                            for (final group in myGroups)
+                              DropdownMenuItem(
+                                value: group,
+                                child: Text(group.name),
+                              ),
+                          ],
+                          onChanged: (group) {
+                            setDialogState(() {
+                              selectedGroup = group;
+                            });
+                          },
+                        ),
+                    ],
                     const SizedBox(height: 16),
                     TextField(
                       controller: titleController,
@@ -2387,13 +2570,26 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     endTime.minute,
                   );
 
+                  if (eventType == EventType.shared && selectedGroup == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Pick a group for this event — create or join one in the Groups tab.',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+
                   final creator = _userProfile ?? widget.authService?.currentUser;
+                  final newEventId = DateTime.now().microsecondsSinceEpoch.toString();
+                  final group = eventType == EventType.shared ? selectedGroup : null;
 
                   unawaited(() async {
                     try {
                       await widget.eventRepository.addEvent(
                         BarangayEvent(
-                          id: DateTime.now().microsecondsSinceEpoch.toString(),
+                          id: newEventId,
                           title: title,
                           location: location,
                           startTime: startDateTime,
@@ -2405,6 +2601,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           createdByDepartment: creator?.department,
                           createdById: creator?.id,
                           eventType: eventType,
+                          groupId: group?.id,
+                          groupName: group?.name,
                         ),
                       );
                     } catch (error) {
@@ -2430,7 +2628,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     Navigator.pop(context);
                     ScaffoldMessenger.of(this.context).showSnackBar(
                       SnackBar(
-                        content: Text('Added "$title" to the calendar.'),
+                        content: Text(
+                          group != null
+                              ? 'Added "$title" to ${group.name}.'
+                              : 'Added "$title" to the calendar.',
+                        ),
                       ),
                     );
                   }());
@@ -2445,6 +2647,93 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   int _timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
+}
+
+/// The "Group" block inside the event details sheet for group events:
+/// shows which group the event belongs to and how many members it has.
+class _GroupInfoSection extends StatefulWidget {
+  const _GroupInfoSection({
+    required this.event,
+    required this.repository,
+  });
+
+  final BarangayEvent event;
+  final EventRepository repository;
+
+  @override
+  State<_GroupInfoSection> createState() => _GroupInfoSectionState();
+}
+
+class _GroupInfoSectionState extends State<_GroupInfoSection> {
+  int? _memberCount;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadCount());
+  }
+
+  Future<void> _loadCount() async {
+    final groupId = widget.event.groupId;
+    if (groupId == null) return;
+    try {
+      final count = await widget.repository.fetchGroupMemberCount(groupId);
+      if (!mounted) return;
+      setState(() => _memberCount = count);
+    } catch (_) {
+      // Count stays hidden; the group name is still shown.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final groupName = widget.event.groupName?.trim().isNotEmpty == true
+        ? widget.event.groupName!
+        : 'Group event';
+    final count = _memberCount;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          FaIcon(
+            FontAwesomeIcons.userGroup,
+            color: colorScheme.primary,
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Group',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  count == null
+                      ? groupName
+                      : '$groupName • $count member${count == 1 ? '' : 's'}',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyLarge
+                      ?.copyWith(fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 abstract class AppUpdateService {

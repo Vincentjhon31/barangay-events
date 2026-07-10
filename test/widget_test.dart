@@ -199,4 +199,137 @@ void main() {
     );
     expect(find.text('Fun Run'), findsOneWidget);
   });
+
+  testWidgets('feed tab lists events with posted-by info', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Feed'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('New events from people you follow'), findsOneWidget);
+    expect(find.textContaining('Posted by'), findsWidgets);
+  });
+
+  testWidgets('group event details show group name and member count',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Feed'));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Mayor Staff Meeting'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Mayor Staff Meeting'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.textContaining('24 members'));
+    expect(find.textContaining("Mayor's Office Updates"), findsOneWidget);
+    expect(find.textContaining('24 members'), findsOneWidget);
+  });
+
+  testWidgets('group events need a group picked in the add dialog',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+
+    // Not a member of any group yet: picking the Group type shows a hint
+    // instead of the group dropdown.
+    expect(find.textContaining('no groups yet'), findsNothing);
+
+    final dialog = find.byType(AlertDialog);
+    await tester.tap(find.descendant(of: dialog, matching: find.text('Group')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('no groups yet'), findsOneWidget);
+  });
+
+  testWidgets('can create, search, and join groups', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Groups'));
+    await tester.pumpAndSettle();
+
+    // Create a group.
+    await tester.scrollUntilVisible(
+      find.text('Create group'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Group name'),
+      'Purok 3',
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Create group'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create group'));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('My Groups (1)'),
+      -200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Purok 3'), findsOneWidget);
+    expect(find.text('My Groups (1)'), findsOneWidget);
+
+    // Search for an existing group and join it.
+    await tester.scrollUntilVisible(
+      find.text('Search by name'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Search by name'),
+      'Mayor',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Search'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining("Mayor's Office Updates"), findsWidgets);
+
+    await tester.ensureVisible(find.text('Join'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Join'));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('My Groups (2)'),
+      -200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('My Groups (2)'), findsOneWidget);
+  });
 }

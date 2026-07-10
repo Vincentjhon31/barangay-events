@@ -1,10 +1,11 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'auth_service.dart';
+import 'event_store.dart';
 import 'liquid_glass_components.dart';
 import 'theme_controller.dart';
 
@@ -16,16 +17,11 @@ class ProfileTab extends StatefulWidget {
     required this.authService,
     required this.themeController,
     this.onProfileSaved,
-    this.onCalendarJoined,
   });
 
   final AppAuthService authService;
   final ThemeController themeController;
   final VoidCallback? onProfileSaved;
-
-  /// Called after the user joins another calendar so the event list can
-  /// refresh with the newly visible shared events.
-  final VoidCallback? onCalendarJoined;
 
   @override
   State<ProfileTab> createState() => _ProfileTabState();
@@ -77,17 +73,6 @@ class _ProfileTabState extends State<ProfileTab> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => SettingsPage(themeController: widget.themeController),
-      ),
-    );
-  }
-
-  void _openCalendarSharing() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => CalendarSharingPage(
-          authService: widget.authService,
-          onCalendarJoined: widget.onCalendarJoined,
-        ),
       ),
     );
   }
@@ -187,16 +172,6 @@ class _ProfileTabState extends State<ProfileTab> {
                 title: 'Profile Information',
                 subtitle: 'Name, department, contact and address',
                 onTap: () => unawaited(_openProfileInformation()),
-              ),
-              Divider(
-                height: 8,
-                color: colorScheme.onSurface.withValues(alpha: 0.08),
-              ),
-              QuickActionTile(
-                icon: FontAwesomeIcons.userGroup,
-                title: 'Calendar Sharing',
-                subtitle: 'Your share code and joined calendars',
-                onTap: _openCalendarSharing,
               ),
               Divider(
                 height: 8,
@@ -530,180 +505,387 @@ class _ProfileInformationPageState extends State<ProfileInformationPage> {
   }
 }
 
-/// Full page for calendar sharing: shows the user's own share code and
-/// lets them join someone else's calendar with a code.
-class CalendarSharingPage extends StatefulWidget {
-  const CalendarSharingPage({
+/// The Groups tab (group-chat model): my groups with shareable codes,
+/// create a group, find groups by name, or join with a code.
+class GroupsTab extends StatefulWidget {
+  const GroupsTab({
     super.key,
-    required this.authService,
-    this.onCalendarJoined,
+    required this.eventRepository,
+    this.onGroupsChanged,
   });
 
-  final AppAuthService authService;
-  final VoidCallback? onCalendarJoined;
+  final EventRepository eventRepository;
+  final VoidCallback? onGroupsChanged;
 
   @override
-  State<CalendarSharingPage> createState() => _CalendarSharingPageState();
+  State<GroupsTab> createState() => _GroupsTabState();
 }
 
-class _CalendarSharingPageState extends State<CalendarSharingPage> {
-  final _joinCodeController = TextEditingController();
-  String? _shareCode;
-  bool _loadingCode = true;
-  bool _joining = false;
+class _GroupsTabState extends State<GroupsTab> {
+  final _nameController = TextEditingController();
+  final _searchController = TextEditingController();
+  final _codeController = TextEditingController();
+
+  List<BarangayGroup> _myGroups = const [];
+  List<BarangayGroup> _searchResults = const [];
+  final Set<String> _busyIds = {};
+  bool _searched = false;
+  bool _searching = false;
+  bool _creating = false;
+  bool _joiningByCode = false;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_loadShareCode());
+    unawaited(_loadMyGroups());
   }
 
   @override
   void dispose() {
-    _joinCodeController.dispose();
+    _nameController.dispose();
+    _searchController.dispose();
+    _codeController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadShareCode() async {
-    String? code;
+  bool _isMember(String groupId) =>
+      _myGroups.any((group) => group.id == groupId);
+
+  Future<void> _loadMyGroups() async {
     try {
-      code = await widget.authService.fetchShareCode();
+      final groups = await widget.eventRepository.listMyGroups();
+      if (!mounted) return;
+      setState(() => _myGroups = groups);
     } catch (_) {
-      code = null;
+      // Groups unavailable (e.g. migration not run yet) — leave empty.
     }
-    if (!mounted) return;
-    setState(() {
-      _shareCode = code;
-      _loadingCode = false;
-    });
   }
 
-  Future<void> _copyShareCode() async {
-    final code = _shareCode;
-    if (code == null) return;
-    await Clipboard.setData(ClipboardData(text: code));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Share code copied.')),
-    );
-  }
-
-  Future<void> _joinCalendar() async {
-    final code = _joinCodeController.text.trim();
-    if (code.isEmpty) {
+  Future<void> _createGroup() async {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a share code first.')),
+        const SnackBar(content: Text('Enter a group name first.')),
       );
       return;
     }
 
-    setState(() => _joining = true);
-
+    setState(() => _creating = true);
     try {
-      final ownerLabel = await widget.authService.joinSharedCalendar(code);
+      final group = await widget.eventRepository.createGroup(name);
       if (!mounted) return;
-
-      _joinCodeController.clear();
-      widget.onCalendarJoined?.call();
+      _nameController.clear();
+      await _loadMyGroups();
+      widget.onGroupsChanged?.call();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('You now follow $ownerLabel.')),
+        SnackBar(
+          content: Text(
+            'Created "${group.name}". Share code ${group.code} so others can join.',
+          ),
+          duration: const Duration(seconds: 8),
+        ),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not join. Check the code and try again.'),
-        ),
+        const SnackBar(content: Text('Could not create the group. Please try again.')),
       );
     } finally {
-      if (mounted) {
-        setState(() => _joining = false);
-      }
+      if (mounted) setState(() => _creating = false);
     }
+  }
+
+  Future<void> _search() async {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) return;
+
+    setState(() => _searching = true);
+    try {
+      final results = await widget.eventRepository.searchGroups(query);
+      if (!mounted) return;
+      setState(() {
+        _searchResults = results;
+        _searched = true;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Search failed. Please try again.')),
+      );
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  Future<void> _join(BarangayGroup group) async {
+    setState(() => _busyIds.add(group.id));
+    try {
+      await widget.eventRepository.joinGroup(group.id);
+      if (!mounted) return;
+      await _loadMyGroups();
+      widget.onGroupsChanged?.call();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('You joined "${group.name}".')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not join the group. Please try again.')),
+      );
+    } finally {
+      if (mounted) setState(() => _busyIds.remove(group.id));
+    }
+  }
+
+  Future<void> _joinByCode() async {
+    final code = _codeController.text.trim();
+    if (code.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a group code first.')),
+      );
+      return;
+    }
+
+    setState(() => _joiningByCode = true);
+    try {
+      final group = await widget.eventRepository.joinGroupByCode(code);
+      if (!mounted) return;
+      _codeController.clear();
+      await _loadMyGroups();
+      widget.onGroupsChanged?.call();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('You joined "${group.name}".')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not join. Check the code and try again.')),
+      );
+    } finally {
+      if (mounted) setState(() => _joiningByCode = false);
+    }
+  }
+
+  Future<void> _leave(BarangayGroup group) async {
+    setState(() => _busyIds.add(group.id));
+    try {
+      await widget.eventRepository.leaveGroup(group.id);
+      if (!mounted) return;
+      await _loadMyGroups();
+      widget.onGroupsChanged?.call();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not leave the group. Please try again.')),
+      );
+    } finally {
+      if (mounted) setState(() => _busyIds.remove(group.id));
+    }
+  }
+
+  Future<void> _copyCode(BarangayGroup group) async {
+    await Clipboard.setData(ClipboardData(text: group.code));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Code ${group.code} copied.')),
+    );
+  }
+
+  Widget _buildPanelHeader(FaIconData icon, Color tint, String title) {
+    return Row(
+      children: [
+        IconBadge(icon: icon, tint: tint, size: 40, iconSize: 16),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMyGroupRow(BarangayGroup group) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final busy = _busyIds.contains(group.id);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          IconBadge(
+            icon: FontAwesomeIcons.peopleGroup,
+            tint: colorScheme.primary,
+            size: 38,
+            iconSize: 15,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  group.name,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                Text(
+                  '${group.memberCount} member${group.memberCount == 1 ? '' : 's'} • code ${group.code}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Copy group code',
+            onPressed: () => unawaited(_copyCode(group)),
+            icon: const FaIcon(FontAwesomeIcons.copy, size: 15),
+          ),
+          OutlinedButton(
+            onPressed: busy ? null : () => unawaited(_leave(group)),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchResultRow(BarangayGroup group) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final busy = _busyIds.contains(group.id);
+    final member = _isMember(group.id);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          const IconBadge(
+            icon: FontAwesomeIcons.peopleGroup,
+            tint: Color(0xFF1F9D65),
+            size: 38,
+            iconSize: 15,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  group.name,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                Text(
+                  '${group.memberCount} member${group.memberCount == 1 ? '' : 's'}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (member)
+            const OutlinedButton(onPressed: null, child: Text('Joined'))
+          else
+            FilledButton(
+              onPressed: busy ? null : () => unawaited(_join(group)),
+              child: const Text('Join'),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return _GlassSubPage(
-      title: 'Calendar Sharing',
-      subtitle: 'Follow an office, or let others follow yours.',
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
       children: [
+        Text(
+          'Groups',
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Like group chats, but for events everyone should see.',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 18),
         GlassPanel(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  IconBadge(
-                    icon: FontAwesomeIcons.qrcode,
-                    tint: colorScheme.primary,
-                    size: 40,
-                    iconSize: 16,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Your share code',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                    ),
-                  ),
-                ],
+              _buildPanelHeader(
+                FontAwesomeIcons.peopleGroup,
+                colorScheme.primary,
+                'My Groups (${_myGroups.length})',
               ),
-              const SizedBox(height: 14),
-              if (_loadingCode)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(12),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              else if (_shareCode == null)
+              const SizedBox(height: 8),
+              if (_myGroups.isEmpty)
                 Text(
-                  'No share code available yet. Save your profile first, then come back here.',
+                  'You are not in any group yet. Create one below, or join with '
+                  'a code or by searching.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
                 )
               else
-                Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          color: colorScheme.primary.withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: colorScheme.primary.withValues(alpha: 0.30),
-                          ),
-                        ),
-                        child: Text(
-                          _shareCode!,
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 4,
-                                fontFamily: 'monospace',
-                              ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    IconButton.filledTonal(
-                      tooltip: 'Copy code',
-                      onPressed: () => unawaited(_copyShareCode()),
-                      icon: const FaIcon(FontAwesomeIcons.copy, size: 16),
-                    ),
-                  ],
+                for (final group in _myGroups) _buildMyGroupRow(group),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        GlassPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildPanelHeader(
+                FontAwesomeIcons.plus,
+                const Color(0xFFFFA726),
+                'Create a group',
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Group name',
+                  hintText: "e.g. Mayor's Office Updates",
+                  prefixIcon: FaIcon(FontAwesomeIcons.penToSquare, size: 14),
                 ),
-              const SizedBox(height: 12),
+              ),
+              const SizedBox(height: 14),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                ),
+                onPressed: _creating ? null : () => unawaited(_createGroup()),
+                icon: const FaIcon(FontAwesomeIcons.plus, size: 14),
+                label: Text(_creating ? 'Creating...' : 'Create group'),
+              ),
+              const SizedBox(height: 10),
               Text(
-                'Give this code to people who should see your Shared events. '
-                'Public events are visible to everyone, and Personal events stay private.',
+                'You get a code to share; anyone who joins sees every Group '
+                'event you post there.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -716,33 +898,59 @@ class _CalendarSharingPageState extends State<CalendarSharingPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  const IconBadge(
-                    icon: FontAwesomeIcons.userPlus,
-                    tint: Color(0xFF1F9D65),
-                    size: 40,
-                    iconSize: 16,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Join a calendar',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                    ),
-                  ),
-                ],
+              _buildPanelHeader(
+                FontAwesomeIcons.magnifyingGlass,
+                const Color(0xFF1F9D65),
+                'Find groups',
               ),
               const SizedBox(height: 14),
               TextField(
-                controller: _joinCodeController,
+                controller: _searchController,
+                textInputAction: TextInputAction.search,
+                onSubmitted: (_) => unawaited(_search()),
+                decoration: InputDecoration(
+                  labelText: 'Search by name',
+                  hintText: 'e.g. Mayor',
+                  prefixIcon: const FaIcon(FontAwesomeIcons.magnifyingGlass, size: 14),
+                  suffixIcon: TextButton(
+                    onPressed: _searching ? null : () => unawaited(_search()),
+                    child: Text(_searching ? '...' : 'Search'),
+                  ),
+                ),
+              ),
+              if (_searched) ...[
+                const SizedBox(height: 8),
+                if (_searchResults.isEmpty)
+                  Text(
+                    'No groups found. Try another name, or ask for the code.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                  )
+                else
+                  for (final group in _searchResults) _buildSearchResultRow(group),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        GlassPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildPanelHeader(
+                FontAwesomeIcons.key,
+                const Color(0xFF7C4DFF),
+                'Join with a code',
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _codeController,
                 textCapitalization: TextCapitalization.characters,
                 decoration: const InputDecoration(
-                  labelText: 'Share code',
-                  hintText: 'e.g. A1B2C3',
-                  prefixIcon: FaIcon(FontAwesomeIcons.key),
+                  labelText: 'Group code',
+                  hintText: 'e.g. QXK2P9',
+                  prefixIcon: FaIcon(FontAwesomeIcons.key, size: 14),
                 ),
               ),
               const SizedBox(height: 14),
@@ -751,17 +959,9 @@ class _CalendarSharingPageState extends State<CalendarSharingPage> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                 ),
-                onPressed: _joining ? null : () => unawaited(_joinCalendar()),
-                icon: const FaIcon(FontAwesomeIcons.userGroup, size: 16),
-                label: Text(_joining ? 'Joining...' : 'Join'),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                "Enter an office's or a person's code once and their Shared "
-                'events will always show up in your calendar.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
+                onPressed: _joiningByCode ? null : () => unawaited(_joinByCode()),
+                icon: const FaIcon(FontAwesomeIcons.userGroup, size: 14),
+                label: Text(_joiningByCode ? 'Joining...' : 'Join group'),
               ),
             ],
           ),
@@ -824,6 +1024,41 @@ class SettingsPage extends StatelessWidget {
             );
           },
         ),
+        const SizedBox(height: 22),
+        Text(
+          'App style',
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                letterSpacing: 0.6,
+                fontWeight: FontWeight.w700,
+              ),
+        ),
+        const SizedBox(height: 10),
+        ListenableBuilder(
+          listenable: themeController,
+          builder: (context, _) {
+            final style = themeController.uiStyle;
+            return Column(
+              children: [
+                _ThemeOptionTile(
+                  icon: FontAwesomeIcons.wandMagicSparkles,
+                  label: 'Liquid Glass',
+                  subtitle: 'Translucent panels and glowing colors',
+                  selected: style == UiStyle.liquid,
+                  onTap: () => themeController.setUiStyle(UiStyle.liquid),
+                ),
+                const SizedBox(height: 10),
+                _ThemeOptionTile(
+                  icon: FontAwesomeIcons.bolt,
+                  label: 'Solid',
+                  subtitle: 'Plain colors — faster on most phones',
+                  selected: style == UiStyle.solid,
+                  onTap: () => themeController.setUiStyle(UiStyle.solid),
+                ),
+              ],
+            );
+          },
+        ),
       ],
     );
   }
@@ -835,12 +1070,14 @@ class _ThemeOptionTile extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.subtitle,
   });
 
   final FaIconData icon;
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -858,9 +1095,21 @@ class _ThemeOptionTile extends StatelessWidget {
             IconBadge(icon: icon, tint: colorScheme.primary, size: 40, iconSize: 16),
             const SizedBox(width: 14),
             Expanded(
-              child: Text(
-                label,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  if (subtitle != null)
+                    Text(
+                      subtitle!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                ],
               ),
             ),
             if (selected)
