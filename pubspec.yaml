@@ -5,14 +5,15 @@ publish_to: "none"
 # (versionCode) — it never shows to users, but it MUST go up by 1 on every
 # release or Android will refuse to install the update. Release tags and the
 # APK filename use only the part before "+" (e.g. v1.2.0, e-calendar-1.2.0.apk).
-version: 1.3.0+11
+version: 1.4.0+12
 environment:
   sdk: ">=3.4.0 <4.0.0"
 dependencies:
-  cloud_firestore: ^6.6.0
   firebase_core: ^4.11.0
+  firebase_messaging: ^16.4.1
   flutter:
     sdk: flutter
+  flutter_local_notifications: ^22.0.1
   font_awesome_flutter: ^11.0.0
   intl: ^0.20.2
   package_info_plus: ^8.3.1

@@ -315,7 +315,11 @@ void main() {
       'Mayor',
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Search'));
+    // Submit via the field's search action rather than tapping the tiny
+    // suffixIcon button directly — Flutter's InputDecorator computes
+    // suffix/prefix icon hit-test geometry in a way that can be unreliable
+    // to tap precisely in widget tests, even though it renders correctly.
+    await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pumpAndSettle();
 
     expect(find.textContaining("Mayor's Office Updates"), findsWidgets);

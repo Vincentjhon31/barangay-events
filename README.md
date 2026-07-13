@@ -68,3 +68,20 @@ If you want the backend to be private later, replace the permissive policies in 
 The app now starts with a login screen when the user is signed out. From there, users can either log in or create an account with Supabase Auth.
 
 If you are testing locally, you can sign up with the email/password form in the app. If your Supabase project requires email confirmation, the sign-up flow will tell the user to confirm their email before logging in.
+
+## Push Notifications
+
+New public and group events push a real-time notification (Android only) via Firebase Cloud Messaging. The app degrades gracefully without any of this configured — it just won't send/show pushes. One-time setup:
+
+1. **Firebase Console** → create a project → add an Android app with package name **exactly** `com.example.barangay_events` (the `applicationId` in `android/app/build.gradle.kts`) → download `google-services.json` → save it as `android/app/google-services.json`. It's safe to commit (not a secret — it ships inside every APK anyway); the build automatically wires up the Firebase Gradle plugin once this file is present, and skips it otherwise.
+2. **Firebase Console** → Project Settings → Service accounts → *Generate new private key* → save the downloaded JSON.
+3. Set it as a secret for the Edge Function: `supabase secrets set FCM_SERVICE_ACCOUNT_JSON='<paste the JSON>'`. Optionally also set a shared secret for the webhook itself: `supabase secrets set WEBHOOK_SECRET='<any random string>'`.
+4. Deploy the function: `supabase functions deploy send-event-notification` (from the repo root; needs the Supabase CLI logged into this project).
+5. **Supabase Dashboard** → Database → Webhooks → *Create a new webhook*:
+   - Table: `barangay_events`, Event: `INSERT`, Type: `HTTP Request`
+   - URL: the function's URL from step 4
+   - If you set `WEBHOOK_SECRET`, add header `Authorization: Bearer <that value>`
+
+How it works: every signed-in device subscribes to the FCM topic `public-events`, plus one `group-<id>` topic per group it belongs to (kept in sync automatically as the user joins/leaves groups). The Edge Function (`supabase/functions/send-event-notification`) runs on every new event insert, works out which topic it belongs to from `event_type`/`group_id`, and sends one push to that topic — personal events never notify anyone. See the comment block at the end of [supabase/barangay_events.sql](supabase/barangay_events.sql) for the same summary alongside the schema.
+
+Not yet built: tapping a notification opens the app but doesn't jump straight to that event, and iOS isn't wired up (no Apple Developer account/signing in this repo yet).

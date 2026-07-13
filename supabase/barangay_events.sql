@@ -325,3 +325,30 @@ drop table if exists public.event_participants;
 drop table if exists public.event_join_codes;
 drop table if exists public.calendar_memberships;
 alter table public.barangay_events drop column if exists requires_join_code;
+
+-- ============================================================
+-- Push notifications (Firebase Cloud Messaging).
+-- No new tables/columns needed — barangay_events already has everything
+-- the notification text and audience targeting require (event_type,
+-- group_id, group_name, created_by_name, created_by_department).
+--
+-- Wiring (all done outside SQL, via the Supabase dashboard/CLI):
+--   1. Deploy the Edge Function in supabase/functions/send-event-notification
+--      (`supabase functions deploy send-event-notification`).
+--   2. Set its secrets: `supabase secrets set FCM_SERVICE_ACCOUNT_JSON='...'`
+--      (from Firebase Console > Project Settings > Service accounts), and
+--      optionally WEBHOOK_SECRET (any random string) for a lightweight
+--      shared-secret check on the webhook request itself.
+--   3. Database > Webhooks (Supabase dashboard) > create a new webhook:
+--        table: barangay_events, event: INSERT, type: HTTP Request,
+--        URL: the deployed function's URL,
+--        HTTP header: Authorization: Bearer <same value as WEBHOOK_SECRET>
+--        (only if you set that secret in step 2).
+--
+-- The function maps each new row to an FCM topic and skips personal
+-- events entirely: event_type='public' -> topic "public-events" (every
+-- device); event_type='shared' -> topic "group-<group_id>" (only that
+-- group's members, who subscribe/unsubscribe automatically as they join
+-- or leave groups in the app). See README.md's "Push Notifications"
+-- section for the full walkthrough.
+-- ============================================================

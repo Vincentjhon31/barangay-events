@@ -17,6 +17,11 @@ val hasReleaseKeystore =
     listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
         .all { key -> !keystoreProperties.getProperty(key).isNullOrBlank() }
 
+// Only apply the Firebase plugin once google-services.json exists (it's not
+// committed until the Firebase project is set up), so plain `flutter build`/
+// `flutter test` keep working before that setup happens.
+val hasGoogleServicesConfig = file("google-services.json").exists()
+
 android {
     namespace = "com.example.barangay_events"
     compileSdk = flutter.compileSdkVersion
@@ -69,4 +74,8 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+if (hasGoogleServicesConfig) {
+    apply(plugin = "com.google.gms.google-services")
 }

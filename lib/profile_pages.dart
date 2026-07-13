@@ -418,36 +418,40 @@ class _ProfileInformationPageState extends State<ProfileInformationPage> {
               const SizedBox(height: 12),
               TextField(
                 controller: _displayNameController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Display name',
-                  prefixIcon: FaIcon(FontAwesomeIcons.userPen),
+                  prefixIcon: glassFieldIcon(FontAwesomeIcons.userPen),
+                  prefixIconConstraints: glassFieldIconConstraints,
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _departmentController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Department / Office',
                   hintText: "e.g. Mayor's Office, HRMO",
-                  prefixIcon: FaIcon(FontAwesomeIcons.buildingUser),
+                  prefixIcon: glassFieldIcon(FontAwesomeIcons.buildingUser),
+                  prefixIconConstraints: glassFieldIconConstraints,
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _phoneController,
                 keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Phone number',
-                  prefixIcon: FaIcon(FontAwesomeIcons.phone),
+                  prefixIcon: glassFieldIcon(FontAwesomeIcons.phone),
+                  prefixIconConstraints: glassFieldIconConstraints,
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _bioController,
                 maxLines: 3,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Bio / About you',
-                  prefixIcon: FaIcon(FontAwesomeIcons.alignLeft),
+                  prefixIcon: glassFieldIcon(FontAwesomeIcons.alignLeft),
+                  prefixIconConstraints: glassFieldIconConstraints,
                   alignLabelWithHint: true,
                 ),
               ),
@@ -466,25 +470,28 @@ class _ProfileInformationPageState extends State<ProfileInformationPage> {
               const SizedBox(height: 12),
               TextField(
                 controller: _streetAddressController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Street address',
-                  prefixIcon: FaIcon(FontAwesomeIcons.houseChimney),
+                  prefixIcon: glassFieldIcon(FontAwesomeIcons.houseChimney),
+                  prefixIconConstraints: glassFieldIconConstraints,
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _barangayController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Barangay',
-                  prefixIcon: FaIcon(FontAwesomeIcons.mapPin),
+                  prefixIcon: glassFieldIcon(FontAwesomeIcons.mapPin),
+                  prefixIconConstraints: glassFieldIconConstraints,
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _cityController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'City',
-                  prefixIcon: FaIcon(FontAwesomeIcons.buildingFlag),
+                  prefixIcon: glassFieldIcon(FontAwesomeIcons.buildingFlag),
+                  prefixIconConstraints: glassFieldIconConstraints,
                 ),
               ),
             ],
@@ -866,10 +873,11 @@ class _GroupsTabState extends State<GroupsTab> {
               const SizedBox(height: 14),
               TextField(
                 controller: _nameController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Group name',
                   hintText: "e.g. Mayor's Office Updates",
-                  prefixIcon: FaIcon(FontAwesomeIcons.penToSquare, size: 14),
+                  prefixIcon: glassFieldIcon(FontAwesomeIcons.penToSquare, size: 14),
+                  prefixIconConstraints: glassFieldIconConstraints,
                 ),
               ),
               const SizedBox(height: 14),
@@ -911,8 +919,10 @@ class _GroupsTabState extends State<GroupsTab> {
                 decoration: InputDecoration(
                   labelText: 'Search by name',
                   hintText: 'e.g. Mayor',
-                  prefixIcon: const FaIcon(FontAwesomeIcons.magnifyingGlass, size: 14),
+                  prefixIcon: glassFieldIcon(FontAwesomeIcons.magnifyingGlass, size: 14),
+                  prefixIconConstraints: glassFieldIconConstraints,
                   suffixIcon: TextButton(
+                    key: const Key('groups-search-button'),
                     onPressed: _searching ? null : () => unawaited(_search()),
                     child: Text(_searching ? '...' : 'Search'),
                   ),
@@ -947,10 +957,11 @@ class _GroupsTabState extends State<GroupsTab> {
               TextField(
                 controller: _codeController,
                 textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Group code',
                   hintText: 'e.g. QXK2P9',
-                  prefixIcon: FaIcon(FontAwesomeIcons.key, size: 14),
+                  prefixIcon: glassFieldIcon(FontAwesomeIcons.key, size: 14),
+                  prefixIconConstraints: glassFieldIconConstraints,
                 ),
               ),
               const SizedBox(height: 14),

@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
@@ -15,6 +16,7 @@ import 'auth_service.dart';
 import 'event_store.dart';
 import 'liquid_glass_components.dart';
 import 'profile_pages.dart';
+import 'push_notifications.dart';
 import 'theme_controller.dart';
 
 Future<void> main() async {
@@ -23,6 +25,14 @@ Future<void> main() async {
     url: 'https://xuxnoydakqembrytdbyz.supabase.co',
     anonKey: 'sb_publishable_XnqlZ-m2efmbasNuZ7fyVg_74qTnghA',
   );
+
+  try {
+    await Firebase.initializeApp();
+  } catch (_) {
+    // No google-services.json yet (see README's Push Notifications setup) —
+    // the app still works, it just won't be able to send/show pushes.
+  }
+
   final themeController = await ThemeController.load();
 
   runApp(
@@ -32,6 +42,7 @@ Future<void> main() async {
         repositoryOwner: 'Vincentjhon31',
         repositoryName: 'barangay-events',
       ),
+      pushNotificationServiceFactory: () async => FirebasePushNotificationService(),
     ),
   );
 }
@@ -43,7 +54,8 @@ ThemeData _buildTheme(Brightness brightness) {
       seedColor: const Color(0xFF2B7FFF),
       brightness: brightness,
     ),
-    scaffoldBackgroundColor: isDark ? const Color(0xFF05070C) : const Color(0xFFF8FCFF),
+    scaffoldBackgroundColor:
+        isDark ? const Color(0xFF05070C) : const Color(0xFFF8FCFF),
     useMaterial3: true,
   );
 }
@@ -54,12 +66,20 @@ class BarangayCalendarApp extends StatefulWidget {
     this.updateService,
     this.authServiceFactory,
     this.eventRepositoryFactory,
+    this.pushNotificationServiceFactory,
     ThemeController? themeController,
   }) : themeController = themeController ?? ThemeController();
 
   final AppUpdateService? updateService;
   final Future<AppAuthService> Function()? authServiceFactory;
   final Future<EventRepository> Function()? eventRepositoryFactory;
+
+  /// Defaults to [NoopPushNotificationService] — unlike the other
+  /// factories above, constructing the *real* Firebase service has side
+  /// effects the instant it's used, and `Firebase.initializeApp()` is only
+  /// ever called from `main()` (never by widget tests), so a real default
+  /// here would crash every existing test. `main()` explicitly opts in.
+  final Future<PushNotificationService> Function()? pushNotificationServiceFactory;
   final ThemeController themeController;
 
   @override
@@ -73,8 +93,8 @@ class _BarangayCalendarAppState extends State<BarangayCalendarApp> {
   @override
   void initState() {
     super.initState();
-    _authServiceFuture =
-        widget.authServiceFactory?.call() ?? Future.value(SupabaseAuthService(Supabase.instance.client));
+    _authServiceFuture = widget.authServiceFactory?.call() ??
+        Future.value(SupabaseAuthService(Supabase.instance.client));
     unawaited(_authServiceFuture.then((authService) {
       if (mounted) {
         _resolvedAuthService = authService;
@@ -134,6 +154,8 @@ class _BarangayCalendarAppState extends State<BarangayCalendarApp> {
                     themeController: widget.themeController,
                     eventRepositoryFactory:
                         widget.eventRepositoryFactory ?? createEventRepository,
+                    pushNotificationServiceFactory: widget.pushNotificationServiceFactory ??
+                        () async => const NoopPushNotificationService(),
                   );
                 },
               );
@@ -152,12 +174,14 @@ class AuthenticatedShell extends StatefulWidget {
     required this.authService,
     required this.themeController,
     required this.eventRepositoryFactory,
+    required this.pushNotificationServiceFactory,
   });
 
   final AppUpdateService? updateService;
   final AppAuthService authService;
   final ThemeController themeController;
   final Future<EventRepository> Function() eventRepositoryFactory;
+  final Future<PushNotificationService> Function() pushNotificationServiceFactory;
 
   @override
   State<AuthenticatedShell> createState() => _AuthenticatedShellState();
@@ -165,12 +189,14 @@ class AuthenticatedShell extends StatefulWidget {
 
 class _AuthenticatedShellState extends State<AuthenticatedShell> {
   late final Future<EventRepository> _eventRepositoryFuture;
+  late final Future<PushNotificationService> _pushServiceFuture;
   EventRepository? _resolvedRepository;
 
   @override
   void initState() {
     super.initState();
     _eventRepositoryFuture = widget.eventRepositoryFactory();
+    _pushServiceFuture = widget.pushNotificationServiceFactory();
     unawaited(_eventRepositoryFuture.then((repository) {
       if (mounted) {
         _resolvedRepository = repository;
@@ -188,25 +214,38 @@ class _AuthenticatedShellState extends State<AuthenticatedShell> {
   Widget build(BuildContext context) {
     return FutureBuilder<EventRepository>(
       future: _eventRepositoryFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
+      builder: (context, repositorySnapshot) {
+        if (repositorySnapshot.connectionState != ConnectionState.done) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        final repository = snapshot.data;
+        final repository = repositorySnapshot.data;
         if (repository == null) {
           return const Scaffold(
             body: Center(child: Text('Could not load event storage.')),
           );
         }
 
-        return CalendarScreen(
-          updateService: widget.updateService,
-          authService: widget.authService,
-          themeController: widget.themeController,
-          eventRepository: repository,
+        return FutureBuilder<PushNotificationService>(
+          future: _pushServiceFuture,
+          builder: (context, pushSnapshot) {
+            final pushService = pushSnapshot.data;
+            if (pushSnapshot.connectionState != ConnectionState.done || pushService == null) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            return CalendarScreen(
+              updateService: widget.updateService,
+              authService: widget.authService,
+              themeController: widget.themeController,
+              eventRepository: repository,
+              pushNotificationService: pushService,
+            );
+          },
         );
       },
     );
@@ -261,7 +300,8 @@ class _SignInScreenState extends State<SignInScreen> {
 
     if (_isSignUpMode && password.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password must be at least 6 characters.')),
+        const SnackBar(
+            content: Text('Password must be at least 6 characters.')),
       );
       return;
     }
@@ -283,7 +323,8 @@ class _SignInScreenState extends State<SignInScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Account created. You may need to confirm your email before signing in.'),
+            content: Text(
+                'Account created. You may need to confirm your email before signing in.'),
           ),
         );
       } else {
@@ -328,7 +369,8 @@ class _SignInScreenState extends State<SignInScreen> {
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        prefixIcon: FaIcon(icon, size: 16),
+        prefixIcon: glassFieldIcon(icon),
+        prefixIconConstraints: glassFieldIconConstraints,
         filled: true,
         fillColor: colorScheme.onSurface.withValues(alpha: 0.05),
         border: OutlineInputBorder(
@@ -378,7 +420,10 @@ class _SignInScreenState extends State<SignInScreen> {
                       Text(
                         'Barangay Calendar',
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+                        style: Theme.of(context)
+                            .textTheme
+                            .headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.w800),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -398,13 +443,19 @@ class _SignInScreenState extends State<SignInScreen> {
                           children: [
                             Text(
                               _isSignUpMode ? 'Create an account' : 'Login',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w800),
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 6),
                             Text(
                               'Use your account to access and publish barangay events.',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
                                     color: colorScheme.onSurfaceVariant,
                                   ),
                               textAlign: TextAlign.center,
@@ -441,15 +492,20 @@ class _SignInScreenState extends State<SignInScreen> {
                             const SizedBox(height: 22),
                             FilledButton(
                               style: FilledButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(18)),
                               ),
                               onPressed: _isSubmitting ? null : _submit,
                               child: Text(
                                 _isSubmitting
                                     ? 'Please wait...'
-                                    : (_isSignUpMode ? 'Create account' : 'Login'),
-                                style: const TextStyle(fontWeight: FontWeight.w700),
+                                    : (_isSignUpMode
+                                        ? 'Create account'
+                                        : 'Login'),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700),
                               ),
                             ),
                             TextButton(
@@ -492,12 +548,14 @@ class CalendarScreen extends StatefulWidget {
     this.authService,
     required this.themeController,
     required this.eventRepository,
+    required this.pushNotificationService,
   });
 
   final AppUpdateService? updateService;
   final AppAuthService? authService;
   final ThemeController themeController;
   final EventRepository eventRepository;
+  final PushNotificationService pushNotificationService;
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
@@ -521,11 +579,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
   List<BarangayEvent> _events = const [];
   late StreamSubscription<List<BarangayEvent>> _eventSubscription;
 
-  bool get _hasUnseenFeedItems => _events
-      .any((event) => event.createdAt.millisecondsSinceEpoch > _feedLastSeenMillis);
+  bool get _hasUnseenFeedItems => _events.any(
+      (event) => event.createdAt.millisecondsSinceEpoch > _feedLastSeenMillis);
 
-  CalendarFormat get _calendarFormat =>
-      _viewMode == _CalendarViewMode.week ? CalendarFormat.week : CalendarFormat.month;
+  CalendarFormat get _calendarFormat => _viewMode == _CalendarViewMode.week
+      ? CalendarFormat.week
+      : CalendarFormat.month;
 
   bool _passesTypeFilter(BarangayEvent event) =>
       _typeFilters.isEmpty || _typeFilters.contains(event.eventType);
@@ -551,7 +610,31 @@ class _CalendarScreenState extends State<CalendarScreen> {
     unawaited(_checkForUpdates(showDialogWhenAvailable: true));
     unawaited(_loadUserProfile());
     unawaited(_loadFeedLastSeen());
+    unawaited(_initializePushNotifications());
     _eventSubscription = _listenToEvents();
+  }
+
+  Future<void> _initializePushNotifications() async {
+    if (widget.authService == null) return;
+    try {
+      await widget.pushNotificationService.initialize();
+    } catch (_) {
+      // Firebase not configured yet, or the user denied the permission —
+      // either way the app should keep working without push notifications.
+    }
+    await _syncPushTopics();
+  }
+
+  Future<void> _syncPushTopics() async {
+    if (widget.authService == null) return;
+    try {
+      final groups = await widget.eventRepository.listMyGroups();
+      await widget.pushNotificationService.syncTopics(
+        groups.map((group) => group.id).toList(),
+      );
+    } catch (_) {
+      // Non-critical — a failed topic sync shouldn't block the calendar.
+    }
   }
 
   Future<void> _loadFeedLastSeen() async {
@@ -582,6 +665,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void _resubscribeEvents() {
     unawaited(_eventSubscription.cancel());
     _eventSubscription = _listenToEvents();
+    unawaited(_syncPushTopics());
   }
 
   Future<void> _loadUserProfile() async {
@@ -674,7 +758,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   BarangayEvent? get _nextUpcomingEvent {
     final now = DateTime.now();
-    final upcoming = _events.where((event) => event.endTime.isAfter(now)).toList()
+    final upcoming = _events
+        .where((event) => event.endTime.isAfter(now))
+        .toList()
       ..sort((a, b) => a.startTime.compareTo(b.startTime));
     return upcoming.isEmpty ? null : upcoming.first;
   }
@@ -702,7 +788,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
             bottom: false,
             child: Column(
               children: [
-                if (_availableUpdate != null) _buildUpdateBanner(_availableUpdate!),
+                if (_availableUpdate != null)
+                  _buildUpdateBanner(_availableUpdate!),
                 Expanded(
                   child: IndexedStack(
                     index: _selectedTab,
@@ -882,7 +969,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
         GlassPanel(
           child: Text(
             'No events in ${DateFormat('MMMM yyyy').format(_listMonth)}.',
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
         ),
       ];
@@ -920,8 +1008,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final options = <({String? value, String label, FaIconData icon})>[
       (value: null, label: 'All', icon: FontAwesomeIcons.layerGroup),
       (value: EventType.public, label: 'Public', icon: FontAwesomeIcons.globe),
-      (value: EventType.shared, label: 'Group', icon: FontAwesomeIcons.userGroup),
-      (value: EventType.personal, label: 'Personal', icon: FontAwesomeIcons.lock),
+      (
+        value: EventType.shared,
+        label: 'Group',
+        icon: FontAwesomeIcons.userGroup
+      ),
+      (
+        value: EventType.personal,
+        label: 'Personal',
+        icon: FontAwesomeIcons.lock
+      ),
     ];
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -952,7 +1048,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
               onTap: () => toggle(option.value),
               child: GlassPanel(
                 borderRadius: 999,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 tint: isActive(option.value) ? colorScheme.primary : null,
                 tintAlpha: isActive(option.value) ? 0.22 : null,
                 child: Row(
@@ -1067,7 +1164,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return GlassPanel(
         child: Row(
           children: [
-            IconBadge(icon: FontAwesomeIcons.calendarCheck, tint: Theme.of(context).colorScheme.primary),
+            IconBadge(
+                icon: FontAwesomeIcons.calendarCheck,
+                tint: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 14),
             const Expanded(
               child: Text(
@@ -1089,7 +1188,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            IconBadge(icon: _getEventIcon(event.title), tint: _getEventTint(event.title)),
+            IconBadge(
+                icon: _getEventIcon(event.title),
+                tint: _getEventTint(event.title)),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -1138,7 +1239,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
       children: [
         Text(
           isToday ? 'Upcoming' : 'Events for ${_formatDate(selected)}',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.w800),
         ),
       ],
     );
@@ -1152,7 +1256,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
         GlassPanel(
           child: Text(
             'No events for ${_formatDate(_selectedDay ?? _focusedDay)}',
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
         ),
       ];
@@ -1173,14 +1278,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
       children: [
-        _buildPageHeader('Feed', 'New events from people you follow and the community.'),
+        _buildPageHeader(
+            'Feed', 'New events from people you follow and the community.'),
         const SizedBox(height: 18),
         if (feedEvents.isEmpty)
           GlassPanel(
             child: Text(
               'Nothing here yet. Join groups from the Groups tab to see their '
               'events, or check back for public announcements.',
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           )
         else
@@ -1203,8 +1310,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _buildFeedCard(BarangayEvent event) {
     final colorScheme = Theme.of(context).colorScheme;
-    final isNew =
-        event.createdAt.millisecondsSinceEpoch > _feedNewThreshold;
+    final isNew = event.createdAt.millisecondsSinceEpoch > _feedNewThreshold;
     final postedBy = event.creatorLabel ?? 'Community calendar';
 
     return InkWell(
@@ -1216,7 +1322,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            IconBadge(icon: _getEventIcon(event.title), tint: _getEventTint(event.title)),
+            IconBadge(
+                icon: _getEventIcon(event.title),
+                tint: _getEventTint(event.title)),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -1227,20 +1335,24 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       Flexible(
                         child: Text(
                           event.title,
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                  ),
                         ),
                       ),
                       if (isNew) ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 2),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFE53935).withValues(alpha: 0.16),
+                            color:
+                                const Color(0xFFE53935).withValues(alpha: 0.16),
                             borderRadius: BorderRadius.circular(999),
                             border: Border.all(
-                              color: const Color(0xFFE53935).withValues(alpha: 0.4),
+                              color: const Color(0xFFE53935)
+                                  .withValues(alpha: 0.4),
                             ),
                           ),
                           child: const Text(
@@ -1421,9 +1533,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
               formatButtonVisible: false,
               titleCentered: true,
               formatButtonShowsNext: false,
-              leftChevronIcon: FaIcon(FontAwesomeIcons.chevronLeft, size: 15, color: colorScheme.onSurfaceVariant),
-              rightChevronIcon: FaIcon(FontAwesomeIcons.chevronRight, size: 15, color: colorScheme.onSurfaceVariant),
-              titleTextStyle: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: colorScheme.onSurface),
+              leftChevronIcon: FaIcon(FontAwesomeIcons.chevronLeft,
+                  size: 15, color: colorScheme.onSurfaceVariant),
+              rightChevronIcon: FaIcon(FontAwesomeIcons.chevronRight,
+                  size: 15, color: colorScheme.onSurfaceVariant),
+              titleTextStyle: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: colorScheme.onSurface),
               decoration: const BoxDecoration(),
             ),
             daysOfWeekStyle: DaysOfWeekStyle(
@@ -1690,7 +1807,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                       style: Theme.of(context)
                                           .textTheme
                                           .bodyLarge
-                                          ?.copyWith(fontWeight: FontWeight.w500),
+                                          ?.copyWith(
+                                              fontWeight: FontWeight.w500),
                                     ),
                                   ],
                                 ),
@@ -1714,27 +1832,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       if (event.description.isNotEmpty) ...[
                         Text(
                           'Description',
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelMedium
-                              ?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.labelMedium?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
                         ),
                         const SizedBox(height: 8),
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .surfaceContainer,
+                            color:
+                                Theme.of(context).colorScheme.surfaceContainer,
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .outlineVariant,
+                              color:
+                                  Theme.of(context).colorScheme.outlineVariant,
                             ),
                           ),
                           child: Text(
@@ -1765,9 +1879,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           child: Row(
                             children: [
                               FaIcon(
-                                _getFileIcon(
-                                    event.attachmentType ??
-                                        'application/octet-stream'),
+                                _getFileIcon(event.attachmentType ??
+                                    'application/octet-stream'),
                                 color: Theme.of(context).colorScheme.tertiary,
                                 size: 20,
                               ),
@@ -1789,9 +1902,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      _getFileTypeName(
-                                          event.attachmentType ??
-                                              'application/octet-stream'),
+                                      _getFileTypeName(event.attachmentType ??
+                                          'application/octet-stream'),
                                       style: Theme.of(context)
                                           .textTheme
                                           .bodyMedium
@@ -1827,13 +1939,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       // Attendance status section
                       Text(
                         'Your Status',
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelMedium
-                            ?.copyWith(
-                              color:
-                                  Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
+                        style:
+                            Theme.of(context).textTheme.labelMedium?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -1913,7 +2024,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           width: double.infinity,
                           child: OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: Theme.of(context).colorScheme.error,
+                              foregroundColor:
+                                  Theme.of(context).colorScheme.error,
                               side: BorderSide(
                                 color: Theme.of(context)
                                     .colorScheme
@@ -1926,7 +2038,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                               Navigator.pop(context);
                               unawaited(_confirmDeleteEvent(event));
                             },
-                            icon: const FaIcon(FontAwesomeIcons.trashCan, size: 16),
+                            icon: const FaIcon(FontAwesomeIcons.trashCan,
+                                size: 16),
                             label: const Text('Delete event'),
                           ),
                         ),
@@ -1981,9 +2094,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       Flexible(
                         child: Text(
                           event.title,
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                  ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -2003,9 +2117,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       Expanded(
                         child: Text(
                           event.location,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
                         ),
                       ),
                     ],
@@ -2023,9 +2140,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       Expanded(
                         child: Text(
                           '${_formatDate(startTime)} • ${_formatTime(startTime)} - ${_formatTime(endTime)}',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
                         ),
                       ),
                     ],
@@ -2044,9 +2164,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         Expanded(
                           child: Text(
                             'By ${event.creatorLabel}',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                ),
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    ),
                           ),
                         ),
                       ],
@@ -2066,7 +2189,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     Row(
                       children: [
                         FaIcon(
-                          _getFileIcon(event.attachmentType ?? 'application/octet-stream'),
+                          _getFileIcon(event.attachmentType ??
+                              'application/octet-stream'),
                           size: 14,
                           color: Theme.of(context).colorScheme.primary,
                         ),
@@ -2095,13 +2219,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
               itemBuilder: (context) => [
                 const PopupMenuItem(value: 'going', child: Text('Going')),
                 const PopupMenuItem(value: 'maybe', child: Text('Maybe')),
-                const PopupMenuItem(value: 'not_going', child: Text('Not Going')),
+                const PopupMenuItem(
+                    value: 'not_going', child: Text('Not Going')),
                 if (_canDeleteEvent(event))
                   PopupMenuItem(
                     value: 'delete',
                     child: Text(
                       'Delete event',
-                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      style:
+                          TextStyle(color: Theme.of(context).colorScheme.error),
                     ),
                   ),
               ],
@@ -2177,7 +2303,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  String? get _currentUserId => (_userProfile ?? widget.authService?.currentUser)?.id;
+  String? get _currentUserId =>
+      (_userProfile ?? widget.authService?.currentUser)?.id;
 
   bool _canDeleteEvent(BarangayEvent event) {
     final userId = _currentUserId;
@@ -2298,7 +2425,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('You selected: ${action.toUpperCase()} for "${event.title}"'),
+        content:
+            Text('You selected: ${action.toUpperCase()} for "${event.title}"'),
         backgroundColor: Theme.of(context).colorScheme.primary,
       ),
     );
@@ -2426,7 +2554,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     Text(
                       typeHelperText(),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                     ),
                     if (eventType == EventType.shared) ...[
@@ -2434,16 +2563,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       if (myGroups.isEmpty)
                         Text(
                           'You have no groups yet — create one in the Groups tab first.',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.error,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
                         )
                       else
                         DropdownButtonFormField<BarangayGroup>(
                           initialValue: selectedGroup,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Post to group',
-                            prefixIcon: FaIcon(FontAwesomeIcons.userGroup, size: 14),
+                            prefixIcon: glassFieldIcon(FontAwesomeIcons.userGroup, size: 14),
+                            prefixIconConstraints: glassFieldIconConstraints,
                           ),
                           items: [
                             for (final group in myGroups)
@@ -2581,9 +2712,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     return;
                   }
 
-                  final creator = _userProfile ?? widget.authService?.currentUser;
-                  final newEventId = DateTime.now().microsecondsSinceEpoch.toString();
-                  final group = eventType == EventType.shared ? selectedGroup : null;
+                  final creator =
+                      _userProfile ?? widget.authService?.currentUser;
+                  final newEventId =
+                      DateTime.now().microsecondsSinceEpoch.toString();
+                  final group =
+                      eventType == EventType.shared ? selectedGroup : null;
 
                   unawaited(() async {
                     try {

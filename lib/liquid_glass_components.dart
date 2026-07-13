@@ -5,6 +5,25 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 bool isDarkContext(BuildContext context) => Theme.of(context).brightness == Brightness.dark;
 
+/// A `TextField`/`DropdownButtonFormField` prefix icon, centered inside a
+/// fixed-size box. A bare `FaIcon` passed straight to `InputDecoration
+/// .prefixIcon` looks inconsistently positioned field-to-field: Font
+/// Awesome glyphs don't share Material icons' internal metrics, so each
+/// icon's visible shape sits slightly differently within Flutter's default
+/// 48x48 prefix box depending on the icon (e.g. `key` vs `envelope`). Pin
+/// every field's icon to the same box with [glassFieldIconConstraints] so
+/// a stacked form lines up cleanly regardless of which icons it uses.
+Widget glassFieldIcon(FaIconData icon, {double size = 16}) {
+  return Center(child: FaIcon(icon, size: size));
+}
+
+// Fixed (not just minimum) size: a min-only BoxConstraints leaves the max
+// unbounded, and Center() inside the prefix-icon slot happily expands to
+// fill whatever space that leaves it — which swallowed most of the actual
+// text field, blocking taps and typing. Tight constraints keep this an
+// icon-sized box, nothing more.
+const BoxConstraints glassFieldIconConstraints = BoxConstraints.tightFor(width: 44, height: 44);
+
 /// The app's visual style: the fancy translucent "Liquid Glass" look, or a
 /// plain solid palette that renders much faster on low-end phones.
 enum UiStyle { liquid, solid }
@@ -370,54 +389,63 @@ class TabButton extends StatelessWidget {
         ? Theme.of(context).colorScheme.primary
         : (dark ? Colors.white.withValues(alpha: 0.55) : Colors.black.withValues(alpha: 0.45));
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(24),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-        decoration: BoxDecoration(
-          color: selected
-              ? (dark ? Colors.white.withValues(alpha: 0.14) : Colors.white.withValues(alpha: 0.9))
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                FaIcon(icon, color: color, size: 20),
-                if (showDot)
-                  Positioned(
-                    top: -2,
-                    right: -4,
-                    child: Container(
-                      width: 9,
-                      height: 9,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE53935),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: dark ? const Color(0xFF05070C) : Colors.white,
-                          width: 1.5,
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(24),
+        // Selection is already shown by the pill background below; the
+        // default tap ripple/highlight on top of it could linger and read
+        // as a second "active" button, so it's turned off here.
+        splashFactory: NoSplash.splashFactory,
+        highlightColor: Colors.transparent,
+        splashColor: Colors.transparent,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? (dark ? Colors.white.withValues(alpha: 0.14) : Colors.white.withValues(alpha: 0.9))
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  FaIcon(icon, color: color, size: 20),
+                  if (showDot)
+                    Positioned(
+                      top: -2,
+                      right: -4,
+                      child: Container(
+                        width: 9,
+                        height: 9,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE53935),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: dark ? const Color(0xFF05070C) : Colors.white,
+                            width: 1.5,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: color,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                  ),
-            ),
-          ],
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: color,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                    ),
+              ),
+            ],
+          ),
         ),
       ),
     );

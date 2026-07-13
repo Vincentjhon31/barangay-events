@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "321299809747",
+    "project_id": "ecalendar-74b22",
+    "storage_bucket": "ecalendar-74b22.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:321299809747:android:0327bfef1ef227dfb69b26",
+        "android_client_info": {
+          "package_name": "com.zynt31.barangay_events"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCxrL5UdgaHcTHD9SMNV524htZwZZWaiDA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

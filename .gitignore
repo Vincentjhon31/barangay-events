@@ -45,6 +45,14 @@ app.*.map.json
 key.properties
 .release/
 
+# Firebase service-account keys (private keys — must never be committed;
+# google-services.json is fine to commit, this is not the same thing).
+*firebase-adminsdk*.json
+
+# Local Supabase CLI state (e.g. which project `supabase link` connected to
+# on this machine) — not shared project config, shouldn't be versioned.
+supabase/.temp/
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
