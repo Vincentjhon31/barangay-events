@@ -65,10 +65,10 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           VERSION="${VERSION%%+*}"
+          # The permanent QR/download link is the GitHub Pages redirect at
+          # https://vincentjhon31.github.io/barangay-events/ (docs/index.html),
+          # which always forwards to this versioned file.
           cp build/app/outputs/flutter-apk/app-release.apk "build/app/outputs/flutter-apk/e-calendar-${VERSION}.apk"
-          # Fixed-name copy so the permanent QR/download link always works:
-          # https://github.com/Vincentjhon31/barangay-events/releases/latest/download/e-calendar-latest.apk
-          cp build/app/outputs/flutter-apk/app-release.apk "build/app/outputs/flutter-apk/e-calendar-latest.apk"
           ls -lh build/app/outputs/flutter-apk/e-calendar-*.apk
 
       - name: Create GitHub Release
