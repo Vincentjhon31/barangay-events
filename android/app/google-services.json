@@ -7,6 +7,25 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:321299809747:android:17beb7f4138746bab69b26",
+        "android_client_info": {
+          "package_name": "com.example.barangay_events"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCxrL5UdgaHcTHD9SMNV524htZwZZWaiDA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:321299809747:android:0327bfef1ef227dfb69b26",
         "android_client_info": {
           "package_name": "com.zynt31.barangay_events"
