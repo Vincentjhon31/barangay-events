@@ -89,6 +89,13 @@ abstract class AppAuthService {
     String? department,
   });
   Future<void> updateDisplayName(String displayName);
+
+  /// Raw `theme_mode`/`ui_style` values from the signed-in user's profile
+  /// (mirrors `ThemeMode`/`UiStyle` enum `.name`s), or null if unavailable —
+  /// lets a chosen appearance follow the user across devices.
+  Future<({String themeMode, String uiStyle})?> fetchPreferences();
+  Future<void> savePreferences({required String themeMode, required String uiStyle});
+
   Future<void> signOut();
   Future<void> dispose();
 }
@@ -229,6 +236,39 @@ class SupabaseAuthService implements AppAuthService {
   }
 
   @override
+  Future<({String themeMode, String uiStyle})?> fetchPreferences() async {
+    final user = _client.auth.currentUser;
+    if (user == null) return null;
+
+    try {
+      final row = await _client
+          .from('profiles')
+          .select('theme_mode, ui_style')
+          .eq('id', user.id)
+          .maybeSingle();
+      final mode = row?['theme_mode'] as String?;
+      final style = row?['ui_style'] as String?;
+      if (mode == null || style == null) return null;
+      return (themeMode: mode, uiStyle: style);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<void> savePreferences({required String themeMode, required String uiStyle}) async {
+    final user = _client.auth.currentUser;
+    if (user == null) return;
+
+    // A targeted update (not upsert) so this never clobbers other profile
+    // fields when only appearance changed.
+    await _client.from('profiles').update({
+      'theme_mode': themeMode,
+      'ui_style': uiStyle,
+    }).eq('id', user.id);
+  }
+
+  @override
   Future<void> signOut() async {
     await _client.auth.signOut();
   }
@@ -261,6 +301,8 @@ class MemoryAuthService implements AppAuthService {
   final StreamController<bool> _controller = StreamController<bool>.broadcast();
   bool _signedIn;
   AppUserProfile? _currentUser;
+  String? _themeMode;
+  String? _uiStyle;
 
   @override
   Stream<bool> authStateChanges() async* {
@@ -317,6 +359,20 @@ class MemoryAuthService implements AppAuthService {
       avatarUrl: current.avatarUrl,
     );
     _controller.add(true);
+  }
+
+  @override
+  Future<({String themeMode, String uiStyle})?> fetchPreferences() async {
+    final mode = _themeMode;
+    final style = _uiStyle;
+    if (mode == null || style == null) return null;
+    return (themeMode: mode, uiStyle: style);
+  }
+
+  @override
+  Future<void> savePreferences({required String themeMode, required String uiStyle}) async {
+    _themeMode = themeMode;
+    _uiStyle = uiStyle;
   }
 
   @override

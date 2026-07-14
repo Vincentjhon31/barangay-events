@@ -75,13 +75,34 @@ New public and group events push a real-time notification (Android only) via Fir
 
 1. **Firebase Console** → create a project → add an Android app with package name **exactly** `com.example.barangay_events` (the `applicationId` in `android/app/build.gradle.kts`) → download `google-services.json` → save it as `android/app/google-services.json`. It's safe to commit (not a secret — it ships inside every APK anyway); the build automatically wires up the Firebase Gradle plugin once this file is present, and skips it otherwise.
 2. **Firebase Console** → Project Settings → Service accounts → *Generate new private key* → save the downloaded JSON.
-3. Set it as a secret for the Edge Function: `supabase secrets set FCM_SERVICE_ACCOUNT_JSON='<paste the JSON>'`. Optionally also set a shared secret for the webhook itself: `supabase secrets set WEBHOOK_SECRET='<any random string>'`.
-4. Deploy the function: `supabase functions deploy send-event-notification` (from the repo root; needs the Supabase CLI logged into this project).
-5. **Supabase Dashboard** → Database → Webhooks → *Create a new webhook*:
-   - Table: `barangay_events`, Event: `INSERT`, Type: `HTTP Request`
-   - URL: the function's URL from step 4
-   - If you set `WEBHOOK_SECRET`, add header `Authorization: Bearer <that value>`
+3. Set it as a secret for the Edge Function, **base64-encoded** (PowerShell):
+   ```powershell
+   $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Get-Content -Raw "path\to\service-account.json")))
+   supabase secrets set "FCM_SERVICE_ACCOUNT_JSON_B64=$b64"
+   ```
+   Base64 is deliberate, not optional — the raw JSON is nothing but double-quoted text, and PowerShell does not reliably pass strings full of embedded double-quotes through to native executables as a single argument (this bit us once: the secret silently got corrupted and the function crashed on every invocation with a `JSON.parse` error). Base64 has no characters a shell can mangle.
+4. Deploy the function: `supabase functions deploy send-event-notification --use-api` (from the repo root; needs the Supabase CLI logged into this project — `--use-api` bundles without requiring Docker Desktop to be running).
+5. **Supabase Dashboard** → your project → **Integrations → Webhooks** (`/integrations/webhooks/webhooks` — the old `/database/hooks` URL has moved) → *Create a new webhook*:
+   - Table: `barangay_events`, Event: `INSERT`
+   - Type: **Supabase Edge Functions** (not "HTTP Request" — this type auto-attaches valid auth, avoiding a separate `WEBHOOK_SECRET`/header setup)
+   - Edge Function: select `send-event-notification` from the dropdown
 
 How it works: every signed-in device subscribes to the FCM topic `public-events`, plus one `group-<id>` topic per group it belongs to (kept in sync automatically as the user joins/leaves groups). The Edge Function (`supabase/functions/send-event-notification`) runs on every new event insert, works out which topic it belongs to from `event_type`/`group_id`, and sends one push to that topic — personal events never notify anyone. See the comment block at the end of [supabase/barangay_events.sql](supabase/barangay_events.sql) for the same summary alongside the schema.
 
 Not yet built: tapping a notification opens the app but doesn't jump straight to that event, and iOS isn't wired up (no Apple Developer account/signing in this repo yet).
+
+### App update notifications
+
+A new tagged release also pushes a "New version available" notification (topic `app-updates`, every device subscribes automatically) and refreshes the in-app update banner immediately if the app is already open — see the **About** page (Profile → About) for version info, a manual "Check for updates" button, and the latest release's notes. One-time setup, on top of the Firebase steps above (this reuses the same `FCM_SERVICE_ACCOUNT_JSON_B64` secret — no second Firebase credential needed):
+
+1. Pick a random secret string and set it in two places (same value in both):
+   ```powershell
+   supabase secrets set "RELEASE_NOTIFY_SECRET=<paste-a-random-string-here>"
+   ```
+   and as a GitHub repo secret named `RELEASE_NOTIFY_SECRET` (**Settings → Secrets and variables → Actions**) — same place as `KEYSTORE_FILE`/`KEYSTORE_PASSWORD`/etc.
+2. Deploy the function **without** JWT verification, since it's called directly by GitHub Actions rather than through a Supabase-authenticated Database Webhook like `send-event-notification` is:
+   ```powershell
+   supabase functions deploy send-app-update-notification --use-api --no-verify-jwt
+   ```
+
+How it works: `.github/workflows/release.yml` calls this function right after publishing a GitHub Release, passing the version tag; the function checks `Authorization: Bearer <RELEASE_NOTIFY_SECRET>` itself (since there's no Supabase webhook auto-auth here) and sends one push to the `app-updates` topic. If `RELEASE_NOTIFY_SECRET` isn't set yet, that workflow step is skipped without failing the release.

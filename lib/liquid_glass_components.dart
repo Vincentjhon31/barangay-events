@@ -497,3 +497,78 @@ class LiquidTabBar extends StatelessWidget {
     );
   }
 }
+
+/// Shared full-page shell: liquid glass backdrop, a glass back button and a
+/// page title, with the rest of the content scrolling below. This is the
+/// only full-page pattern in the app (no `AppBar`) — used for anything
+/// pushed via `Navigator.push` outside the main tab shell.
+class GlassSubPage extends StatelessWidget {
+  const GlassSubPage({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.children,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: LiquidGlassBackdrop()),
+          SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
+              children: [
+                Row(
+                  children: [
+                    InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => Navigator.of(context).maybePop(),
+                      child: IconBadge(
+                        icon: FontAwesomeIcons.chevronLeft,
+                        tint: colorScheme.primary,
+                        size: 44,
+                        iconSize: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                ...children,
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -334,16 +334,19 @@ alter table public.barangay_events drop column if exists requires_join_code;
 --
 -- Wiring (all done outside SQL, via the Supabase dashboard/CLI):
 --   1. Deploy the Edge Function in supabase/functions/send-event-notification
---      (`supabase functions deploy send-event-notification`).
---   2. Set its secrets: `supabase secrets set FCM_SERVICE_ACCOUNT_JSON='...'`
---      (from Firebase Console > Project Settings > Service accounts), and
---      optionally WEBHOOK_SECRET (any random string) for a lightweight
---      shared-secret check on the webhook request itself.
---   3. Database > Webhooks (Supabase dashboard) > create a new webhook:
---        table: barangay_events, event: INSERT, type: HTTP Request,
---        URL: the deployed function's URL,
---        HTTP header: Authorization: Bearer <same value as WEBHOOK_SECRET>
---        (only if you set that secret in step 2).
+--      (`supabase functions deploy send-event-notification --use-api`).
+--   2. Set its secret, base64-encoded (from Firebase Console > Project
+--      Settings > Service accounts > Generate new private key):
+--        $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Get-Content -Raw "key.json")))
+--        supabase secrets set "FCM_SERVICE_ACCOUNT_JSON_B64=$b64"
+--      Base64 is required, not optional — plain JSON is all double quotes,
+--      and PowerShell mangles that when passing it to a native exe as a
+--      command-line argument (learned this the hard way: the secret got
+--      silently corrupted and the function crashed on every call).
+--   3. Project > Integrations > Webhooks (Supabase dashboard) > create a new
+--      webhook: table barangay_events, event INSERT, type "Supabase Edge
+--      Functions" (not "HTTP Request" — this type auto-attaches valid
+--      auth), function: send-event-notification.
 --
 -- The function maps each new row to an FCM topic and skips personal
 -- events entirely: event_type='public' -> topic "public-events" (every
@@ -352,3 +355,171 @@ alter table public.barangay_events drop column if exists requires_join_code;
 -- or leave groups in the app). See README.md's "Push Notifications"
 -- section for the full walkthrough.
 -- ============================================================
+
+-- ============================================================
+-- Private groups (join-request/approval workflow).
+-- A private group is hidden from search; the only way in is entering its
+-- code, which files a join request the creator must accept.
+-- Safe to re-run on an existing database.
+-- ============================================================
+
+alter table public.groups add column if not exists is_private boolean not null default false;
+
+-- Tighten visibility: private groups only show to their creator and members
+-- (this is what actually makes them "unsearchable" — searchGroups/listMyGroups
+-- both just do a plain `select` under this policy, no client-side filtering
+-- needed).
+drop policy if exists "Authenticated can view groups" on public.groups;
+drop policy if exists "View public groups, or your own/joined private ones" on public.groups;
+create policy "View public groups, or your own/joined private ones"
+  on public.groups
+  for select
+  using (
+    is_private = false
+    or created_by = auth.uid()
+    or exists (select 1 from group_members gm where gm.group_id = groups.id and gm.user_id = auth.uid())
+  );
+
+-- Tighten self-serve joins: direct inserts into group_members only work for
+-- public groups, or for a group's own creator (covers createGroup's second
+-- insert for a private group). Anyone else joining a private group must go
+-- through the request_or_join_group() RPC below, which is security definer
+-- and so bypasses this policy entirely for the accept step.
+drop policy if exists "Users join groups themselves" on public.group_members;
+drop policy if exists "Users join public groups or their own" on public.group_members;
+create policy "Users join public groups or their own"
+  on public.group_members
+  for insert
+  with check (
+    auth.uid() = user_id
+    and (
+      exists (select 1 from groups g where g.id = group_id and g.is_private = false)
+      or exists (select 1 from groups g where g.id = group_id and g.created_by = auth.uid())
+    )
+  );
+
+create table if not exists public.group_join_requests (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid not null references public.groups(id) on delete cascade,
+  requester_id uuid not null references auth.users on delete cascade,
+  status text not null default 'pending', -- pending | accepted | declined
+  created_at timestamptz not null default now(),
+  unique (group_id, requester_id)
+);
+alter table public.group_join_requests enable row level security;
+
+drop policy if exists "Requester or group creator can view a request" on public.group_join_requests;
+create policy "Requester or group creator can view a request"
+  on public.group_join_requests
+  for select
+  using (
+    requester_id = auth.uid()
+    or exists (select 1 from groups g where g.id = group_id and g.created_by = auth.uid())
+  );
+-- No direct insert/update policies: both go through the RPCs below, which
+-- run security definer specifically so the "is this group private" and
+-- "am I the creator" checks can't be bypassed by a hand-crafted request.
+
+-- Looks up a group by code and either joins instantly (public) or files a
+-- pending request (private). Security definer so it can find a private
+-- group by code even though the caller's own SELECT is blocked from seeing it.
+--
+-- Two separate PL/pgSQL name-collision bugs have lived in this function:
+-- (1) the input parameter was named "code" — same as groups.code — making
+--     `where code = ...` ambiguous. Fixed by naming it p_code.
+-- (2) the RETURNS TABLE columns were named group_id/status — same as real
+--     columns on group_members/group_join_requests used later in the body
+--     (e.g. `insert ... on conflict (group_id, ...)`) — same ambiguity,
+--     just masked until (1) was fixed since the function errored out
+--     earlier every time. Fixed by prefixing the return columns with
+--     out_ so they can never collide with any table's column names, no
+--     matter what the function body later touches. The Dart caller
+--     (SupabaseEventRepository.requestOrJoinGroupByCode in
+--     lib/event_store.dart) reads out_group_id/out_group_name/out_status.
+drop function if exists public.request_or_join_group(text);
+create or replace function public.request_or_join_group(p_code text)
+returns table(out_group_id uuid, out_group_name text, out_status text)
+language plpgsql security definer set search_path = public as $$
+declare target record;
+begin
+  select id, name, is_private into target from groups where code = upper(trim(p_code));
+  if not found then raise exception 'Invalid group code'; end if;
+
+  if exists (select 1 from group_members gm where gm.group_id = target.id and gm.user_id = auth.uid()) then
+    return query select target.id, target.name, 'already_member'::text;
+    return;
+  end if;
+
+  if not target.is_private then
+    insert into group_members (group_id, user_id) values (target.id, auth.uid())
+      on conflict (group_id, user_id) do nothing;
+    return query select target.id, target.name, 'joined'::text;
+    return;
+  end if;
+
+  insert into group_join_requests (group_id, requester_id, status)
+    values (target.id, auth.uid(), 'pending')
+    on conflict (group_id, requester_id) do update set status = 'pending', created_at = now();
+  return query select target.id, target.name, 'pending'::text;
+end $$;
+
+-- Lists pending requests for groups the CALLER created (their approval inbox).
+create or replace function public.list_pending_join_requests()
+returns table(
+  request_id uuid, group_id uuid, group_name text,
+  requester_id uuid, requester_name text, requester_department text, created_at timestamptz
+)
+language sql security definer set search_path = public as $$
+  select gjr.id, gjr.group_id, g.name, gjr.requester_id, p.display_name, p.department, gjr.created_at
+  from group_join_requests gjr
+  join groups g on g.id = gjr.group_id
+  join profiles p on p.id = gjr.requester_id
+  where g.created_by = auth.uid() and gjr.status = 'pending'
+  order by gjr.created_at asc;
+$$;
+
+-- Accept or decline; only the group's creator may call this for their group.
+create or replace function public.respond_to_join_request(request_id uuid, accept boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare req record;
+begin
+  select gjr.group_id, gjr.requester_id, g.created_by into req
+    from group_join_requests gjr join groups g on g.id = gjr.group_id
+    where gjr.id = request_id;
+  if not found then raise exception 'Request not found'; end if;
+  if req.created_by <> auth.uid() then raise exception 'Only the group creator can respond to requests'; end if;
+
+  if accept then
+    insert into group_members (group_id, user_id) values (req.group_id, req.requester_id)
+      on conflict (group_id, user_id) do nothing;
+    update group_join_requests set status = 'accepted' where id = request_id;
+  else
+    update group_join_requests set status = 'declined' where id = request_id;
+  end if;
+end $$;
+
+-- ============================================================
+-- User preferences (appearance), synced across devices.
+-- theme_mode: 'system' | 'light' | 'dark'. ui_style: 'liquid' | 'solid'.
+-- Both mirror the ThemeMode/UiStyle enum .name values used client-side.
+-- Safe to re-run on an existing database.
+-- ============================================================
+alter table public.profiles add column if not exists theme_mode text not null default 'dark';
+alter table public.profiles add column if not exists ui_style text not null default 'liquid';
+
+-- ============================================================
+-- Hotfix: stale wide-open policies from the original (pre-private-groups)
+-- setup can still be active even after the Private groups block above has
+-- been run, if it was ever applied out of order or only partially in the
+-- SQL editor. Postgres RLS policies for the same command are OR'd
+-- together, so an old permissive policy left in place defeats a newer,
+-- more restrictive one sitting right next to it — this is exactly why
+-- private groups could still show up in search (old "Authenticated can
+-- view groups" on public.groups) and could still be self-joined directly,
+-- bypassing the approval flow (old "Users join groups themselves" on
+-- public.group_members). Unconditionally drop both old policy names here,
+-- last, so this always wins regardless of what ran before it.
+-- Safe/idempotent to re-run.
+-- ============================================================
+drop policy if exists "Authenticated can view groups" on public.groups;
+drop policy if exists "Users join groups themselves" on public.group_members;

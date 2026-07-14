@@ -1,14 +1,33 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'auth_service.dart' show AppAuthService;
 import 'liquid_glass_components.dart' show UiStyle;
 
 const String _themeModePrefKey = 'app_theme_mode';
 const String _uiStylePrefKey = 'app_ui_style';
 
+ThemeMode? _themeModeFromName(String? name) {
+  for (final value in ThemeMode.values) {
+    if (value.name == name) return value;
+  }
+  return null;
+}
+
+UiStyle? _uiStyleFromName(String? name) {
+  for (final value in UiStyle.values) {
+    if (value.name == name) return value;
+  }
+  return null;
+}
+
 /// Persists the user's chosen [ThemeMode] (light/dark/system) and
 /// [UiStyle] (liquid glass vs solid) across launches using
-/// [SharedPreferences].
+/// [SharedPreferences] as a fast local cache, and — once
+/// [attachAuthService] is called after sign-in — the user's `profiles` row,
+/// so the choice follows them to other devices.
 class ThemeController extends ChangeNotifier {
   ThemeController({
     ThemeMode initial = ThemeMode.dark,
@@ -21,6 +40,43 @@ class ThemeController extends ChangeNotifier {
 
   UiStyle _uiStyle;
   UiStyle get uiStyle => _uiStyle;
+
+  AppAuthService? _authService;
+
+  /// Lets future [setThemeMode]/[setUiStyle] calls sync to the signed-in
+  /// user's profile. Call once after sign-in; pair with [detachAuthService]
+  /// on sign-out.
+  void attachAuthService(AppAuthService authService) {
+    _authService = authService;
+  }
+
+  void detachAuthService() {
+    _authService = null;
+  }
+
+  /// Applies a preference fetched from the user's profile (e.g. right after
+  /// signing in on a new device) without writing it straight back to that
+  /// same profile.
+  Future<void> applyRemote({String? themeMode, String? uiStyle}) async {
+    final mode = _themeModeFromName(themeMode);
+    final style = _uiStyleFromName(uiStyle);
+
+    var changed = false;
+    if (mode != null && mode != _themeMode) {
+      _themeMode = mode;
+      changed = true;
+    }
+    if (style != null && style != _uiStyle) {
+      _uiStyle = style;
+      changed = true;
+    }
+    if (!changed) return;
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    if (mode != null) await prefs.setString(_themeModePrefKey, mode.name);
+    if (style != null) await prefs.setString(_uiStylePrefKey, style.name);
+  }
 
   static Future<ThemeController> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -44,6 +100,7 @@ class ThemeController extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_themeModePrefKey, mode.name);
+    unawaited(_authService?.savePreferences(themeMode: mode.name, uiStyle: _uiStyle.name));
   }
 
   Future<void> setUiStyle(UiStyle style) async {
@@ -53,5 +110,6 @@ class ThemeController extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_uiStylePrefKey, style.name);
+    unawaited(_authService?.savePreferences(themeMode: _themeMode.name, uiStyle: style.name));
   }
 }

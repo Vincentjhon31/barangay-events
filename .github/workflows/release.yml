@@ -79,3 +79,27 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify app-update push channel
+        # Non-fatal: a release should still succeed even if this secret
+        # hasn't been configured yet (see README.md's "Push Notifications"
+        # section for one-time setup). Reuses the same Supabase project the
+        # app talks to (see the Supabase.initialize URL in lib/main.dart).
+        continue-on-error: true
+        env:
+          RELEASE_NOTIFY_SECRET: ${{ secrets.RELEASE_NOTIFY_SECRET }}
+        run: |
+          if [ -z "$RELEASE_NOTIFY_SECRET" ]; then
+            echo "RELEASE_NOTIFY_SECRET not set — skipping app-update push notification."
+            exit 0
+          fi
+
+          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${VERSION%%+*}"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${GITHUB_REF_NAME}"
+
+          curl -sf -X POST \
+            "https://xuxnoydakqembrytdbyz.supabase.co/functions/v1/send-app-update-notification" \
+            -H "Authorization: Bearer $RELEASE_NOTIFY_SECRET" \
+            -H "Content-Type: application/json" \
+            -d "{\"version\":\"${VERSION}\",\"releaseUrl\":\"${RELEASE_URL}\"}"

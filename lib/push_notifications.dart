@@ -10,6 +10,10 @@ const String publicEventsTopic = 'public-events';
 /// The FCM topic a given group's events are pushed to.
 String groupTopic(String groupId) => 'group-$groupId';
 
+/// One FCM topic every device always listens to; a new app release is
+/// announced here (sent by the release GitHub Action, not by the app).
+const String appUpdatesTopic = 'app-updates';
+
 const AndroidNotificationChannel _eventUpdatesChannel = AndroidNotificationChannel(
   'event_updates',
   'Event updates',
@@ -28,7 +32,13 @@ const AndroidNotificationChannel _eventUpdatesChannel = AndroidNotificationChann
 abstract class PushNotificationService {
   /// Requests notification permission and starts showing incoming pushes.
   /// Safe to call once, after the user is signed in.
-  Future<void> initialize();
+  ///
+  /// [onAppUpdateAvailable] fires when a push announcing a new app release
+  /// arrives while the app is in the foreground, in addition to the system
+  /// notification being shown — the caller uses it to refresh its own
+  /// in-app "update available" state immediately, rather than only on the
+  /// next cold launch.
+  Future<void> initialize({void Function()? onAppUpdateAvailable});
 
   /// Subscribes to [publicEventsTopic] plus one topic per id in [groupIds],
   /// unsubscribing from any group topics no longer present. Call at sign-in
@@ -40,17 +50,31 @@ class FirebasePushNotificationService implements PushNotificationService {
   FirebasePushNotificationService({
     FirebaseMessaging? messaging,
     FlutterLocalNotificationsPlugin? localNotifications,
-  })  : _messaging = messaging ?? FirebaseMessaging.instance,
-        _localNotifications = localNotifications ?? FlutterLocalNotificationsPlugin();
+  })  : _providedMessaging = messaging,
+        _providedLocalNotifications = localNotifications;
 
-  final FirebaseMessaging _messaging;
-  final FlutterLocalNotificationsPlugin _localNotifications;
+  // Deliberately NOT resolved as constructor-parameter defaults: those run
+  // the instant this object is constructed, and `main()` constructs this
+  // unconditionally on every platform. `FirebaseMessaging.instance` throws
+  // immediately if Firebase never initialized (e.g. web/Windows/macOS/Linux,
+  // where only Android has a google-services.json), so touching it at
+  // construction time crashed the app on start on those platforms even
+  // though nothing had called initialize() yet. Resolving lazily here means
+  // merely creating this object is always safe.
+  final FirebaseMessaging? _providedMessaging;
+  final FlutterLocalNotificationsPlugin? _providedLocalNotifications;
+  FirebaseMessaging get _messaging => _providedMessaging ?? FirebaseMessaging.instance;
+  FlutterLocalNotificationsPlugin get _localNotifications =>
+      _providedLocalNotifications ?? (_localNotificationsInstance ??= FlutterLocalNotificationsPlugin());
+  FlutterLocalNotificationsPlugin? _localNotificationsInstance;
 
   bool _initialized = false;
   Set<String> _subscribedGroupIds = const {};
+  void Function()? _onAppUpdateAvailable;
 
   @override
-  Future<void> initialize() async {
+  Future<void> initialize({void Function()? onAppUpdateAvailable}) async {
+    _onAppUpdateAvailable = onAppUpdateAvailable;
     if (_initialized) return;
     _initialized = true;
 
@@ -65,6 +89,7 @@ class FirebasePushNotificationService implements PushNotificationService {
         ?.createNotificationChannel(_eventUpdatesChannel);
 
     await _messaging.subscribeToTopic(publicEventsTopic);
+    await _messaging.subscribeToTopic(appUpdatesTopic);
 
     // Background/terminated delivery is handled natively by FCM once the
     // payload has a `notification` block — only the foreground case needs
@@ -75,6 +100,10 @@ class FirebasePushNotificationService implements PushNotificationService {
   }
 
   Future<void> _showForegroundNotification(RemoteMessage message) async {
+    if (message.data['type'] == 'app_update') {
+      _onAppUpdateAvailable?.call();
+    }
+
     final notification = message.notification;
     if (notification == null) return;
 
@@ -113,7 +142,7 @@ class NoopPushNotificationService implements PushNotificationService {
   const NoopPushNotificationService();
 
   @override
-  Future<void> initialize() async {}
+  Future<void> initialize({void Function()? onAppUpdateAvailable}) async {}
 
   @override
   Future<void> syncTopics(List<String> groupIds) async {}

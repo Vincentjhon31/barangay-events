@@ -1,17 +1,16 @@
 ﻿import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'add_event_page.dart';
+import 'app_update_service.dart';
 import 'auth_service.dart';
 import 'event_store.dart';
 import 'liquid_glass_components.dart';
@@ -26,11 +25,16 @@ Future<void> main() async {
     anonKey: 'sb_publishable_XnqlZ-m2efmbasNuZ7fyVg_74qTnghA',
   );
 
+  var firebaseReady = false;
   try {
     await Firebase.initializeApp();
+    firebaseReady = true;
   } catch (_) {
-    // No google-services.json yet (see README's Push Notifications setup) —
-    // the app still works, it just won't be able to send/show pushes.
+    // No Firebase config for this platform (only Android has a
+    // google-services.json — see README's Push Notifications setup) — the
+    // app still works, it just won't be able to send/show pushes. Only
+    // Android is targeted for pushes right now: web/Windows/macOS/Linux
+    // builds are dev-only conveniences, not something this app ships.
   }
 
   final themeController = await ThemeController.load();
@@ -42,7 +46,9 @@ Future<void> main() async {
         repositoryOwner: 'Vincentjhon31',
         repositoryName: 'barangay-events',
       ),
-      pushNotificationServiceFactory: () async => FirebasePushNotificationService(),
+      pushNotificationServiceFactory: firebaseReady
+          ? () async => FirebasePushNotificationService()
+          : () async => const NoopPushNotificationService(),
     ),
   );
 }
@@ -202,10 +208,20 @@ class _AuthenticatedShellState extends State<AuthenticatedShell> {
         _resolvedRepository = repository;
       }
     }));
+
+    widget.themeController.attachAuthService(widget.authService);
+    unawaited(widget.authService.fetchPreferences().then((prefs) {
+      if (prefs == null || !mounted) return;
+      unawaited(widget.themeController.applyRemote(
+        themeMode: prefs.themeMode,
+        uiStyle: prefs.uiStyle,
+      ));
+    }));
   }
 
   @override
   void dispose() {
+    widget.themeController.detachAuthService();
     unawaited(_resolvedRepository?.dispose());
     super.dispose();
   }
@@ -577,6 +593,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   int _feedNewThreshold = 0; // snapshot at feed-open; drives the NEW pills
 
   List<BarangayEvent> _events = const [];
+  bool _eventsLoaded = false;
   late StreamSubscription<List<BarangayEvent>> _eventSubscription;
 
   bool get _hasUnseenFeedItems => _events.any(
@@ -590,10 +607,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _typeFilters.isEmpty || _typeFilters.contains(event.eventType);
 
   List<BarangayEvent> _getEventsForDay(DateTime day) {
-    // Normalize the day to ignore time component
-    final normalizedDay = DateTime.utc(day.year, day.month, day.day);
     final events = _events
-        .where((event) => isSameDay(event.dayKey, normalizedDay))
+        .where((event) => event.occursOnDay(day))
         .where(_passesTypeFilter)
         .toList();
     events.sort((a, b) {
@@ -617,7 +632,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Future<void> _initializePushNotifications() async {
     if (widget.authService == null) return;
     try {
-      await widget.pushNotificationService.initialize();
+      await widget.pushNotificationService.initialize(
+        onAppUpdateAvailable: () => unawaited(_checkForUpdates()),
+      );
     } catch (_) {
       // Firebase not configured yet, or the user denied the permission —
       // either way the app should keep working without push notifications.
@@ -656,8 +673,26 @@ class _CalendarScreenState extends State<CalendarScreen> {
   StreamSubscription<List<BarangayEvent>> _listenToEvents() {
     return widget.eventRepository.watchAllEvents().listen((events) {
       if (!mounted) return;
-      setState(() => _events = events);
+      setState(() {
+        _events = events;
+        _eventsLoaded = true;
+      });
     });
+  }
+
+  Widget _buildLoadingPanel() {
+    return const GlassPanel(
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 10),
+        child: Center(
+          child: SizedBox(
+            height: 22,
+            width: 22,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Re-opens the event stream, e.g. after joining a shared calendar makes
@@ -805,6 +840,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           authService: widget.authService!,
                           themeController: widget.themeController,
                           onProfileSaved: () => unawaited(_loadUserProfile()),
+                          updateService: widget.updateService,
                         )
                       else
                         const SizedBox.shrink(),
@@ -829,7 +865,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ],
                 selectedIndex: _selectedTab,
                 onSelect: _handleTabSelected,
-                dotIndices: _hasUnseenFeedItems ? const {1} : const <int>{},
+                dotIndices: {
+                  if (_hasUnseenFeedItems) 1,
+                  if (_availableUpdate != null) 3,
+                },
               ),
             ),
           ),
@@ -839,13 +878,58 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ? Padding(
               padding: const EdgeInsets.only(bottom: 96),
               child: FloatingActionButton(
-                onPressed: () => _showAddEventDialog(context),
+                onPressed: () => unawaited(_openAddEventPage()),
                 backgroundColor: Theme.of(context).colorScheme.primary,
                 child: const FaIcon(FontAwesomeIcons.plus),
               ),
             )
           : null,
     );
+  }
+
+  Future<void> _openAddEventPage() async {
+    List<BarangayGroup> myGroups = const [];
+    try {
+      myGroups = await widget.eventRepository.listMyGroups();
+    } catch (_) {
+      // Groups unavailable (e.g. migration not run) — page still works for
+      // public/personal events.
+    }
+    if (!mounted) return;
+
+    final today = DateTime.now();
+    final todayMidnight = DateTime(today.year, today.month, today.day);
+    final seed = _selectedDay ?? _focusedDay;
+    final initialDate = seed.isBefore(todayMidnight) ? todayMidnight : seed;
+
+    final result = await Navigator.of(context).push<AddEventResult>(
+      MaterialPageRoute(
+        builder: (_) => AddEventPage(
+          eventRepository: widget.eventRepository,
+          myGroups: myGroups,
+          initialDate: initialDate,
+          creatorProfile: _userProfile ?? widget.authService?.currentUser,
+          findOverlappingEvents: _findOverlappingEvents,
+          suggestFreeSlot: _suggestFreeSlot,
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _selectedDay = result.date;
+        _focusedDay = result.date;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.groupName != null
+                ? 'Added "${result.title}" to ${result.groupName}.'
+                : 'Added "${result.title}" to the calendar.',
+          ),
+        ),
+      );
+    }
   }
 
   Widget _buildCalendarTab() {
@@ -956,15 +1040,40 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   List<Widget> _buildMonthListSections() {
-    final monthEvents = _events
-        .where((event) =>
-            event.startTime.year == _listMonth.year &&
-            event.startTime.month == _listMonth.month)
-        .where(_passesTypeFilter)
-        .toList()
-      ..sort((a, b) => a.startTime.compareTo(b.startTime));
+    if (!_eventsLoaded) return [_buildLoadingPanel()];
 
-    if (monthEvents.isEmpty) {
+    // Walk every day in the visible month (not just each event's start
+    // day) so a multi-day event shows under every day header it spans.
+    final daysInMonth = DateUtils.getDaysInMonth(_listMonth.year, _listMonth.month);
+    final widgets = <Widget>[];
+
+    for (var day = 1; day <= daysInMonth; day++) {
+      final date = DateTime.utc(_listMonth.year, _listMonth.month, day);
+      final dayEvents = _events
+          .where((event) => event.occursOnDay(date))
+          .where(_passesTypeFilter)
+          .toList()
+        ..sort((a, b) => a.startTime.compareTo(b.startTime));
+      if (dayEvents.isEmpty) continue;
+
+      widgets.add(Padding(
+        padding: EdgeInsets.only(top: widgets.isEmpty ? 0 : 10, bottom: 8),
+        child: Text(
+          DateFormat('EEEE, MMM d').format(date),
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                letterSpacing: 0.6,
+                fontWeight: FontWeight.w700,
+              ),
+        ),
+      ));
+      for (final event in dayEvents) {
+        widgets.add(_buildEventCard(event));
+        widgets.add(const SizedBox(height: 12));
+      }
+    }
+
+    if (widgets.isEmpty) {
       return [
         GlassPanel(
           child: Text(
@@ -974,32 +1083,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
         ),
       ];
-    }
-
-    final widgets = <Widget>[];
-    DateTime? currentDay;
-    for (final event in monthEvents) {
-      final day = DateTime(
-        event.startTime.year,
-        event.startTime.month,
-        event.startTime.day,
-      );
-      if (currentDay == null || !day.isAtSameMomentAs(currentDay)) {
-        currentDay = day;
-        widgets.add(Padding(
-          padding: EdgeInsets.only(top: widgets.isEmpty ? 0 : 10, bottom: 8),
-          child: Text(
-            DateFormat('EEEE, MMM d').format(day),
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  letterSpacing: 0.6,
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-        ));
-      }
-      widgets.add(_buildEventCard(event));
-      widgets.add(const SizedBox(height: 12));
     }
     return widgets;
   }
@@ -1159,6 +1242,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildAnnouncementBanner() {
+    if (!_eventsLoaded) return _buildLoadingPanel();
+
     final event = _nextUpcomingEvent;
     if (event == null) {
       return GlassPanel(
@@ -1213,7 +1298,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '${event.location} • ${_formatDate(event.startTime)}, ${_formatTime(event.startTime)}',
+                    event.isMultiDay
+                        ? '${event.location} • ${_dateRangeLabel(event)}'
+                        : '${event.location} • ${_formatDate(event.startTime)}, ${_formatTime(event.startTime)}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -1249,6 +1336,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   List<Widget> _buildUpcomingEventCards() {
+    if (!_eventsLoaded) return [_buildLoadingPanel()];
+
     final events = _getEventsForDay(_selectedDay ?? _focusedDay);
 
     if (events.isEmpty) {
@@ -1281,7 +1370,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
         _buildPageHeader(
             'Feed', 'New events from people you follow and the community.'),
         const SizedBox(height: 18),
-        if (feedEvents.isEmpty)
+        if (!_eventsLoaded)
+          _buildLoadingPanel()
+        else if (feedEvents.isEmpty)
           GlassPanel(
             child: Text(
               'Nothing here yet. Join groups from the Groups tab to see their '
@@ -1378,7 +1469,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '${_formatDate(event.startTime)} • ${_formatTime(event.startTime)} - ${_formatTime(event.endTime)}',
+                    '${_dateRangeLabel(event)} • ${_formatTime(event.startTime)} - ${_formatTime(event.endTime)}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
@@ -1476,16 +1567,42 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 final dayEvents = _getEventsForDay(date);
                 if (dayEvents.isEmpty) return null;
 
-                return Positioned(
-                  bottom: 3,
-                  child: Container(
-                    width: 5,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: colorScheme.primary,
-                      shape: BoxShape.circle,
+                // Multi-day events (e.g. a 3-day fiesta) get an extra
+                // accent bar on every day they span, distinct from the
+                // regular single-day dot, so a long event is easy to spot
+                // at a glance in the grid.
+                final hasMultiDay = dayEvents.any((event) => event.isMultiDay);
+
+                return Stack(
+                  alignment: Alignment.center,
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned(
+                      bottom: hasMultiDay ? 7 : 3,
+                      child: Container(
+                        width: 5,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: colorScheme.primary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
                     ),
-                  ),
+                    if (hasMultiDay)
+                      const Positioned(
+                        bottom: 1,
+                        child: SizedBox(
+                          width: 18,
+                          height: 3,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Color(0xFFFFA726),
+                              borderRadius: BorderRadius.all(Radius.circular(2)),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 );
               },
 
@@ -1579,7 +1696,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Future<void> _showEventDetails(BarangayEvent event) async {
     final startTime = event.startTime;
     final endTime = event.endTime;
-    final formattedDate = _formatDate(startTime);
+    final formattedDate = _dateRangeLabel(event);
     final startTimeStr = _formatTime(startTime);
     final endTimeStr = _formatTime(endTime);
 
@@ -2132,14 +2249,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       FaIcon(
-                        FontAwesomeIcons.clock,
+                        event.isMultiDay ? FontAwesomeIcons.calendarWeek : FontAwesomeIcons.clock,
                         size: 13,
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                       const SizedBox(width: 5),
                       Expanded(
                         child: Text(
-                          '${_formatDate(startTime)} • ${_formatTime(startTime)} - ${_formatTime(endTime)}',
+                          '${_dateRangeLabel(event)} • ${_formatTime(startTime)} - ${_formatTime(endTime)}',
                           style:
                               Theme.of(context).textTheme.bodySmall?.copyWith(
                                     color: Theme.of(context)
@@ -2420,6 +2537,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return DateFormat('EEEE, MMM d, yyyy').format(date);
   }
 
+  /// [_formatDate] for a single-day event, or a compact "MMM d – MMM d,
+  /// yyyy" span for a multi-day one.
+  String _dateRangeLabel(BarangayEvent event) {
+    if (!event.isMultiDay) return _formatDate(event.startTime);
+    final sameYear = event.startTime.year == event.endTime.year;
+    final start = DateFormat(sameYear ? 'MMM d' : 'MMM d, yyyy').format(event.startTime);
+    final end = DateFormat('MMM d, yyyy').format(event.endTime);
+    return '$start – $end';
+  }
+
   Future<void> _handleEventAction(String action, BarangayEvent event) async {
     await widget.eventRepository.updateAttendanceStatus(event.id, action);
     if (!mounted) return;
@@ -2432,355 +2559,98 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Future<void> _showAddEventDialog(BuildContext context) async {
-    List<BarangayGroup> myGroups = const [];
-    try {
-      myGroups = await widget.eventRepository.listMyGroups();
-    } catch (_) {
-      // Groups unavailable (e.g. migration not run) — dialog still works
-      // for public/personal events.
-    }
-    if (!context.mounted) return;
+  int _timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
 
-    final titleController = TextEditingController();
-    final locationController = TextEditingController();
-    final descriptionController = TextEditingController();
-    DateTime selectedDate = _selectedDay ?? _focusedDay;
-    TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
-    TimeOfDay endTime = const TimeOfDay(hour: 10, minute: 0);
-    String eventType = EventType.public;
-    BarangayGroup? selectedGroup = myGroups.isNotEmpty ? myGroups.first : null;
+  /// Events occurring on [date] (any type — public/group/personal, since
+  /// all of them show up together in this user's own Calendar/List/Feed)
+  /// whose time-of-day range overlaps [start]–[end]. For a multi-day event,
+  /// "occurring on [date]" uses [BarangayEvent.occursOnDay] and its
+  /// time-of-day is taken from its start/end *clock* time, applied on every
+  /// day it spans — e.g. a 3-day event timed 7–8 AM only blocks 7–8 AM on
+  /// each of those days, not the whole day.
+  List<BarangayEvent> _findOverlappingEvents(DateTime date, TimeOfDay start, TimeOfDay end) {
+    final startMinutes = _timeToMinutes(start);
+    final endMinutes = _timeToMinutes(end);
 
-    String typeHelperText() {
-      switch (eventType) {
-        case EventType.shared:
-          return 'Only members of the group you pick can see this.';
-        case EventType.personal:
-          return 'Only you can see this.';
-        default:
-          return 'Everyone in the app can see this.';
-      }
-    }
+    final overlapping = _events.where((event) {
+      if (!event.occursOnDay(date)) return false;
+      final eventStart = _timeToMinutes(TimeOfDay.fromDateTime(event.startTime));
+      final eventEnd = _timeToMinutes(TimeOfDay.fromDateTime(event.endTime));
+      // Half-open interval overlap — back-to-back events (one ending right
+      // as another starts) don't count as a conflict.
+      return startMinutes < eventEnd && eventStart < endMinutes;
+    }).toList();
 
-    Future<void> pickDate(StateSetter setDialogState) async {
-      final pickedDate = await showDatePicker(
-        context: context,
-        initialDate: selectedDate,
-        firstDate: DateTime.utc(2020, 1, 1),
-        lastDate: DateTime.utc(2030, 12, 31),
-      );
-
-      if (pickedDate != null) {
-        setDialogState(() {
-          selectedDate = pickedDate;
-        });
-      }
-    }
-
-    Future<void> pickStartTime(StateSetter setDialogState) async {
-      final pickedTime = await showTimePicker(
-        context: context,
-        initialTime: startTime,
-      );
-
-      if (pickedTime != null) {
-        setDialogState(() {
-          startTime = pickedTime;
-          if (_timeToMinutes(endTime) <= _timeToMinutes(startTime)) {
-            endTime = TimeOfDay(
-              hour: (startTime.hour + 1) % 24,
-              minute: startTime.minute,
-            );
-          }
-        });
-      }
-    }
-
-    Future<void> pickEndTime(StateSetter setDialogState) async {
-      final pickedTime = await showTimePicker(
-        context: context,
-        initialTime: endTime,
-      );
-
-      if (pickedTime != null) {
-        setDialogState(() {
-          endTime = pickedTime;
-        });
-      }
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: const Text('Add New Event'),
-            content: SingleChildScrollView(
-              child: SizedBox(
-                width: 420,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SegmentedButton<String>(
-                      style: SegmentedButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      showSelectedIcon: false,
-                      segments: const [
-                        ButtonSegment<String>(
-                          value: EventType.public,
-                          label: Text('Public'),
-                          icon: FaIcon(FontAwesomeIcons.globe, size: 12),
-                        ),
-                        ButtonSegment<String>(
-                          value: EventType.shared,
-                          label: Text('Group'),
-                          icon: FaIcon(FontAwesomeIcons.userGroup, size: 12),
-                        ),
-                        ButtonSegment<String>(
-                          value: EventType.personal,
-                          label: Text('Personal'),
-                          icon: FaIcon(FontAwesomeIcons.lock, size: 12),
-                        ),
-                      ],
-                      selected: {eventType},
-                      onSelectionChanged: (selection) {
-                        setDialogState(() {
-                          eventType = selection.first;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      typeHelperText(),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                    ),
-                    if (eventType == EventType.shared) ...[
-                      const SizedBox(height: 12),
-                      if (myGroups.isEmpty)
-                        Text(
-                          'You have no groups yet — create one in the Groups tab first.',
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Theme.of(context).colorScheme.error,
-                                  ),
-                        )
-                      else
-                        DropdownButtonFormField<BarangayGroup>(
-                          initialValue: selectedGroup,
-                          decoration: InputDecoration(
-                            labelText: 'Post to group',
-                            prefixIcon: glassFieldIcon(FontAwesomeIcons.userGroup, size: 14),
-                            prefixIconConstraints: glassFieldIconConstraints,
-                          ),
-                          items: [
-                            for (final group in myGroups)
-                              DropdownMenuItem(
-                                value: group,
-                                child: Text(group.name),
-                              ),
-                          ],
-                          onChanged: (group) {
-                            setDialogState(() {
-                              selectedGroup = group;
-                            });
-                          },
-                        ),
-                    ],
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: titleController,
-                      decoration: const InputDecoration(
-                        labelText: 'Event title',
-                        hintText: 'e.g. Barangay Assembly',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: locationController,
-                      decoration: const InputDecoration(
-                        labelText: 'Location',
-                        hintText: 'e.g. Barangay Hall',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: descriptionController,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'Description',
-                        hintText: 'Add a short note for residents',
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const FaIcon(FontAwesomeIcons.calendarDays),
-                      title: const Text('Date'),
-                      subtitle: Text(
-                        DateFormat('EEEE, MMM d, yyyy').format(selectedDate),
-                      ),
-                      trailing: TextButton(
-                        onPressed: () => pickDate(setDialogState),
-                        child: const Text('Change'),
-                      ),
-                    ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const FaIcon(FontAwesomeIcons.clock),
-                      title: const Text('Start time'),
-                      subtitle: Text(startTime.format(context)),
-                      trailing: TextButton(
-                        onPressed: () => pickStartTime(setDialogState),
-                        child: const Text('Change'),
-                      ),
-                    ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const FaIcon(FontAwesomeIcons.hourglassStart),
-                      title: const Text('End time'),
-                      subtitle: Text(endTime.format(context)),
-                      trailing: TextButton(
-                        onPressed: () => pickEndTime(setDialogState),
-                        child: const Text('Change'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  final title = titleController.text.trim();
-                  final location = locationController.text.trim();
-                  final description = descriptionController.text.trim();
-
-                  if (title.isEmpty || location.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Title and location are required.'),
-                      ),
-                    );
-                    return;
-                  }
-
-                  if (_timeToMinutes(endTime) <= _timeToMinutes(startTime)) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('End time must be after start time.'),
-                      ),
-                    );
-                    return;
-                  }
-
-                  final normalizedDate = DateTime.utc(
-                    selectedDate.year,
-                    selectedDate.month,
-                    selectedDate.day,
-                  );
-                  final startDateTime = DateTime(
-                    selectedDate.year,
-                    selectedDate.month,
-                    selectedDate.day,
-                    startTime.hour,
-                    startTime.minute,
-                  );
-                  final endDateTime = DateTime(
-                    selectedDate.year,
-                    selectedDate.month,
-                    selectedDate.day,
-                    endTime.hour,
-                    endTime.minute,
-                  );
-
-                  if (eventType == EventType.shared && selectedGroup == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Pick a group for this event — create or join one in the Groups tab.',
-                        ),
-                      ),
-                    );
-                    return;
-                  }
-
-                  final creator =
-                      _userProfile ?? widget.authService?.currentUser;
-                  final newEventId =
-                      DateTime.now().microsecondsSinceEpoch.toString();
-                  final group =
-                      eventType == EventType.shared ? selectedGroup : null;
-
-                  unawaited(() async {
-                    try {
-                      await widget.eventRepository.addEvent(
-                        BarangayEvent(
-                          id: newEventId,
-                          title: title,
-                          location: location,
-                          startTime: startDateTime,
-                          endTime: endDateTime,
-                          description: description,
-                          hasAttachment: false,
-                          createdAt: DateTime.now(),
-                          createdByName: creator?.displayName,
-                          createdByDepartment: creator?.department,
-                          createdById: creator?.id,
-                          eventType: eventType,
-                          groupId: group?.id,
-                          groupName: group?.name,
-                        ),
-                      );
-                    } catch (error) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(this.context).showSnackBar(
-                        SnackBar(
-                          content: Text('Could not save the event: $error'),
-                          duration: const Duration(seconds: 6),
-                        ),
-                      );
-                      return;
-                    }
-
-                    if (!mounted) {
-                      return;
-                    }
-
-                    setState(() {
-                      _selectedDay = normalizedDate;
-                      _focusedDay = normalizedDate;
-                    });
-
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(this.context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          group != null
-                              ? 'Added "$title" to ${group.name}.'
-                              : 'Added "$title" to the calendar.',
-                        ),
-                      ),
-                    );
-                  }());
-                },
-                child: const Text('Save'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+    overlapping.sort((a, b) => a.startTime.compareTo(b.startTime));
+    return overlapping;
   }
 
-  int _timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
+  /// The free time slot on [date], of the same length as [desiredStart]–
+  /// [desiredEnd], that starts closest to what was originally requested.
+  /// Null if the day has no gap long enough left.
+  ({TimeOfDay start, TimeOfDay end})? _suggestFreeSlot(
+    DateTime date,
+    TimeOfDay desiredStart,
+    TimeOfDay desiredEnd,
+  ) {
+    final duration = _timeToMinutes(desiredEnd) - _timeToMinutes(desiredStart);
+    if (duration <= 0) return null;
+
+    final busy = _events
+        .where((event) => event.occursOnDay(date))
+        .map((event) => (
+              start: _timeToMinutes(TimeOfDay.fromDateTime(event.startTime)),
+              end: _timeToMinutes(TimeOfDay.fromDateTime(event.endTime)),
+            ))
+        .toList()
+      ..sort((a, b) => a.start.compareTo(b.start));
+
+    // Merge overlapping/touching busy intervals.
+    final merged = <({int start, int end})>[];
+    for (final interval in busy) {
+      if (merged.isNotEmpty && interval.start <= merged.last.end) {
+        final last = merged.removeLast();
+        merged.add((start: last.start, end: interval.end > last.end ? interval.end : last.end));
+      } else {
+        merged.add(interval);
+      }
+    }
+
+    // Free gaps across the whole day.
+    final gaps = <({int start, int end})>[];
+    var cursor = 0;
+    for (final interval in merged) {
+      if (interval.start > cursor) {
+        gaps.add((start: cursor, end: interval.start));
+      }
+      cursor = interval.end > cursor ? interval.end : cursor;
+    }
+    if (cursor < 1440) {
+      gaps.add((start: cursor, end: 1440));
+    }
+
+    final desiredStartMinutes = _timeToMinutes(desiredStart);
+    ({int start, int end})? bestGap;
+    var bestDistance = 1 << 30;
+    for (final gap in gaps) {
+      if (gap.end - gap.start < duration) continue;
+      final latestFit = gap.end - duration;
+      final clampedStart = desiredStartMinutes < gap.start
+          ? gap.start
+          : (desiredStartMinutes > latestFit ? latestFit : desiredStartMinutes);
+      final distance = (clampedStart - desiredStartMinutes).abs();
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestGap = (start: clampedStart, end: clampedStart + duration);
+      }
+    }
+
+    if (bestGap == null) return null;
+    return (
+      start: TimeOfDay(hour: bestGap.start ~/ 60, minute: bestGap.start % 60),
+      end: TimeOfDay(hour: bestGap.end ~/ 60, minute: bestGap.end % 60),
+    );
+  }
 }
 
 /// The "Group" block inside the event details sheet for group events:
@@ -2867,162 +2737,5 @@ class _GroupInfoSectionState extends State<_GroupInfoSection> {
         ],
       ),
     );
-  }
-}
-
-abstract class AppUpdateService {
-  Future<AppUpdateInfo?> checkForUpdate();
-}
-
-class GitHubReleaseUpdateService implements AppUpdateService {
-  GitHubReleaseUpdateService({
-    required this.repositoryOwner,
-    required this.repositoryName,
-  });
-
-  final String repositoryOwner;
-  final String repositoryName;
-
-  @override
-  Future<AppUpdateInfo?> checkForUpdate() async {
-    final packageInfo = await PackageInfo.fromPlatform();
-    final currentVersion = packageInfo.version;
-    final currentBuildNumber = packageInfo.buildNumber;
-    final latestRelease = await _fetchLatestRelease();
-    final latestVersion = _normalizeVersion(latestRelease.tagName);
-
-    if (!_isNewerVersion(
-      latestVersion,
-      '$currentVersion+$currentBuildNumber',
-    )) {
-      return null;
-    }
-
-    return AppUpdateInfo(
-      latestVersion: latestVersion,
-      releaseUrl: latestRelease.releaseUrl,
-      downloadUrl: latestRelease.apkDownloadUrl ?? latestRelease.releaseUrl,
-    );
-  }
-
-  Future<_GitHubRelease> _fetchLatestRelease() async {
-    final client = HttpClient();
-    try {
-      final uri = Uri.https(
-        'api.github.com',
-        '/repos/$repositoryOwner/$repositoryName/releases/latest',
-      );
-      final request = await client.getUrl(uri);
-      request.headers
-        ..set(HttpHeaders.acceptHeader, 'application/vnd.github+json')
-        ..set(HttpHeaders.userAgentHeader, 'barangay-events-app');
-
-      final response = await request.close();
-      final body = await utf8.decodeStream(response);
-
-      if (response.statusCode != HttpStatus.ok) {
-        throw HttpException(
-          'GitHub release check failed with status ${response.statusCode}',
-          uri: uri,
-        );
-      }
-
-      final json = jsonDecode(body) as Map<String, dynamic>;
-      final assets = (json['assets'] as List<dynamic>? ?? [])
-          .whereType<Map<String, dynamic>>();
-      String? apkDownloadUrl;
-
-      for (final asset in assets) {
-        final name = asset['name'] as String? ?? '';
-        final url = asset['browser_download_url'] as String?;
-        if (name.toLowerCase().endsWith('.apk') && url != null) {
-          apkDownloadUrl = url;
-          break;
-        }
-      }
-
-      return _GitHubRelease(
-        tagName: json['tag_name'] as String? ?? '',
-        releaseUrl: json['html_url'] as String? ?? '',
-        apkDownloadUrl: apkDownloadUrl,
-      );
-    } finally {
-      client.close();
-    }
-  }
-}
-
-class AppUpdateInfo {
-  const AppUpdateInfo({
-    required this.latestVersion,
-    required this.releaseUrl,
-    required this.downloadUrl,
-  });
-
-  final String latestVersion;
-  final String releaseUrl;
-  final String downloadUrl;
-}
-
-class _GitHubRelease {
-  const _GitHubRelease({
-    required this.tagName,
-    required this.releaseUrl,
-    required this.apkDownloadUrl,
-  });
-
-  final String tagName;
-  final String releaseUrl;
-  final String? apkDownloadUrl;
-}
-
-String _normalizeVersion(String version) {
-  return version.trim().replaceFirst(RegExp(r'^v', caseSensitive: false), '');
-}
-
-bool _isNewerVersion(String latestVersion, String currentVersion) {
-  final latest = _Version.parse(latestVersion);
-  final current = _Version.parse(currentVersion);
-  return latest.compareTo(current) > 0;
-}
-
-class _Version implements Comparable<_Version> {
-  const _Version(this.major, this.minor, this.patch, this.build);
-
-  factory _Version.parse(String input) {
-    final normalized = _normalizeVersion(input);
-    final parts = normalized.split('+');
-    final versionParts = parts.first.split('.');
-
-    int valueAt(int index) {
-      if (index >= versionParts.length) return 0;
-      return int.tryParse(
-              versionParts[index].replaceAll(RegExp(r'\D.*$'), '')) ??
-          0;
-    }
-
-    return _Version(
-      valueAt(0),
-      valueAt(1),
-      valueAt(2),
-      parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0,
-    );
-  }
-
-  final int major;
-  final int minor;
-  final int patch;
-  final int build;
-
-  @override
-  int compareTo(_Version other) {
-    final comparisons = [
-      major.compareTo(other.major),
-      minor.compareTo(other.minor),
-      patch.compareTo(other.patch),
-      build.compareTo(other.build),
-    ];
-
-    return comparisons.firstWhere((value) => value != 0, orElse: () => 0);
   }
 }

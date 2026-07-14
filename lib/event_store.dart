@@ -63,6 +63,19 @@ class BarangayEvent {
 
   DateTime get dayKey => DateTime.utc(startTime.year, startTime.month, startTime.day);
 
+  /// The calendar day [endTime] falls on, normalized the same way as [dayKey].
+  DateTime get endDayKey => DateTime.utc(endTime.year, endTime.month, endTime.day);
+
+  /// True when the event spans more than one calendar day.
+  bool get isMultiDay => endDayKey.isAfter(dayKey);
+
+  /// Whether this event is happening on [day] — i.e. [day] falls anywhere
+  /// within [dayKey]..[endDayKey] inclusive, not just on the start day.
+  bool occursOnDay(DateTime day) {
+    final normalized = DateTime.utc(day.year, day.month, day.day);
+    return !normalized.isBefore(dayKey) && !normalized.isAfter(endDayKey);
+  }
+
   BarangayEvent copyWith({
     String? attendanceStatus,
   }) {
@@ -191,6 +204,7 @@ class BarangayGroup {
     required this.code,
     this.memberCount = 0,
     this.createdBy,
+    this.isPrivate = false,
   });
 
   final String id;
@@ -198,6 +212,52 @@ class BarangayGroup {
   final String code;
   final int memberCount;
   final String? createdBy;
+
+  /// Hidden from search; joining requires a request the creator accepts.
+  final bool isPrivate;
+}
+
+/// A pending request to join one of the current user's private groups,
+/// awaiting their Accept/Decline.
+class GroupJoinRequest {
+  const GroupJoinRequest({
+    required this.id,
+    required this.groupId,
+    required this.groupName,
+    required this.requesterId,
+    this.requesterName,
+    this.requesterDepartment,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String groupId;
+  final String groupName;
+  final String requesterId;
+  final String? requesterName;
+  final String? requesterDepartment;
+  final DateTime createdAt;
+
+  String get requesterLabel {
+    final name = requesterName?.trim();
+    final department = requesterDepartment?.trim();
+    final hasName = name != null && name.isNotEmpty;
+    final hasDepartment = department != null && department.isNotEmpty;
+    if (hasName && hasDepartment) return '$name • $department';
+    if (hasName) return name;
+    if (hasDepartment) return department;
+    return 'Someone';
+  }
+}
+
+/// Outcome of [EventRepository.requestOrJoinGroupByCode].
+enum GroupJoinStatus { joined, pending, alreadyMember }
+
+class GroupJoinResult {
+  const GroupJoinResult({required this.group, required this.status});
+
+  final BarangayGroup group;
+  final GroupJoinStatus status;
 }
 
 abstract class EventRepository {
@@ -213,12 +273,15 @@ abstract class EventRepository {
   Future<List<BarangayGroup>> searchGroups(String query);
 
   /// Creates a group (the creator automatically becomes a member).
-  Future<BarangayGroup> createGroup(String name);
+  Future<BarangayGroup> createGroup(String name, {bool isPrivate = false});
 
-  /// Joins the group behind [code]; returns it for display.
-  Future<BarangayGroup> joinGroupByCode(String code);
+  /// Looks up the group behind [code]. Public groups join instantly; private
+  /// ones file a request the creator must accept — check the result's
+  /// [GroupJoinResult.status] to know which happened.
+  Future<GroupJoinResult> requestOrJoinGroupByCode(String code);
 
-  /// Joins [groupId] directly (from search results).
+  /// Joins [groupId] directly (from search results — only ever a public
+  /// group, since private ones never appear in search results).
   Future<void> joinGroup(String groupId);
 
   /// Leaves [groupId].
@@ -226,6 +289,12 @@ abstract class EventRepository {
 
   /// How many members [groupId] has right now.
   Future<int> fetchGroupMemberCount(String groupId);
+
+  /// Pending join requests for groups the current user created.
+  Future<List<GroupJoinRequest>> listPendingJoinRequests();
+
+  /// Accepts or declines a pending request (creator-only).
+  Future<void> respondToJoinRequest(String requestId, {required bool accept});
 
   Future<void> dispose();
 }
@@ -287,9 +356,46 @@ class MemoryEventRepository implements EventRepository {
       memberCount: 12,
       createdBy: 'hrmo-1',
     ),
+    // Private, owned by someone else — exercises the "request, don't join"
+    // path when the mock user enters its code.
+    const BarangayGroup(
+      id: 'grp-council',
+      name: 'Barangay Council',
+      code: 'COUNCIL',
+      memberCount: 5,
+      createdBy: 'hrmo-1',
+      isPrivate: true,
+    ),
+    // Private, owned by the mock user, with a seeded pending request below
+    // — exercises the approval UI without any setup.
+    const BarangayGroup(
+      id: 'grp-private-mock',
+      name: 'Trusted Circle',
+      code: 'CIRCLE',
+      memberCount: 1,
+      createdBy: _mockUserId,
+      isPrivate: true,
+    ),
   ];
+  // Note: intentionally starts empty, even though 'grp-private-mock' above
+  // is "created by" the mock user — tests rely on a fresh account having
+  // zero groups. Membership isn't needed for listPendingJoinRequests()
+  // (that's scoped by createdBy, not _myGroupIds), so the seeded pending
+  // request below still shows up in the approval inbox regardless.
   final Set<String> _myGroupIds = {};
+  final List<GroupJoinRequest> _pendingRequests = [
+    GroupJoinRequest(
+      id: 'req-seed-1',
+      groupId: 'grp-private-mock',
+      groupName: 'Trusted Circle',
+      requesterId: 'health-1',
+      requesterName: 'Pedro Reyes',
+      requesterDepartment: 'Health Office',
+      createdAt: DateTime.now().subtract(const Duration(hours: 2)),
+    ),
+  ];
   int _groupCounter = 0;
+  int _requestCounter = 0;
 
   @override
   Future<List<BarangayGroup>> listMyGroups() async {
@@ -301,12 +407,14 @@ class MemoryEventRepository implements EventRepository {
     final needle = query.trim().toLowerCase();
     if (needle.isEmpty) return const [];
     return _allGroups
-        .where((group) => group.name.toLowerCase().contains(needle))
+        .where((group) =>
+            group.name.toLowerCase().contains(needle) &&
+            (!group.isPrivate || _myGroupIds.contains(group.id)))
         .toList();
   }
 
   @override
-  Future<BarangayGroup> createGroup(String name) async {
+  Future<BarangayGroup> createGroup(String name, {bool isPrivate = false}) async {
     _groupCounter++;
     final group = BarangayGroup(
       id: 'grp-local-$_groupCounter',
@@ -314,6 +422,7 @@ class MemoryEventRepository implements EventRepository {
       code: 'NEW${_groupCounter.toString().padLeft(3, '0')}',
       memberCount: 1,
       createdBy: _mockUserId,
+      isPrivate: isPrivate,
     );
     _allGroups.add(group);
     _myGroupIds.add(group.id);
@@ -321,7 +430,7 @@ class MemoryEventRepository implements EventRepository {
   }
 
   @override
-  Future<BarangayGroup> joinGroupByCode(String code) async {
+  Future<GroupJoinResult> requestOrJoinGroupByCode(String code) async {
     final normalized = code.trim().toUpperCase();
     final group = _allGroups
         .where((group) => group.code.toUpperCase() == normalized)
@@ -329,8 +438,26 @@ class MemoryEventRepository implements EventRepository {
     if (group == null) {
       throw Exception('Invalid group code');
     }
-    _myGroupIds.add(group.id);
-    return group;
+
+    if (_myGroupIds.contains(group.id)) {
+      return GroupJoinResult(group: group, status: GroupJoinStatus.alreadyMember);
+    }
+
+    if (!group.isPrivate) {
+      _myGroupIds.add(group.id);
+      return GroupJoinResult(group: group, status: GroupJoinStatus.joined);
+    }
+
+    _requestCounter++;
+    _pendingRequests.add(GroupJoinRequest(
+      id: 'req-local-$_requestCounter',
+      groupId: group.id,
+      groupName: group.name,
+      requesterId: _mockUserId,
+      requesterName: 'You',
+      createdAt: DateTime.now(),
+    ));
+    return GroupJoinResult(group: group, status: GroupJoinStatus.pending);
   }
 
   @override
@@ -353,6 +480,40 @@ class MemoryEventRepository implements EventRepository {
             .firstOrNull
             ?.memberCount ??
         0;
+  }
+
+  @override
+  Future<List<GroupJoinRequest>> listPendingJoinRequests() async {
+    // Only requests for groups the mock user themself created — matches the
+    // real RLS/RPC scoping ("your own approval inbox").
+    final myGroupIds = _allGroups
+        .where((group) => group.createdBy == _mockUserId)
+        .map((group) => group.id)
+        .toSet();
+    return _pendingRequests.where((r) => myGroupIds.contains(r.groupId)).toList();
+  }
+
+  @override
+  Future<void> respondToJoinRequest(String requestId, {required bool accept}) async {
+    final request = _pendingRequests.where((r) => r.id == requestId).firstOrNull;
+    if (request == null) return;
+
+    _pendingRequests.removeWhere((r) => r.id == requestId);
+
+    if (accept) {
+      final index = _allGroups.indexWhere((group) => group.id == request.groupId);
+      if (index != -1) {
+        final group = _allGroups[index];
+        _allGroups[index] = BarangayGroup(
+          id: group.id,
+          name: group.name,
+          code: group.code,
+          memberCount: group.memberCount + 1,
+          createdBy: group.createdBy,
+          isPrivate: group.isPrivate,
+        );
+      }
+    }
   }
 
   @override
@@ -421,6 +582,7 @@ class SupabaseEventRepository implements EventRepository {
       code: row['code'] as String? ?? '',
       memberCount: memberCount,
       createdBy: row['created_by'] as String?,
+      isPrivate: row['is_private'] as bool? ?? false,
     );
   }
 
@@ -439,7 +601,7 @@ class SupabaseEventRepository implements EventRepository {
 
     final rows = await _client
         .from('groups')
-        .select('id, name, code, created_by, group_members(count)')
+        .select('id, name, code, created_by, is_private, group_members(count)')
         .inFilter('id', groupIds)
         .order('name', ascending: true);
     return rows.map(_groupFromRow).toList();
@@ -450,9 +612,12 @@ class SupabaseEventRepository implements EventRepository {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return const [];
 
+    // Private groups the caller isn't in simply don't come back here — the
+    // "View public groups, or your own/joined private ones" RLS policy
+    // enforces that server-side, so no client-side filtering is needed.
     final rows = await _client
         .from('groups')
-        .select('id, name, code, created_by, group_members(count)')
+        .select('id, name, code, created_by, is_private, group_members(count)')
         .ilike('name', '%$trimmed%')
         .order('name', ascending: true)
         .limit(20);
@@ -460,7 +625,7 @@ class SupabaseEventRepository implements EventRepository {
   }
 
   @override
-  Future<BarangayGroup> createGroup(String name) async {
+  Future<BarangayGroup> createGroup(String name, {bool isPrivate = false}) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) {
       throw Exception('You must be signed in to create a group');
@@ -468,7 +633,11 @@ class SupabaseEventRepository implements EventRepository {
 
     final row = await _client
         .from('groups')
-        .insert({'name': name.trim(), 'created_by': userId})
+        .insert({
+          'name': name.trim(),
+          'created_by': userId,
+          'is_private': isPrivate,
+        })
         .select('id, name, code, created_by')
         .single();
     final groupId = row['id'] as String;
@@ -482,23 +651,32 @@ class SupabaseEventRepository implements EventRepository {
       code: row['code'] as String? ?? '',
       memberCount: 1,
       createdBy: userId,
+      isPrivate: isPrivate,
     );
   }
 
   @override
-  Future<BarangayGroup> joinGroupByCode(String code) async {
-    final row = await _client
-        .from('groups')
-        .select('id, name, code, created_by, group_members(count)')
-        .eq('code', code.trim().toUpperCase())
-        .maybeSingle();
-    if (row == null) {
+  Future<GroupJoinResult> requestOrJoinGroupByCode(String code) async {
+    final rows = await _client.rpc(
+      'request_or_join_group',
+      params: {'p_code': code},
+    ) as List<dynamic>;
+    if (rows.isEmpty) {
       throw Exception('Invalid group code');
     }
 
-    final group = _groupFromRow(row);
-    await joinGroup(group.id);
-    return group;
+    final row = rows.first as Map<String, dynamic>;
+    final status = switch (row['out_status'] as String?) {
+      'joined' => GroupJoinStatus.joined,
+      'already_member' => GroupJoinStatus.alreadyMember,
+      _ => GroupJoinStatus.pending,
+    };
+    final group = BarangayGroup(
+      id: row['out_group_id'] as String,
+      name: row['out_group_name'] as String? ?? 'Unnamed group',
+      code: code.trim().toUpperCase(),
+    );
+    return GroupJoinResult(group: group, status: status);
   }
 
   @override
@@ -530,6 +708,31 @@ class SupabaseEventRepository implements EventRepository {
         .select('user_id')
         .eq('group_id', groupId);
     return rows.length;
+  }
+
+  @override
+  Future<List<GroupJoinRequest>> listPendingJoinRequests() async {
+    final rows = await _client.rpc('list_pending_join_requests') as List<dynamic>;
+    return rows.map((row) {
+      final map = row as Map<String, dynamic>;
+      return GroupJoinRequest(
+        id: map['request_id'] as String,
+        groupId: map['group_id'] as String,
+        groupName: map['group_name'] as String? ?? 'Unnamed group',
+        requesterId: map['requester_id'] as String,
+        requesterName: map['requester_name'] as String?,
+        requesterDepartment: map['requester_department'] as String?,
+        createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ?? DateTime.now(),
+      );
+    }).toList();
+  }
+
+  @override
+  Future<void> respondToJoinRequest(String requestId, {required bool accept}) async {
+    await _client.rpc('respond_to_join_request', params: {
+      'request_id': requestId,
+      'accept': accept,
+    });
   }
 
   @override

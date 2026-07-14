@@ -8,8 +8,14 @@
 //   - event_type = 'shared'  -> FCM topic "group-<group_id>" (that group's members)
 //   - event_type = 'personal' or a 'shared' row with no group_id -> no push
 //
-// Needs one secret, set once via:
-//   supabase secrets set FCM_SERVICE_ACCOUNT_JSON='<firebase service-account JSON>'
+// Needs one secret, set once via (PowerShell):
+//   $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Get-Content -Raw "path\to\service-account.json")))
+//   supabase secrets set "FCM_SERVICE_ACCOUNT_JSON_B64=$b64"
+// Base64 on purpose: the raw JSON is nothing but double-quoted text, and
+// PowerShell's argument passing to native executables (like this CLI) does
+// not reliably preserve embedded double-quotes — the secret silently got
+// corrupted the first time this used plain JSON. Base64 has no characters
+// a shell could mangle.
 // Optionally also WEBHOOK_SECRET (see the auth check below).
 
 import { initializeApp, cert } from "npm:firebase-admin@^13/app";
@@ -31,14 +37,20 @@ interface WebhookPayload {
   record: BarangayEventRow;
 }
 
-const serviceAccountJson = Deno.env.get("FCM_SERVICE_ACCOUNT_JSON");
-if (!serviceAccountJson) {
-  console.error("FCM_SERVICE_ACCOUNT_JSON secret is not set.");
+const serviceAccountJsonB64 = Deno.env.get("FCM_SERVICE_ACCOUNT_JSON_B64");
+if (!serviceAccountJsonB64) {
+  console.error("FCM_SERVICE_ACCOUNT_JSON_B64 secret is not set.");
 }
 
-const firebaseApp = serviceAccountJson
-  ? initializeApp({ credential: cert(JSON.parse(serviceAccountJson)) })
-  : null;
+let firebaseApp: ReturnType<typeof initializeApp> | null = null;
+if (serviceAccountJsonB64) {
+  try {
+    const decoded = atob(serviceAccountJsonB64);
+    firebaseApp = initializeApp({ credential: cert(JSON.parse(decoded)) });
+  } catch (error) {
+    console.error("Failed to parse FCM_SERVICE_ACCOUNT_JSON_B64:", error);
+  }
+}
 
 function resolveTopic(event: BarangayEventRow): string | null {
   if (event.event_type === "public") return "public-events";
@@ -77,7 +89,7 @@ Deno.serve(async (req) => {
   }
 
   if (!firebaseApp) {
-    return new Response("Server misconfigured: missing FCM_SERVICE_ACCOUNT_JSON", {
+    return new Response("Server misconfigured: missing or invalid FCM_SERVICE_ACCOUNT_JSON_B64", {
       status: 500,
     });
   }
