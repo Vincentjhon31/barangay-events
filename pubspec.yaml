@@ -5,7 +5,7 @@ publish_to: "none"
 # (versionCode) — it never shows to users, but it MUST go up by 1 on every
 # release or Android will refuse to install the update. Release tags and the
 # APK filename use only the part before "+" (e.g. v1.2.0, e-calendar-1.2.0.apk).
-version: 1.4.1+13
+version: 1.5.0+14
 environment:
   sdk: ">=3.4.0 <4.0.0"
 dependencies:
