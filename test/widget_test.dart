@@ -9,10 +9,35 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import 'package:barangay_events/main.dart';
-import 'package:barangay_events/event_store.dart';
-import 'package:barangay_events/auth_service.dart';
-import 'package:barangay_events/liquid_glass_components.dart';
+import 'package:eCalendar/main.dart';
+import 'package:eCalendar/avatar_picker_page.dart';
+import 'package:eCalendar/create_group_page.dart';
+import 'package:eCalendar/day_detail_page.dart';
+import 'package:eCalendar/event_store.dart';
+import 'package:eCalendar/auth_service.dart';
+import 'package:eCalendar/liquid_glass_components.dart';
+
+/// Taps today's cell on the Month grid, which navigates to that day's
+/// full-page view. Safe to find by plain day number: the grid hides
+/// outside-month days (`outsideDaysVisible: false`), so there's no
+/// ambiguous duplicate. Deliberately does NOT call `tester.ensureVisible`
+/// first — the cell is already laid out and tappable without it (this is
+/// an eager `ListView(children: ...)`, not a lazy builder), and
+/// `ensureVisible`'s scroll-then-settle was found to make TableCalendar's
+/// own internal PageView page forward to next month once it settles,
+/// silently tapping e.g. next month's "16" instead of today's.
+Future<void> openTodayDetail(WidgetTester tester) async {
+  final todayCell = find.text(DateTime.now().day.toString());
+  await tester.tap(todayCell);
+  await tester.pumpAndSettle();
+}
+
+/// Opens today's day page, then its own Add Event button.
+Future<void> openAddEventForToday(WidgetTester tester) async {
+  await openTodayDetail(tester);
+  await tester.tap(find.byKey(const Key('day-detail-add-event-fab')));
+  await tester.pumpAndSettle();
+}
 
 void main() {
   testWidgets('Login screen renders when signed out', (WidgetTester tester) async {
@@ -37,7 +62,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Community Calendar'), findsOneWidget);
+    expect(find.text('eBongabong Calendar'), findsOneWidget);
     expect(find.byType(CalendarScreen), findsOneWidget);
   });
 
@@ -50,8 +75,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(FloatingActionButton));
-    await tester.pumpAndSettle();
+    await openAddEventForToday(tester);
 
     final textFields = find.byType(TextField);
     expect(textFields, findsNWidgets(3));
@@ -69,6 +93,8 @@ void main() {
     await tester.tap(find.text('Save event'));
     await tester.pumpAndSettle();
 
+    // Save pops back to today's day page (not the main Calendar page), so
+    // its own card is the only place this renders.
     await tester.scrollUntilVisible(
       find.text('Community Cleanup'),
       300,
@@ -81,6 +107,47 @@ void main() {
     expect(find.textContaining('Bring gloves and trash bags'), findsOneWidget);
   });
 
+  testWidgets('can add a new calendar event from the main page\'s Add event button',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The main Calendar page has its own "Add event" button — no need to
+    // go through a day page first.
+    expect(find.byKey(const Key('calendar-add-event-fab')), findsOneWidget);
+    expect(find.text('Add event'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('calendar-add-event-fab')));
+    await tester.pumpAndSettle();
+
+    final textFields = find.byType(TextField);
+    expect(textFields, findsNWidgets(3));
+    await tester.enterText(textFields.at(0), 'Tree Planting');
+    await tester.enterText(textFields.at(1), 'Barangay Nursery');
+
+    await tester.scrollUntilVisible(
+      find.text('Save event'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save event'));
+    await tester.pumpAndSettle();
+
+    // Save pops straight back to the main Calendar page (not a day page).
+    expect(find.byType(CalendarScreen), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Tree Planting'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Tree Planting'), findsOneWidget);
+  });
+
   testWidgets('can filter events by type and delete own event', (WidgetTester tester) async {
     await tester.pumpWidget(
       BarangayCalendarApp(
@@ -90,9 +157,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Add a (default: public) event for today.
-    await tester.tap(find.byType(FloatingActionButton));
-    await tester.pumpAndSettle();
+    // Add a (default: public) event for today, via its day page.
+    await openAddEventForToday(tester);
 
     final textFields = find.byType(TextField);
     await tester.enterText(textFields.at(0), 'Cleanup Drive');
@@ -107,41 +173,57 @@ void main() {
     await tester.tap(find.text('Save event'));
     await tester.pumpAndSettle();
 
+    // Back on today's day page — its own card is the only place this shows.
+    expect(find.text('Cleanup Drive'), findsOneWidget);
+
+    // Back to the main Calendar page, where the filter chips live (the day
+    // page has no filters of its own — it always shows every event). Popped
+    // directly via the Navigator rather than tapping the glass back button:
+    // `FaIcon` doesn't populate `Icon.icon` the way `find.byIcon` expects,
+    // since it stores its icon data in a separate private field.
+    Navigator.of(tester.element(find.byType(DayDetailPage))).pop();
+    await tester.pumpAndSettle();
+
     await tester.scrollUntilVisible(
       find.text('Cleanup Drive'),
       300,
       scrollable: find.byType(Scrollable).first,
     );
     await tester.pumpAndSettle();
-    expect(find.text('Cleanup Drive'), findsOneWidget);
+    expect(find.text('Cleanup Drive'), findsWidgets);
 
     // Scroll back up to the filter chips (the lazy ListView unmounts them
-    // once they're scrolled far off-screen).
+    // once they're scrolled far off-screen). Keyed finders, not
+    // find.text('Personal')/find.text('Public') — the Feed tab now has
+    // identical chip labels and stays mounted alongside Calendar in the
+    // shared IndexedStack.
     await tester.scrollUntilVisible(
-      find.text('Personal'),
+      find.byKey(const Key('calendar-filter-personal')),
       -300,
       scrollable: find.byType(Scrollable).first,
     );
     await tester.pumpAndSettle();
 
     // The Personal filter hides the public event.
-    await tester.tap(find.text('Personal'));
+    await tester.tap(find.byKey(const Key('calendar-filter-personal')));
     await tester.pumpAndSettle();
     expect(find.text('Cleanup Drive'), findsNothing);
 
     // The Public filter shows it again.
-    await tester.tap(find.text('Public'));
+    await tester.ensureVisible(find.byKey(const Key('calendar-filter-public')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('calendar-filter-public')));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.text('Cleanup Drive'),
       300,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('Cleanup Drive'), findsOneWidget);
+    expect(find.text('Cleanup Drive'), findsWidgets);
 
     // Delete it via the card menu (creator-only option).
     final card = find.ancestor(
-      of: find.text('Cleanup Drive'),
+      of: find.text('Cleanup Drive').last,
       matching: find.byType(GlassPanel),
     );
     await tester.tap(
@@ -168,9 +250,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Add an event for today so the current month has one.
-    await tester.tap(find.byType(FloatingActionButton));
-    await tester.pumpAndSettle();
+    // Add an event for today (via its day page) so the current month has one.
+    await openAddEventForToday(tester);
     final textFields = find.byType(TextField);
     await tester.enterText(textFields.at(0), 'Fun Run');
     await tester.enterText(textFields.at(1), 'Barangay Plaza');
@@ -183,8 +264,21 @@ void main() {
     await tester.tap(find.text('Save event'));
     await tester.pumpAndSettle();
 
-    // Switch to the List view.
-    await tester.ensureVisible(find.text('List'));
+    // Back to the main Calendar page (List view lives there, not on the day page).
+    Navigator.of(tester.element(find.byType(DayDetailPage))).pop();
+    await tester.pumpAndSettle();
+
+    // Switch to the List view. scrollUntilVisible (not ensureVisible): the
+    // page's scroll position is still wherever it was left scrolled down to
+    // reveal today's cell before navigating away, and "List" — being off
+    // near the top now — may not even be mounted yet at that scroll
+    // offset, which ensureVisible can't recover from since it needs the
+    // target findable first.
+    await tester.scrollUntilVisible(
+      find.text('List'),
+      -300,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('List'));
     await tester.pumpAndSettle();
@@ -197,14 +291,14 @@ void main() {
       300,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('Fun Run'), findsOneWidget);
+    expect(find.text('Fun Run'), findsWidgets);
 
-    // Next month: the event disappears.
+    // Next month: the event disappears from the agenda — "No events in ..."
+    // is the agenda-scoped signal that month navigation actually worked.
     await tester.ensureVisible(find.byKey(const Key('list-next-month')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('list-next-month')));
     await tester.pumpAndSettle();
-    expect(find.text('Fun Run'), findsNothing);
     expect(find.textContaining('No events in'), findsOneWidget);
 
     // Back to the current month: it reappears.
@@ -215,7 +309,191 @@ void main() {
       300,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('Fun Run'), findsOneWidget);
+    expect(find.text('Fun Run'), findsWidgets);
+  });
+
+  testWidgets('event details no longer show a Going/Maybe/Not Going status section',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await openTodayDetail(tester);
+    await tester.tap(find.text('Mayor Staff Meeting'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your Status'), findsNothing);
+    expect(find.text('Going'), findsNothing);
+    expect(find.text('Maybe'), findsNothing);
+    expect(find.text('Not Going'), findsNothing);
+  });
+
+  testWidgets('calendar search filters the List view\'s Upcoming feed',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('List'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Upcoming'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Upcoming'));
+    await tester.pumpAndSettle();
+
+    // Only "Mayor Staff Meeting" (today) is upcoming among the seeded
+    // events — the rest are all hardcoded to dates in the past.
+    await tester.scrollUntilVisible(
+      find.text('Mayor Staff Meeting'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Mayor Staff Meeting'), findsWidgets);
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('calendar-search-field')),
+      -300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('calendar-search-field')),
+      'zzz-no-such-event',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mayor Staff Meeting'), findsNothing);
+    expect(find.textContaining('No upcoming events match your search'), findsOneWidget);
+  });
+
+  testWidgets('Upcoming mode sorts by nearest-to-today with an asc/desc toggle',
+      (WidgetTester tester) async {
+    final repo = MemoryEventRepository.seeded();
+    final now = DateTime.now();
+    await repo.addEvent(BarangayEvent(
+      id: 'test-far-future',
+      title: 'Far Future Event',
+      location: 'Somewhere',
+      startTime: now.add(const Duration(days: 30)),
+      endTime: now.add(const Duration(days: 30, hours: 1)),
+      description: '',
+      hasAttachment: false,
+      createdAt: now,
+      createdByName: 'Tester',
+      createdById: 'mock-user-id',
+      eventType: EventType.personal,
+    ));
+
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(),
+        eventRepositoryFactory: () async => repo,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('List'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Upcoming'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Upcoming'));
+    await tester.pumpAndSettle();
+
+    // Ascending (default): today's event comes before the far-future one.
+    await tester.scrollUntilVisible(
+      find.text('Far Future Event'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    final mayorPos = tester.getTopLeft(find.text('Mayor Staff Meeting')).dy;
+    final farPos = tester.getTopLeft(find.text('Far Future Event')).dy;
+    expect(mayorPos, lessThan(farPos));
+
+    // Toggle to descending — order flips.
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('upcoming-sort-toggle')),
+      -300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('upcoming-sort-toggle')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Far Future Event'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    final mayorPos2 = tester.getTopLeft(find.text('Mayor Staff Meeting')).dy;
+    final farPos2 = tester.getTopLeft(find.text('Far Future Event')).dy;
+    expect(farPos2, lessThan(mayorPos2));
+  });
+
+  testWidgets('tapping a day opens its own event list page', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await openTodayDetail(tester);
+
+    expect(find.byType(DayDetailPage), findsOneWidget);
+    // Seeded for today — see MemoryEventRepository.seeded()/_seedEvents().
+    expect(find.text('Mayor Staff Meeting'), findsOneWidget);
+    expect(find.byKey(const Key('day-detail-add-event-fab')), findsOneWidget);
+  });
+
+  testWidgets('day detail page shows a scroll hint when the event list overflows',
+      (WidgetTester tester) async {
+    final repo = MemoryEventRepository.seeded();
+    final today = DateTime.now();
+    for (var i = 0; i < 15; i++) {
+      await repo.addEvent(BarangayEvent(
+        id: 'overflow-$i',
+        title: 'Overflow Event $i',
+        location: 'Barangay Hall',
+        startTime: DateTime(today.year, today.month, today.day, 6 + i, 0),
+        endTime: DateTime(today.year, today.month, today.day, 6 + i, 30),
+        description: '',
+        hasAttachment: false,
+        createdAt: DateTime.now(),
+      ));
+    }
+
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(),
+        eventRepositoryFactory: () async => repo,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await openTodayDetail(tester);
+
+    expect(find.byKey(const Key('day-detail-more-hint')), findsOneWidget);
+
+    // Scrolling to the very bottom clears the hint (nothing more below).
+    await tester.fling(find.byType(ListView), const Offset(0, -3000), 3000);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('day-detail-more-hint')), findsNothing);
   });
 
   testWidgets('feed tab lists events with posted-by info', (WidgetTester tester) async {
@@ -231,7 +509,93 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('New events from people you follow'), findsOneWidget);
+    // Timeline day-group header, based on the seeded events' createdAt —
+    // scrolled past the new search field/filter chips above the timeline.
+    // Exact text, not textContaining('Jun 1'): each card's own "Posted by
+    // ... " line also renders a "Jun 1"-shaped relative-time suffix for
+    // anything that old, so a substring match hits multiple widgets.
+    await tester.scrollUntilVisible(
+      find.text('Monday, Jun 1'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Monday, Jun 1'), findsOneWidget);
     expect(find.textContaining('Posted by'), findsWidgets);
+  });
+
+  testWidgets('feed search filters posts by title', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Feed'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Basketball Tournament'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Health Check-up'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Health Check-up'), findsOneWidget);
+
+    // Scroll back up — the search field is above the timeline, and it's
+    // now off the (virtualized) top after scrolling down to check
+    // Health Check-up above.
+    await tester.scrollUntilVisible(
+      find.widgetWithText(TextField, 'Search the feed'),
+      -300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.widgetWithText(TextField, 'Search the feed'), 'basketball');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Basketball Tournament'), findsOneWidget);
+    expect(find.text('Health Check-up'), findsNothing);
+
+    // Clearing the search brings everything back.
+    await tester.tap(find.byTooltip('Clear search'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Health Check-up'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Health Check-up'), findsOneWidget);
+  });
+
+  testWidgets('feed type filter chips narrow the timeline', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Feed'));
+    await tester.pumpAndSettle();
+
+    // "Health Check-up" is seeded as Personal; "Basketball Tournament" as
+    // Public (no explicit eventType — defaults to public). Keyed finders,
+    // not find.text('Personal') — the Calendar tab has identical chip
+    // labels and stays mounted alongside Feed in the shared IndexedStack.
+    await tester.tap(find.byKey(const Key('feed-filter-personal')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Health Check-up'), findsOneWidget);
+    expect(find.text('Basketball Tournament'), findsNothing);
+
+    // Back to "All" clears the filter.
+    await tester.tap(find.byKey(const Key('feed-filter-all')));
+    await tester.pumpAndSettle();
+    expect(find.text('Basketball Tournament'), findsOneWidget);
   });
 
   testWidgets('About page shows version info, with update-checking disabled when no service is wired up',
@@ -250,11 +614,89 @@ void main() {
     await tester.tap(find.text('About'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Barangay Calendar'), findsOneWidget);
+    expect(find.text('eBongabong Calendar'), findsWidgets);
     expect(find.textContaining('Version'), findsWidgets);
     // No updateService passed to BarangayCalendarApp in this test — the
     // page should degrade gracefully rather than crash.
     expect(find.textContaining("isn't available on this build"), findsOneWidget);
+  });
+
+  testWidgets('picking an avatar saves it and shows on the profile', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Profile'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('profile-avatar-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Profile Picture'), findsOneWidget);
+
+    // Switch to the Animal category and pick the first one.
+    await tester.tap(find.text('Animal'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('avatar-option-assets/avatars/animal/animal_01.png')));
+    await tester.pumpAndSettle();
+
+    // Popped back to Profile, now showing the picked image instead of
+    // initials on the profile tab's own avatar button.
+    expect(find.byType(AvatarPickerPage), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('profile-avatar-button')),
+        matching: find.byWidgetPredicate((w) => w is CircleAvatar && w.backgroundImage != null),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('profile page shows the account role badge on the avatar',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(role: 'lgu_member'),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Profile'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('LGU MEMBER'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('profile-avatar-button')),
+        matching: find.byType(RoleAvatarFrame),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Calendar and Feed tabs support pull-to-refresh', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // IndexedStack builds every tab but only paints the selected one, and
+    // find.byType's default skipOffstage excludes unpainted siblings — so
+    // this checks each tab in turn rather than expecting both at once.
+    expect(find.byType(RefreshIndicator), findsOneWidget);
+
+    await tester.tap(find.text('Feed'));
+    await tester.pumpAndSettle();
+    expect(find.byType(RefreshIndicator), findsOneWidget);
   });
 
   testWidgets('group event details show group name and member count',
@@ -293,8 +735,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(FloatingActionButton));
-    await tester.pumpAndSettle();
+    await openAddEventForToday(tester);
 
     // Not a member of any group yet: picking the Group type shows a hint
     // instead of the group dropdown.
@@ -318,19 +759,13 @@ void main() {
     await tester.tap(find.text('Groups'));
     await tester.pumpAndSettle();
 
-    // Create a group.
-    await tester.scrollUntilVisible(
-      find.text('Create group'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
+    // Create a group via the "Create" module tile, on its own page.
+    await tester.tap(find.text('Create'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.widgetWithText(TextField, 'Group name'),
       'Purok 3',
     );
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Create group'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Create group'));
     await tester.pumpAndSettle();
@@ -343,14 +778,14 @@ void main() {
     expect(find.text('Purok 3'), findsOneWidget);
     expect(find.text('My Groups (1)'), findsOneWidget);
 
-    // Switch the "Add a group" panel to Find mode, then search and join.
+    // Expand search (top-right icon), then search and join.
     await tester.scrollUntilVisible(
-      find.text('Find'),
-      200,
+      find.byTooltip('Search groups'),
+      -200,
       scrollable: find.byType(Scrollable).first,
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Find'));
+    await tester.tap(find.byTooltip('Search groups'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.text('Search by name'),
@@ -398,8 +833,7 @@ void main() {
     // Add the first event, keeping the dialog's default time (9:00-10:00 AM
     // today) — matches "can add a new calendar event" and avoids depending
     // on real-world "now" vs. any fixed seed date.
-    await tester.tap(find.byType(FloatingActionButton));
-    await tester.pumpAndSettle();
+    await openAddEventForToday(tester);
     var textFields = find.byType(TextField);
     await tester.enterText(textFields.at(0), 'Team Meeting');
     await tester.enterText(textFields.at(1), 'Room A');
@@ -418,7 +852,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Second event defaults to the exact same 9:00-10:00 slot -> conflict.
-    await tester.tap(find.byType(FloatingActionButton));
+    await tester.tap(find.byKey(const Key('day-detail-add-event-fab')));
     await tester.pumpAndSettle();
     textFields = find.byType(TextField);
     await tester.enterText(textFields.at(0), 'Board Meeting');
@@ -631,6 +1065,134 @@ void main() {
 
       expect(await repo.listPendingJoinRequests(), isEmpty);
       expect(await repo.fetchGroupMemberCount('grp-private-mock'), 1);
+    });
+  });
+
+  group('group member management', () {
+    test('creator is seeded as an admin member of their own group', () async {
+      final repo = MemoryEventRepository.seeded();
+      final group = await repo.createGroup('Test Group');
+
+      final members = await repo.listGroupMembers(group.id);
+      expect(members, hasLength(1));
+      expect(members.single.role, 'admin');
+
+      final myGroups = await repo.listMyGroups();
+      expect(myGroups.single.isAdmin, isTrue);
+    });
+
+    test('promoting a member changes their role in the roster', () async {
+      final repo = MemoryEventRepository.seeded();
+
+      final before = await repo.listGroupMembers('grp-mayor');
+      expect(before.firstWhere((member) => member.userId == 'staff-1').role, 'member');
+
+      await repo.promoteMember('grp-mayor', 'staff-1');
+
+      final after = await repo.listGroupMembers('grp-mayor');
+      expect(after.firstWhere((member) => member.userId == 'staff-1').role, 'admin');
+    });
+
+    test('removing a member drops them from the roster and the member count',
+        () async {
+      final repo = MemoryEventRepository.seeded();
+      final countBefore = await repo.fetchGroupMemberCount('grp-mayor');
+
+      await repo.removeMember('grp-mayor', 'staff-1');
+
+      final members = await repo.listGroupMembers('grp-mayor');
+      expect(members.any((member) => member.userId == 'staff-1'), isFalse);
+      expect(await repo.fetchGroupMemberCount('grp-mayor'), countBefore - 1);
+    });
+
+    test('members carry their account-wide role alongside their group role',
+        () async {
+      final repo = MemoryEventRepository.seeded();
+      final members = await repo.listGroupMembers('grp-mayor');
+
+      expect(members.firstWhere((m) => m.userId == 'mayor-1').accountRole, 'lgu_member');
+      expect(members.firstWhere((m) => m.userId == 'staff-1').accountRole, 'citizen');
+    });
+  });
+
+  group('role-based permissions', () {
+    testWidgets('citizens can only create personal events', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(role: 'citizen'),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('calendar-add-event-fab')));
+      await tester.pumpAndSettle();
+
+      // No Public/Group choice at all for a citizen — just a locked label.
+      expect(find.byType(SegmentedButton<String>), findsNothing);
+      expect(find.text('Personal event'), findsOneWidget);
+
+      final textFields = find.byType(TextField);
+      await tester.enterText(textFields.at(0), 'My Personal Errand');
+      await tester.enterText(textFields.at(1), 'Market');
+      await tester.scrollUntilVisible(
+        find.text('Save event'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save event'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CalendarScreen), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('My Personal Errand'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('My Personal Errand'), findsOneWidget);
+    });
+
+    testWidgets('citizens cannot create a group, only join one', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(role: 'citizen'),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Groups'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('LGU members only'), findsOneWidget);
+
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+
+      // Blocked — no navigation happened, just an explanatory SnackBar.
+      expect(find.byType(CreateGroupPage), findsNothing);
+      expect(
+        find.textContaining('Only verified LGU members can create a group'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('lgu members can post Group events but not Public ones',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(role: 'lgu_member'),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('calendar-add-event-fab')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Group'), findsOneWidget);
+      expect(find.text('Public'), findsNothing);
     });
   });
 }

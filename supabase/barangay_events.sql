@@ -523,3 +523,330 @@ alter table public.profiles add column if not exists ui_style text not null defa
 -- ============================================================
 drop policy if exists "Authenticated can view groups" on public.groups;
 drop policy if exists "Users join groups themselves" on public.group_members;
+
+-- ============================================================
+-- Group member roles (admin/member) + member list display info.
+-- display_name/avatar_url are denormalized onto group_members at join
+-- time (same convention as barangay_events.created_by_name) so the member
+-- list never needs to read OTHER users' rows in `profiles`, which stays
+-- locked to "select your own row only" — no new profiles policy needed.
+-- Safe to re-run on an existing database.
+-- ============================================================
+
+alter table public.group_members add column if not exists role text not null default 'member';
+alter table public.group_members add column if not exists display_name text;
+alter table public.group_members add column if not exists avatar_url text;
+
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'group_members_role_check'
+  ) then
+    alter table public.group_members
+      add constraint group_members_role_check check (role in ('admin', 'member'));
+  end if;
+end $$;
+
+-- Backfill: every group's creator becomes an admin; everyone else's
+-- display_name/avatar_url is filled in from their current profile (a
+-- one-time snapshot — later profile edits don't retroactively update it,
+-- same tradeoff barangay_events.created_by_name already made).
+update public.group_members gm
+set role = 'admin'
+from public.groups g
+where g.id = gm.group_id and g.created_by = gm.user_id and gm.role <> 'admin';
+
+update public.group_members gm
+set display_name = coalesce(p.display_name, p.email), avatar_url = p.avatar_url
+from public.profiles p
+where p.id = gm.user_id and gm.display_name is null;
+
+-- Any admin can promote a fellow member to admin (or edit their own denorm
+-- fields via the app's own update calls, which only ever touch `role`).
+drop policy if exists "Admins promote members" on public.group_members;
+create policy "Admins promote members"
+  on public.group_members
+  for update
+  using (
+    exists (
+      select 1 from group_members admin_row
+      where admin_row.group_id = group_members.group_id
+        and admin_row.user_id = auth.uid()
+        and admin_row.role = 'admin'
+    )
+  )
+  with check (role in ('admin', 'member'));
+
+-- Any admin can remove a regular member; only the group's creator can
+-- remove a fellow admin. OR'd together with the existing "Members can
+-- leave groups" self-delete policy above — both are intentionally
+-- permissive and meant to coexist (self-leave vs. admin-removes-someone).
+drop policy if exists "Admins remove members" on public.group_members;
+create policy "Admins remove members"
+  on public.group_members
+  for delete
+  using (
+    exists (
+      select 1 from group_members admin_row
+      where admin_row.group_id = group_members.group_id
+        and admin_row.user_id = auth.uid()
+        and admin_row.role = 'admin'
+    )
+    and (
+      group_members.role = 'member'
+      or exists (
+        select 1 from groups g
+        where g.id = group_members.group_id and g.created_by = auth.uid()
+      )
+    )
+  );
+
+-- Row visibility for group_members stays as broad as it already was
+-- ("Authenticated can view memberships", further up this file) — group
+-- membership rows (and therefore member COUNTS) need to stay visible for
+-- groups a user hasn't joined yet, since searchGroups shows "N members"
+-- on results the caller isn't a member of. Tightening that to
+-- members-only would silently zero out those counts. Instead, the new
+-- display_name/avatar_url columns are only ever read through
+-- list_group_members() below, which checks membership itself before
+-- returning them — the raw columns exist for storage/denormalization,
+-- not for direct client selects.
+
+-- Full member roster (with names/avatars) for a group, callable only by
+-- one of that group's own members. Security definer so it can read
+-- display_name/avatar_url regardless of table-level grants.
+-- Reads display_name/avatar_url LIVE from profiles (via a left join),
+-- falling back to the group_members snapshot columns only if a profile
+-- row is somehow missing. Originally this read the snapshot columns
+-- directly, which meant a member's own profile edits (name, and
+-- especially avatar — see avatar_picker_page.dart) never showed up in
+-- any group's roster after the fact; being security definer, this
+-- function can read every member's profiles row regardless of the
+-- "select your own row only" RLS policy, so there was never a need for
+-- the snapshot in the first place. The group_members.display_name/
+-- avatar_url columns are left in place (still written at join time) but
+-- are now dead weight for this read path — harmless, not worth a
+-- migration to drop them.
+-- member_account_role is the person's app-wide role (citizen/lgu_member/
+-- superadmin, from profiles.role) — NOT the same thing as member_role
+-- (their admin/member standing within THIS group). Added so the member
+-- list can show each person's account-role badge (RoleAvatarFrame in the
+-- Flutter app), alongside their existing group-admin star.
+create or replace function public.list_group_members(p_group_id uuid)
+returns table(
+  member_user_id uuid, member_display_name text, member_avatar_url text,
+  member_role text, member_joined_at timestamptz, member_account_role text
+)
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (
+    select 1 from group_members gm where gm.group_id = p_group_id and gm.user_id = auth.uid()
+  ) then
+    raise exception 'Not a member of this group';
+  end if;
+
+  return query
+    select
+      gm.user_id,
+      coalesce(p.display_name, p.email, gm.display_name),
+      coalesce(p.avatar_url, gm.avatar_url),
+      gm.role,
+      gm.joined_at,
+      coalesce(p.role, 'citizen')
+    from group_members gm
+    left join profiles p on p.id = gm.user_id
+    where gm.group_id = p_group_id
+    order by (gm.role = 'admin') desc, coalesce(p.display_name, gm.display_name) asc nulls last;
+end $$;
+
+-- request_or_join_group's instant-join path and respond_to_join_request's
+-- accept path both insert group_members rows on the joiner's behalf; both
+-- are security definer, so they can read the joiner's profile directly to
+-- fill in display_name/avatar_url without needing a profiles policy change.
+create or replace function public.request_or_join_group(p_code text)
+returns table(out_group_id uuid, out_group_name text, out_status text)
+language plpgsql security definer set search_path = public as $$
+declare target record; joiner record;
+begin
+  select id, name, is_private into target from groups where code = upper(trim(p_code));
+  if not found then raise exception 'Invalid group code'; end if;
+
+  if exists (select 1 from group_members gm where gm.group_id = target.id and gm.user_id = auth.uid()) then
+    return query select target.id, target.name, 'already_member'::text;
+    return;
+  end if;
+
+  if not target.is_private then
+    select coalesce(display_name, email) as name, avatar_url into joiner from profiles where id = auth.uid();
+    insert into group_members (group_id, user_id, role, display_name, avatar_url)
+      values (target.id, auth.uid(), 'member', joiner.name, joiner.avatar_url)
+      on conflict (group_id, user_id) do nothing;
+    return query select target.id, target.name, 'joined'::text;
+    return;
+  end if;
+
+  insert into group_join_requests (group_id, requester_id, status)
+    values (target.id, auth.uid(), 'pending')
+    on conflict (group_id, requester_id) do update set status = 'pending', created_at = now();
+  return query select target.id, target.name, 'pending'::text;
+end $$;
+
+create or replace function public.respond_to_join_request(request_id uuid, accept boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare req record; joiner record;
+begin
+  select gjr.group_id, gjr.requester_id, g.created_by into req
+    from group_join_requests gjr join groups g on g.id = gjr.group_id
+    where gjr.id = request_id;
+  if not found then raise exception 'Request not found'; end if;
+  if req.created_by <> auth.uid() then raise exception 'Only the group creator can respond to requests'; end if;
+
+  if accept then
+    select coalesce(display_name, email) as name, avatar_url into joiner from profiles where id = req.requester_id;
+    insert into group_members (group_id, user_id, role, display_name, avatar_url)
+      values (req.group_id, req.requester_id, 'member', joiner.name, joiner.avatar_url)
+      on conflict (group_id, user_id) do nothing;
+    update group_join_requests set status = 'accepted' where id = request_id;
+  else
+    update group_join_requests set status = 'declined' where id = request_id;
+  end if;
+end $$;
+
+-- ============================================================
+-- User roles + permissions (July 2026).
+-- citizen (default, self-registers in the app) | lgu_member (registers
+-- via the separate GitHub Pages admin portal, docs/lgu-admin/, and needs
+-- superadmin approval) | superadmin (one account, approves LGU
+-- applications and is the only role that can post Public events).
+-- Citizens can only ever create Personal events and cannot create groups.
+-- LGU members can create groups and post Group events, but not Public.
+-- Safe to re-run on an existing database.
+-- ============================================================
+
+alter table public.profiles add column if not exists role text not null default 'citizen';
+alter table public.profiles add column if not exists lgu_request_status text;
+
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'profiles_role_check') then
+    alter table public.profiles add constraint profiles_role_check
+      check (role in ('citizen', 'lgu_member', 'superadmin'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'profiles_lgu_status_check') then
+    alter table public.profiles add constraint profiles_lgu_status_check
+      check (lgu_request_status is null or lgu_request_status in ('pending', 'approved', 'rejected'));
+  end if;
+end $$;
+
+-- Stops a user granting themselves a role/LGU status through the normal
+-- "update your own profile" path — that RLS policy (further up this file)
+-- is, and should stay, wide open on auth.uid() = id for every OTHER
+-- column. Only the two security-definer functions below may change role/
+-- lgu_request_status, via a session-local flag they set immediately
+-- before their own UPDATE — any UPDATE that doesn't set that flag
+-- (i.e. every ordinary client write) has these two columns silently
+-- forced back to their previous value instead of erroring, since the
+-- app's normal profile-save call also touches this row and shouldn't
+-- fail just because it isn't role-aware.
+create or replace function public.guard_profile_role_columns()
+returns trigger language plpgsql as $$
+begin
+  if coalesce(current_setting('app.bypass_role_guard', true), 'off') <> 'on' then
+    new.role := old.role;
+    new.lgu_request_status := old.lgu_request_status;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists guard_profile_role_columns on public.profiles;
+create trigger guard_profile_role_columns
+  before update on public.profiles
+  for each row execute function public.guard_profile_role_columns();
+
+-- Self-service: a signed-in user (from the main app OR the LGU admin
+-- portal) applies for LGU verification. Callable again after a rejection
+-- to re-apply.
+create or replace function public.request_lgu_status(p_department text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  perform set_config('app.bypass_role_guard', 'on', true);
+  update profiles
+    set lgu_request_status = 'pending',
+        department = coalesce(nullif(trim(p_department), ''), department)
+    where id = auth.uid();
+end $$;
+
+-- Superadmin-only: everyone currently awaiting approval.
+create or replace function public.list_pending_lgu_applications()
+returns table(
+  user_id uuid, email text, display_name text, department text, requested_at timestamptz
+)
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles where id = auth.uid() and role = 'superadmin') then
+    raise exception 'Only a superadmin can view LGU applications';
+  end if;
+  return query
+    select p.id, p.email, p.display_name, p.department, p.updated_at
+    from profiles p
+    where p.lgu_request_status = 'pending'
+    order by p.updated_at asc;
+end $$;
+
+-- Superadmin-only: approve (-> role = lgu_member) or reject an application.
+create or replace function public.respond_to_lgu_application(p_user_id uuid, p_approve boolean)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles where id = auth.uid() and role = 'superadmin') then
+    raise exception 'Only a superadmin can respond to LGU applications';
+  end if;
+  perform set_config('app.bypass_role_guard', 'on', true);
+  if p_approve then
+    update profiles set role = 'lgu_member', lgu_request_status = 'approved' where id = p_user_id;
+  else
+    update profiles set lgu_request_status = 'rejected' where id = p_user_id;
+  end if;
+end $$;
+
+-- Event creation, gated by role: Public is superadmin-only; Group
+-- (shared) needs lgu_member or superadmin; Personal is open to everyone
+-- signed in. Replaces the older, role-blind "Authenticated insert own
+-- events" policy.
+drop policy if exists "Authenticated insert own events" on public.barangay_events;
+drop policy if exists "Role-gated event creation" on public.barangay_events;
+create policy "Role-gated event creation"
+  on public.barangay_events
+  for insert
+  with check (
+    auth.uid() is not null
+    and created_by_id = auth.uid()
+    and (
+      event_type = 'personal'
+      or (event_type = 'shared' and exists (
+            select 1 from profiles p where p.id = auth.uid() and p.role in ('lgu_member', 'superadmin')))
+      or (event_type = 'public' and exists (
+            select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin'))
+    )
+  );
+
+-- Group creation: LGU members and the superadmin only — "create a gc" is
+-- an LGU-level permission; citizens can still join existing groups by
+-- search/code, just not create new ones.
+drop policy if exists "Users create their groups" on public.groups;
+drop policy if exists "LGU members create groups" on public.groups;
+create policy "LGU members create groups"
+  on public.groups
+  for insert
+  with check (
+    auth.uid() = created_by
+    and exists (select 1 from profiles p where p.id = auth.uid() and p.role in ('lgu_member', 'superadmin'))
+  );
+
+-- One-time seed: mark the app's single superadmin account by email. Only
+-- takes effect once that email has actually signed up (via the app or the
+-- LGU admin portal) and has a profiles row — re-run this block after that
+-- if it doesn't seem to have taken effect yet. Needs the bypass flag like
+-- the RPCs above, since guard_profile_role_columns otherwise resets any
+-- UPDATE's role/lgu_request_status back to their old value — including a
+-- plain SQL-editor UPDATE, not just app-side writes.
+select set_config('app.bypass_role_guard', 'on', true);
+update public.profiles set role = 'superadmin' where email = 'anime10315466@gmail.com';

@@ -7,7 +7,11 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'about_page.dart';
 import 'app_update_service.dart';
 import 'auth_service.dart';
+import 'avatar_picker_page.dart';
+import 'create_group_page.dart';
 import 'event_store.dart';
+import 'group_members_page.dart';
+import 'join_group_page.dart';
 import 'liquid_glass_components.dart';
 import 'theme_controller.dart';
 
@@ -92,6 +96,22 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
+  Future<void> _openAvatarPicker() async {
+    final updated = await Navigator.of(context).push<AppUserProfile>(
+      MaterialPageRoute(
+        builder: (_) => AvatarPickerPage(
+          authService: widget.authService,
+          initialProfile: _profile,
+        ),
+      ),
+    );
+
+    if (updated != null && mounted) {
+      setState(() => _profile = updated);
+      widget.onProfileSaved?.call();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -108,21 +128,53 @@ class _ProfileTabState extends State<ProfileTab> {
         : 'No email available';
     final department = profile?.department?.trim();
     final colorScheme = Theme.of(context).colorScheme;
+    final accountRole = profile?.role ?? 'citizen';
+    final roleAccent = roleAccentColor(accountRole, colorScheme);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
       children: [
         const SizedBox(height: 8),
         Center(
-          child: CircleAvatar(
-            radius: 38,
-            backgroundColor: colorScheme.primaryContainer,
-            child: Text(
-              profile?.initials ?? 'B',
-              style: TextStyle(
-                color: colorScheme.onPrimaryContainer,
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
+          child: InkWell(
+            key: const Key('profile-avatar-button'),
+            borderRadius: BorderRadius.circular(999),
+            onTap: () => unawaited(_openAvatarPicker()),
+            child: RoleAvatarFrame(
+              role: accountRole,
+              size: 76,
+              badgeOnLeft: true,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  CircleAvatar(
+                    radius: 38,
+                    backgroundColor: colorScheme.primaryContainer,
+                    backgroundImage: profile?.avatarUrl != null
+                        ? AssetImage(profile!.avatarUrl!)
+                        : null,
+                    child: profile?.avatarUrl == null
+                        ? Text(
+                            profile?.initials ?? 'B',
+                            style: TextStyle(
+                              color: colorScheme.onPrimaryContainer,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          )
+                        : null,
+                  ),
+                  Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: IconBadge(
+                      icon: FontAwesomeIcons.pen,
+                      tint: colorScheme.primary,
+                      size: 26,
+                      iconSize: 11,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -140,6 +192,25 @@ class _ProfileTabState extends State<ProfileTab> {
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
+        ),
+        const SizedBox(height: 10),
+        Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: roleAccent.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: roleAccent.withValues(alpha: 0.5)),
+            ),
+            child: Text(
+              roleLabel(accountRole).toUpperCase(),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: roleAccent,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                  ),
+            ),
+          ),
         ),
         if (department != null && department.isNotEmpty) ...[
           const SizedBox(height: 10),
@@ -325,6 +396,8 @@ class _ProfileInformationPageState extends State<ProfileInformationPage> {
       city: valueOrNull(_cityController),
       bio: valueOrNull(_bioController),
       avatarUrl: widget.initialProfile?.avatarUrl,
+      role: widget.initialProfile?.role ?? 'citizen',
+      lguRequestStatus: widget.initialProfile?.lguRequestStatus,
     );
 
     setState(() => _saving = true);
@@ -471,22 +544,29 @@ class GroupsTab extends StatefulWidget {
   const GroupsTab({
     super.key,
     required this.eventRepository,
+    required this.currentUserId,
+    required this.canCreateGroups,
     this.onGroupsChanged,
   });
 
   final EventRepository eventRepository;
+
+  /// Used to gate member-management actions (promote/remove) in
+  /// [GroupMembersPage] — null in build configurations without auth.
+  final String? currentUserId;
+
+  /// Group creation ("create a gc") is an LGU-member/superadmin
+  /// privilege — citizens can still join existing groups by search or
+  /// code, just not create new ones.
+  final bool canCreateGroups;
   final VoidCallback? onGroupsChanged;
 
   @override
   State<GroupsTab> createState() => _GroupsTabState();
 }
 
-enum _GroupAddMode { create, search, code }
-
 class _GroupsTabState extends State<GroupsTab> {
-  final _nameController = TextEditingController();
   final _searchController = TextEditingController();
-  final _codeController = TextEditingController();
 
   List<BarangayGroup> _myGroups = const [];
   List<BarangayGroup> _searchResults = const [];
@@ -495,11 +575,8 @@ class _GroupsTabState extends State<GroupsTab> {
   final Set<String> _respondingIds = {};
   bool _searched = false;
   bool _searching = false;
-  bool _creating = false;
-  bool _isPrivate = false;
-  bool _joiningByCode = false;
+  bool _searchExpanded = false;
   bool _loadingGroups = true;
-  _GroupAddMode _addMode = _GroupAddMode.create;
 
   @override
   void initState() {
@@ -509,9 +586,7 @@ class _GroupsTabState extends State<GroupsTab> {
 
   @override
   void dispose() {
-    _nameController.dispose();
     _searchController.dispose();
-    _codeController.dispose();
     super.dispose();
   }
 
@@ -570,44 +645,78 @@ class _GroupsTabState extends State<GroupsTab> {
     }
   }
 
-  Future<void> _createGroup() async {
-    final name = _nameController.text.trim();
-    if (name.isEmpty) {
+  Future<void> _openCreateGroup() async {
+    if (!widget.canCreateGroups) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a group name first.')),
+        const SnackBar(
+          content: Text(
+            'Only verified LGU members can create a group. You can still '
+            'join one by searching its name or entering a code.',
+          ),
+          duration: Duration(seconds: 5),
+        ),
       );
       return;
     }
 
-    setState(() => _creating = true);
-    try {
-      final group = await widget.eventRepository.createGroup(name, isPrivate: _isPrivate);
-      if (!mounted) return;
-      _nameController.clear();
-      final wasPrivate = _isPrivate;
-      setState(() => _isPrivate = false);
+    final created = await Navigator.of(context).push<BarangayGroup>(
+      MaterialPageRoute(
+        builder: (_) => CreateGroupPage(eventRepository: widget.eventRepository),
+      ),
+    );
+    if (created == null || !mounted) return;
+    await _loadMyGroups();
+    widget.onGroupsChanged?.call();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          created.isPrivate
+              ? 'Created private group "${created.name}". Code ${created.code} lets '
+                  'people request to join — you approve who gets in.'
+              : 'Created "${created.name}". Share code ${created.code} so others can join.',
+        ),
+        duration: const Duration(seconds: 8),
+      ),
+    );
+  }
+
+  Future<void> _openJoinByCode() async {
+    final result = await Navigator.of(context).push<GroupJoinResult>(
+      MaterialPageRoute(
+        builder: (_) => JoinGroupPage(eventRepository: widget.eventRepository),
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    if (result.status == GroupJoinStatus.joined) {
       await _loadMyGroups();
       widget.onGroupsChanged?.call();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            wasPrivate
-                ? 'Created private group "${group.name}". Code ${group.code} lets people '
-                    'request to join — you approve who gets in.'
-                : 'Created "${group.name}". Share code ${group.code} so others can join.',
-          ),
-          duration: const Duration(seconds: 8),
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not create the group. Please try again.')),
-      );
-    } finally {
-      if (mounted) setState(() => _creating = false);
     }
+    if (!mounted) return;
+    final message = switch (result.status) {
+      GroupJoinStatus.joined => 'You joined "${result.group.name}".',
+      GroupJoinStatus.pending =>
+        'Request sent — waiting for "${result.group.name}" to approve you.',
+      GroupJoinStatus.alreadyMember => 'You\'re already in "${result.group.name}".',
+    };
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openGroupMembers(BarangayGroup group) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => GroupMembersPage(
+          group: group,
+          eventRepository: widget.eventRepository,
+          currentUserId: widget.currentUserId,
+        ),
+      ),
+    );
+    // Membership/role may have changed while the member page was open
+    // (self-promotion state, someone else removed us, etc.).
+    if (!mounted) return;
+    await _loadMyGroups();
   }
 
   Future<void> _search() async {
@@ -650,52 +759,6 @@ class _GroupsTabState extends State<GroupsTab> {
       );
     } finally {
       if (mounted) setState(() => _busyIds.remove(group.id));
-    }
-  }
-
-  Future<void> _joinByCode() async {
-    final code = _codeController.text.trim();
-    if (code.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a group code first.')),
-      );
-      return;
-    }
-
-    setState(() => _joiningByCode = true);
-    try {
-      final result = await widget.eventRepository.requestOrJoinGroupByCode(code);
-      if (!mounted) return;
-      _codeController.clear();
-
-      switch (result.status) {
-        case GroupJoinStatus.joined:
-          await _loadMyGroups();
-          widget.onGroupsChanged?.call();
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('You joined "${result.group.name}".')),
-          );
-        case GroupJoinStatus.pending:
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Request sent — waiting for "${result.group.name}" to approve you.',
-              ),
-            ),
-          );
-        case GroupJoinStatus.alreadyMember:
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('You\'re already in "${result.group.name}".')),
-          );
-      }
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not join. Check the code and try again.')),
-      );
-    } finally {
-      if (mounted) setState(() => _joiningByCode = false);
     }
   }
 
@@ -823,61 +886,73 @@ class _GroupsTabState extends State<GroupsTab> {
     final colorScheme = Theme.of(context).colorScheme;
     final busy = _busyIds.contains(group.id);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          IconBadge(
-            icon: FontAwesomeIcons.peopleGroup,
-            tint: colorScheme.primary,
-            size: 38,
-            iconSize: 15,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        group.name,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleSmall
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                    if (group.isPrivate) ...[
-                      const SizedBox(width: 6),
-                      FaIcon(
-                        FontAwesomeIcons.lock,
-                        size: 11,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ],
-                  ],
-                ),
-                Text(
-                  '${group.memberCount} member${group.memberCount == 1 ? '' : 's'} • code ${group.code}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                ),
-              ],
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => unawaited(_openGroupMembers(group)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            IconBadge(
+              icon: FontAwesomeIcons.peopleGroup,
+              tint: colorScheme.primary,
+              size: 38,
+              iconSize: 15,
             ),
-          ),
-          IconButton(
-            tooltip: 'Copy group code',
-            onPressed: () => unawaited(_copyCode(group)),
-            icon: const FaIcon(FontAwesomeIcons.copy, size: 15),
-          ),
-          OutlinedButton(
-            onPressed: busy ? null : () => unawaited(_leave(group)),
-            child: const Text('Leave'),
-          ),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          group.name,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      if (group.isAdmin) ...[
+                        const SizedBox(width: 6),
+                        FaIcon(
+                          FontAwesomeIcons.solidStar,
+                          size: 11,
+                          color: colorScheme.primary,
+                        ),
+                      ],
+                      if (group.isPrivate) ...[
+                        const SizedBox(width: 6),
+                        FaIcon(
+                          FontAwesomeIcons.lock,
+                          size: 11,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ],
+                  ),
+                  Text(
+                    '${group.memberCount} member${group.memberCount == 1 ? '' : 's'} • code ${group.code}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Copy group code',
+              onPressed: () => unawaited(_copyCode(group)),
+              icon: const FaIcon(FontAwesomeIcons.copy, size: 15),
+            ),
+            OutlinedButton(
+              onPressed: busy ? null : () => unawaited(_leave(group)),
+              child: const Text('Leave'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -931,202 +1006,94 @@ class _GroupsTabState extends State<GroupsTab> {
     );
   }
 
-  Widget _buildCreateModeContent(ColorScheme colorScheme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TextField(
-          controller: _nameController,
-          decoration: InputDecoration(
-            labelText: 'Group name',
-            hintText: "e.g. Mayor's Office Updates",
-            prefixIcon: glassFieldIcon(FontAwesomeIcons.penToSquare, size: 14),
-            prefixIconConstraints: glassFieldIconConstraints,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Private group',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                  Text(
-                    'Hidden from search — people need your code, and '
-                    'you approve who joins.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                  ),
-                ],
-              ),
-            ),
-            Switch(
-              value: _isPrivate,
-              onChanged: (value) => setState(() => _isPrivate = value),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        FilledButton.icon(
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          ),
-          onPressed: _creating ? null : () => unawaited(_createGroup()),
-          icon: const FaIcon(FontAwesomeIcons.plus, size: 14),
-          label: Text(_creating ? 'Creating...' : 'Create group'),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          _isPrivate
-              ? 'You approve each person who requests to join with your code.'
-              : 'You get a code to share; anyone who joins sees every Group '
-                  'event you post there.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSearchModeContent() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TextField(
-          controller: _searchController,
-          textInputAction: TextInputAction.search,
-          onSubmitted: (_) => unawaited(_search()),
-          decoration: InputDecoration(
-            labelText: 'Search by name',
-            hintText: 'e.g. Mayor',
-            prefixIcon: glassFieldIcon(FontAwesomeIcons.magnifyingGlass, size: 14),
-            prefixIconConstraints: glassFieldIconConstraints,
-            suffixIcon: TextButton(
-              key: const Key('groups-search-button'),
-              onPressed: _searching ? null : () => unawaited(_search()),
-              child: Text(_searching ? '...' : 'Search'),
-            ),
-          ),
-        ),
-        if (_searched) ...[
-          const SizedBox(height: 4),
-          if (_searchResults.isEmpty)
-            _buildEmptyState(
-              FontAwesomeIcons.magnifyingGlass,
-              'No groups found. Try another name, or ask for the code.',
-            )
-          else
-            for (final group in _searchResults) _buildSearchResultRow(group),
-        ] else ...[
-          const SizedBox(height: 8),
-          Text(
-            'Private groups won\'t show up here — you\'ll need their code.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildCodeModeContent() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TextField(
-          controller: _codeController,
-          textCapitalization: TextCapitalization.characters,
-          decoration: InputDecoration(
-            labelText: 'Group code',
-            hintText: 'e.g. QXK2P9',
-            prefixIcon: glassFieldIcon(FontAwesomeIcons.key, size: 14),
-            prefixIconConstraints: glassFieldIconConstraints,
-          ),
-        ),
-        const SizedBox(height: 14),
-        FilledButton.icon(
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          ),
-          onPressed: _joiningByCode ? null : () => unawaited(_joinByCode()),
-          icon: const FaIcon(FontAwesomeIcons.userGroup, size: 14),
-          label: Text(_joiningByCode ? 'Joining...' : 'Join group'),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          'Ask whoever created the group for their 6-character code. Works '
-          'for private groups too — it just sends a request instead of '
-          'joining instantly.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAddGroupPanel(ColorScheme colorScheme) {
+  Widget _buildSearchPanel() {
+    final colorScheme = Theme.of(context).colorScheme;
     return GlassPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildPanelHeader(
-            FontAwesomeIcons.userGroup,
-            const Color(0xFFFFA726),
-            'Add a group',
+            FontAwesomeIcons.magnifyingGlass,
+            const Color(0xFF1F9D65),
+            'Search groups',
           ),
-          const SizedBox(height: 14),
-          SegmentedButton<_GroupAddMode>(
-            style: SegmentedButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              backgroundColor: colorScheme.onSurface.withValues(alpha: 0.06),
-              foregroundColor: colorScheme.onSurfaceVariant,
-              selectedForegroundColor: colorScheme.onPrimary,
-              selectedBackgroundColor: colorScheme.primary.withValues(alpha: 0.4),
-              side: BorderSide(color: colorScheme.onSurface.withValues(alpha: 0.12)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _searchController,
+            autofocus: true,
+            textInputAction: TextInputAction.search,
+            onSubmitted: (_) => unawaited(_search()),
+            decoration: InputDecoration(
+              labelText: 'Search by name',
+              hintText: 'e.g. Mayor',
+              prefixIcon: glassFieldIcon(FontAwesomeIcons.magnifyingGlass, size: 14),
+              prefixIconConstraints: glassFieldIconConstraints,
+              suffixIcon: TextButton(
+                key: const Key('groups-search-button'),
+                onPressed: _searching ? null : () => unawaited(_search()),
+                child: Text(_searching ? '...' : 'Search'),
+              ),
             ),
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment<_GroupAddMode>(
-                value: _GroupAddMode.create,
-                label: Text('Create'),
-                icon: FaIcon(FontAwesomeIcons.plus, size: 13),
-              ),
-              ButtonSegment<_GroupAddMode>(
-                value: _GroupAddMode.search,
-                label: Text('Find'),
-                icon: FaIcon(FontAwesomeIcons.magnifyingGlass, size: 13),
-              ),
-              ButtonSegment<_GroupAddMode>(
-                value: _GroupAddMode.code,
-                label: Text('Code'),
-                icon: FaIcon(FontAwesomeIcons.key, size: 13),
-              ),
-            ],
-            selected: {_addMode},
-            onSelectionChanged: (selection) =>
-                setState(() => _addMode = selection.first),
           ),
-          const SizedBox(height: 16),
-          switch (_addMode) {
-            _GroupAddMode.create => _buildCreateModeContent(colorScheme),
-            _GroupAddMode.search => _buildSearchModeContent(),
-            _GroupAddMode.code => _buildCodeModeContent(),
-          },
+          if (_searched) ...[
+            const SizedBox(height: 4),
+            if (_searchResults.isEmpty)
+              _buildEmptyState(
+                FontAwesomeIcons.magnifyingGlass,
+                'No groups found. Try another name, or ask for the code.',
+              )
+            else
+              for (final group in _searchResults) _buildSearchResultRow(group),
+          ] else ...[
+            const SizedBox(height: 8),
+            Text(
+              'Private groups won\'t show up here — you\'ll need their code.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildModuleTile({
+    required FaIconData icon,
+    required Color tint,
+    required String label,
+    required String caption,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(24),
+      onTap: onTap,
+      child: GlassPanel(
+        borderRadius: 24,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            IconBadge(icon: icon, tint: tint, size: 42, iconSize: 17),
+            const SizedBox(height: 12),
+            Text(
+              label,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              caption,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1140,20 +1107,77 @@ class _GroupsTabState extends State<GroupsTab> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
         children: [
-          Text(
-            'Groups',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Groups',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Like group chats, but for events everyone should see.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
                 ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Like group chats, but for events everyone should see.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
+              ),
+              IconButton(
+                tooltip: _searchExpanded ? 'Close search' : 'Search groups',
+                onPressed: () => setState(() {
+                  _searchExpanded = !_searchExpanded;
+                  if (!_searchExpanded) {
+                    _searched = false;
+                    _searchResults = const [];
+                    _searchController.clear();
+                  }
+                }),
+                icon: FaIcon(
+                  _searchExpanded ? FontAwesomeIcons.xmark : FontAwesomeIcons.magnifyingGlass,
+                  size: 18,
                 ),
+              ),
+            ],
           ),
+          if (_searchExpanded) ...[
+            const SizedBox(height: 12),
+            _buildSearchPanel(),
+          ],
           const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _buildModuleTile(
+                  icon: widget.canCreateGroups ? FontAwesomeIcons.plus : FontAwesomeIcons.lock,
+                  tint: widget.canCreateGroups
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant,
+                  label: 'Create',
+                  caption: widget.canCreateGroups ? 'Start a new group' : 'LGU members only',
+                  onTap: () => unawaited(_openCreateGroup()),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildModuleTile(
+                  icon: FontAwesomeIcons.key,
+                  tint: const Color(0xFFFFA726),
+                  label: 'Join a code',
+                  caption: 'Use an invite code',
+                  onTap: () => unawaited(_openJoinByCode()),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
           GlassPanel(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1203,8 +1227,6 @@ class _GroupsTabState extends State<GroupsTab> {
               ),
             ),
           ],
-          const SizedBox(height: 16),
-          _buildAddGroupPanel(colorScheme),
         ],
       ),
     );

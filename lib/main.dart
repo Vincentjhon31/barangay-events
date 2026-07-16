@@ -12,6 +12,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'add_event_page.dart';
 import 'app_update_service.dart';
 import 'auth_service.dart';
+import 'day_detail_page.dart';
+import 'event_conflicts.dart';
 import 'event_store.dart';
 import 'liquid_glass_components.dart';
 import 'profile_pages.dart';
@@ -85,7 +87,8 @@ class BarangayCalendarApp extends StatefulWidget {
   /// effects the instant it's used, and `Firebase.initializeApp()` is only
   /// ever called from `main()` (never by widget tests), so a real default
   /// here would crash every existing test. `main()` explicitly opts in.
-  final Future<PushNotificationService> Function()? pushNotificationServiceFactory;
+  final Future<PushNotificationService> Function()?
+      pushNotificationServiceFactory;
   final ThemeController themeController;
 
   @override
@@ -120,7 +123,7 @@ class _BarangayCalendarAppState extends State<BarangayCalendarApp> {
       listenable: widget.themeController,
       builder: (context, _) {
         return MaterialApp(
-          title: 'Barangay Calendar',
+          title: 'eBongabong Calendar',
           theme: _buildTheme(Brightness.light),
           darkTheme: _buildTheme(Brightness.dark),
           themeMode: widget.themeController.themeMode,
@@ -160,8 +163,9 @@ class _BarangayCalendarAppState extends State<BarangayCalendarApp> {
                     themeController: widget.themeController,
                     eventRepositoryFactory:
                         widget.eventRepositoryFactory ?? createEventRepository,
-                    pushNotificationServiceFactory: widget.pushNotificationServiceFactory ??
-                        () async => const NoopPushNotificationService(),
+                    pushNotificationServiceFactory:
+                        widget.pushNotificationServiceFactory ??
+                            () async => const NoopPushNotificationService(),
                   );
                 },
               );
@@ -187,7 +191,8 @@ class AuthenticatedShell extends StatefulWidget {
   final AppAuthService authService;
   final ThemeController themeController;
   final Future<EventRepository> Function() eventRepositoryFactory;
-  final Future<PushNotificationService> Function() pushNotificationServiceFactory;
+  final Future<PushNotificationService> Function()
+      pushNotificationServiceFactory;
 
   @override
   State<AuthenticatedShell> createState() => _AuthenticatedShellState();
@@ -248,7 +253,8 @@ class _AuthenticatedShellState extends State<AuthenticatedShell> {
           future: _pushServiceFuture,
           builder: (context, pushSnapshot) {
             final pushService = pushSnapshot.data;
-            if (pushSnapshot.connectionState != ConnectionState.done || pushService == null) {
+            if (pushSnapshot.connectionState != ConnectionState.done ||
+                pushService == null) {
               return const Scaffold(
                 body: Center(child: CircularProgressIndicator()),
               );
@@ -425,16 +431,19 @@ class _SignInScreenState extends State<SignInScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Center(
-                        child: IconBadge(
-                          icon: FontAwesomeIcons.landmark,
-                          tint: colorScheme.primary,
-                          size: 72,
-                          iconSize: 28,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: Image.asset(
+                            'assets/icons/Launcher_app.png',
+                            width: 72,
+                            height: 72,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'Barangay Calendar',
+                        'eBongabong Calendar',
                         textAlign: TextAlign.center,
                         style: Theme.of(context)
                             .textTheme
@@ -557,6 +566,11 @@ class _SignInScreenState extends State<SignInScreen> {
 /// month-by-month agenda list.
 enum _CalendarViewMode { month, week, list }
 
+/// Within List view: browse one month at a time (the original behavior),
+/// or a flat "Upcoming" feed sorted by distance from today regardless of
+/// month, with an ascending/descending toggle.
+enum _ListSubMode { byMonth, upcoming }
+
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({
     super.key,
@@ -582,15 +596,25 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime? _selectedDay;
   _CalendarViewMode _viewMode = _CalendarViewMode.month;
   DateTime _listMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  _ListSubMode _listSubMode = _ListSubMode.byMonth;
+  bool _upcomingAscending = true; // true = soonest first
   AppUpdateInfo? _availableUpdate;
   bool _checkingForUpdate = false;
   int _selectedTab = 0;
   AppUserProfile? _userProfile;
   final Set<String> _typeFilters = {}; // empty = show all event types
+  final _calendarSearchController = TextEditingController();
+  String _calendarSearchQuery = '';
 
   static const String _feedLastSeenKey = 'feed_last_seen';
   int _feedLastSeenMillis = 0; // persisted; drives the tab dot
   int _feedNewThreshold = 0; // snapshot at feed-open; drives the NEW pills
+
+  // Independent from the Calendar tab's own _typeFilters — filtering the
+  // feed shouldn't silently change what the calendar grid/list show.
+  final Set<String> _feedTypeFilters = {};
+  final _feedSearchController = TextEditingController();
+  String _feedSearchQuery = '';
 
   List<BarangayEvent> _events = const [];
   bool _eventsLoaded = false;
@@ -606,10 +630,26 @@ class _CalendarScreenState extends State<CalendarScreen> {
   bool _passesTypeFilter(BarangayEvent event) =>
       _typeFilters.isEmpty || _typeFilters.contains(event.eventType);
 
+  /// Independent from the Feed tab's own search — matches [_typeFilters]'
+  /// existing "don't share filter state across tabs" convention.
+  bool _passesCalendarSearch(BarangayEvent event) {
+    final query = _calendarSearchQuery.trim().toLowerCase();
+    if (query.isEmpty) return true;
+    final haystack = [
+      event.title,
+      event.location,
+      event.description,
+      event.creatorLabel ?? '',
+      event.groupName ?? '',
+    ].join(' ').toLowerCase();
+    return haystack.contains(query);
+  }
+
   List<BarangayEvent> _getEventsForDay(DateTime day) {
     final events = _events
         .where((event) => event.occursOnDay(day))
         .where(_passesTypeFilter)
+        .where(_passesCalendarSearch)
         .toList();
     events.sort((a, b) {
       final aStart = a.startTime;
@@ -703,6 +743,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
     unawaited(_syncPushTopics());
   }
 
+  /// Pull-to-refresh for the Calendar and Feed tabs. Events already stream
+  /// in live, so there's nothing stale to actually fetch — this
+  /// re-subscribes (cheap insurance against a stalled stream) and holds
+  /// the indicator up briefly so the gesture still feels like it did
+  /// something, matching the Groups tab's own pull-to-refresh.
+  Future<void> _refreshEvents() async {
+    _resubscribeEvents();
+    await Future.delayed(const Duration(milliseconds: 400));
+  }
+
   Future<void> _loadUserProfile() async {
     final authService = widget.authService;
     if (authService == null) return;
@@ -721,6 +771,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   void dispose() {
     unawaited(_eventSubscription.cancel());
+    _feedSearchController.dispose();
+    _calendarSearchController.dispose();
     super.dispose();
   }
 
@@ -791,15 +843,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
-  BarangayEvent? get _nextUpcomingEvent {
-    final now = DateTime.now();
-    final upcoming = _events
-        .where((event) => event.endTime.isAfter(now))
-        .toList()
-      ..sort((a, b) => a.startTime.compareTo(b.startTime));
-    return upcoming.isEmpty ? null : upcoming.first;
-  }
-
   void _handleTabSelected(int index) {
     if (index == _selectedTab) return;
     setState(() => _selectedTab = index);
@@ -813,9 +856,28 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       extendBody: true,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      // Offset above the floating LiquidTabBar (bottom:20 + its own
+      // height) — Scaffold's normal FAB placement doesn't know about that
+      // bar since it's a manually-positioned Stack child, not a real
+      // bottomNavigationBar.
+      floatingActionButton: _selectedTab == 0
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 90),
+              child: FloatingActionButton.extended(
+                key: const Key('calendar-add-event-fab'),
+                onPressed: () => unawaited(_openAddEvent()),
+                backgroundColor: colorScheme.primary,
+                foregroundColor: colorScheme.onPrimary,
+                icon: FaIcon(FontAwesomeIcons.plus, size: 16, color: colorScheme.onPrimary),
+                label: Text('Add event', style: TextStyle(color: colorScheme.onPrimary)),
+              ),
+            )
+          : null,
       body: Stack(
         children: [
           const Positioned.fill(child: LiquidGlassBackdrop()),
@@ -833,6 +895,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       _buildFeedTab(),
                       GroupsTab(
                         eventRepository: widget.eventRepository,
+                        currentUserId: _currentUserId,
+                        canCreateGroups: _canCreateGroups,
                         onGroupsChanged: _resubscribeEvents,
                       ),
                       if (widget.authService != null)
@@ -874,33 +938,53 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
         ],
       ),
-      floatingActionButton: _selectedTab == 0
-          ? Padding(
-              padding: const EdgeInsets.only(bottom: 96),
-              child: FloatingActionButton(
-                onPressed: () => unawaited(_openAddEventPage()),
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                child: const FaIcon(FontAwesomeIcons.plus),
-              ),
-            )
-          : null,
     );
   }
 
-  Future<void> _openAddEventPage() async {
+  /// Opens the full-day view for [date] — its own event list, with its own
+  /// Add button too. Also updates [_selectedDay]/[_focusedDay] so the
+  /// calendar grid/inline day preview reflect the tapped day when the user
+  /// returns.
+  Future<void> _openDayDetail(DateTime date) async {
+    setState(() {
+      _selectedDay = date;
+      _focusedDay = date;
+    });
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DayDetailPage(
+          date: date,
+          eventRepository: widget.eventRepository,
+          creatorProfile: _userProfile ?? widget.authService?.currentUser,
+          buildEventCard: _buildEventCard,
+        ),
+      ),
+    );
+  }
+
+  /// Add Event button on the main Calendar page itself — clamps forward to
+  /// today if the user had navigated to a past month before tapping it, so
+  /// the picker never opens with a past date pre-selected.
+  Future<void> _openAddEvent() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    var initialDate = _selectedDay ?? _focusedDay;
+    if (initialDate.isBefore(today)) {
+      initialDate = today;
+    }
+    setState(() {
+      _selectedDay = initialDate;
+      _focusedDay = initialDate;
+    });
+
     List<BarangayGroup> myGroups = const [];
     try {
       myGroups = await widget.eventRepository.listMyGroups();
     } catch (_) {
-      // Groups unavailable (e.g. migration not run) — page still works for
-      // public/personal events.
+      // Groups unavailable (e.g. migration not run) — Add Event still works
+      // for public/personal events.
     }
     if (!mounted) return;
-
-    final today = DateTime.now();
-    final todayMidnight = DateTime(today.year, today.month, today.day);
-    final seed = _selectedDay ?? _focusedDay;
-    final initialDate = seed.isBefore(todayMidnight) ? todayMidnight : seed;
 
     final result = await Navigator.of(context).push<AddEventResult>(
       MaterialPageRoute(
@@ -909,12 +993,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
           myGroups: myGroups,
           initialDate: initialDate,
           creatorProfile: _userProfile ?? widget.authService?.currentUser,
-          findOverlappingEvents: _findOverlappingEvents,
-          suggestFreeSlot: _suggestFreeSlot,
+          findOverlappingEvents: (date, start, end) =>
+              findOverlappingEvents(_events, date, start, end),
+          suggestFreeSlot: (date, start, end) =>
+              suggestFreeSlot(_events, date, start, end),
         ),
       ),
     );
-
+    // No manual merge needed for the list itself — the live watchAllEvents()
+    // subscription already picks up the newly saved event.
     if (result != null && mounted) {
       setState(() {
         _selectedDay = result.date;
@@ -932,30 +1019,65 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
+  Widget _buildCalendarSearchField() {
+    return TextField(
+      key: const Key('calendar-search-field'),
+      controller: _calendarSearchController,
+      onChanged: (value) => setState(() => _calendarSearchQuery = value),
+      decoration: InputDecoration(
+        labelText: 'Search events',
+        hintText: 'Title, location, or who posted it',
+        prefixIcon: glassFieldIcon(FontAwesomeIcons.magnifyingGlass, size: 14),
+        prefixIconConstraints: glassFieldIconConstraints,
+        suffixIcon: _calendarSearchQuery.isEmpty
+            ? null
+            : IconButton(
+                tooltip: 'Clear search',
+                icon: const FaIcon(FontAwesomeIcons.xmark, size: 14),
+                onPressed: () {
+                  _calendarSearchController.clear();
+                  setState(() => _calendarSearchQuery = '');
+                },
+              ),
+      ),
+    );
+  }
+
   Widget _buildCalendarTab() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
-      children: [
-        _buildHeader(),
-        const SizedBox(height: 18),
-        _buildAnnouncementBanner(),
-        const SizedBox(height: 18),
-        Center(child: _buildViewToggle()),
-        const SizedBox(height: 14),
-        _buildTypeFilterChips(),
-        const SizedBox(height: 14),
-        if (_viewMode == _CalendarViewMode.list) ...[
-          _buildMonthNav(),
+    return RefreshIndicator(
+      onRefresh: _refreshEvents,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
+        children: [
+          _buildHeader(),
+          const SizedBox(height: 18),
+          _buildCalendarSearchField(),
           const SizedBox(height: 14),
-          ..._buildMonthListSections(),
-        ] else ...[
-          _buildCalendar(),
-          const SizedBox(height: 22),
-          _buildUpcomingHeader(),
-          const SizedBox(height: 12),
-          ..._buildUpcomingEventCards(),
+          Center(child: _buildViewToggle()),
+          const SizedBox(height: 14),
+          _buildTypeFilterChips(_typeFilters, keyPrefix: 'calendar'),
+          const SizedBox(height: 14),
+          if (_viewMode == _CalendarViewMode.list) ...[
+            Center(child: _buildListSubModeToggle()),
+            const SizedBox(height: 14),
+            if (_listSubMode == _ListSubMode.byMonth) ...[
+              _buildMonthNav(),
+              const SizedBox(height: 14),
+              ..._buildMonthListSections(),
+            ] else ...[
+              _buildUpcomingSortBar(),
+              const SizedBox(height: 10),
+              ..._buildUpcomingListSections(),
+            ],
+          ] else ...[
+            _buildCalendar(),
+            const SizedBox(height: 22),
+            _buildUpcomingHeader(),
+            const SizedBox(height: 12),
+            ..._buildUpcomingEventCards(),
+          ],
         ],
-      ],
+      ),
     );
   }
 
@@ -1044,7 +1166,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     // Walk every day in the visible month (not just each event's start
     // day) so a multi-day event shows under every day header it spans.
-    final daysInMonth = DateUtils.getDaysInMonth(_listMonth.year, _listMonth.month);
+    final daysInMonth =
+        DateUtils.getDaysInMonth(_listMonth.year, _listMonth.month);
     final widgets = <Widget>[];
 
     for (var day = 1; day <= daysInMonth; day++) {
@@ -1052,19 +1175,38 @@ class _CalendarScreenState extends State<CalendarScreen> {
       final dayEvents = _events
           .where((event) => event.occursOnDay(date))
           .where(_passesTypeFilter)
+          .where(_passesCalendarSearch)
           .toList()
         ..sort((a, b) => a.startTime.compareTo(b.startTime));
       if (dayEvents.isEmpty) continue;
 
-      widgets.add(Padding(
-        padding: EdgeInsets.only(top: widgets.isEmpty ? 0 : 10, bottom: 8),
-        child: Text(
-          DateFormat('EEEE, MMM d').format(date),
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                letterSpacing: 0.6,
-                fontWeight: FontWeight.w700,
+      // Tappable day header — opens that day's own full-page view (with its
+      // Add button), the same destination as tapping a day on the Month/Week
+      // grid. The agenda entries below stay inline exactly as before.
+      widgets.add(InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => unawaited(_openDayDetail(date)),
+        child: Padding(
+          padding: EdgeInsets.only(top: widgets.isEmpty ? 0 : 10, bottom: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  DateFormat('EEEE, MMM d').format(date),
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        letterSpacing: 0.6,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
               ),
+              FaIcon(
+                FontAwesomeIcons.chevronRight,
+                size: 11,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
         ),
       ));
       for (final event in dayEvents) {
@@ -1077,7 +1219,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return [
         GlassPanel(
           child: Text(
-            'No events in ${DateFormat('MMMM yyyy').format(_listMonth)}.',
+            _calendarSearchQuery.trim().isEmpty
+                ? 'No events in ${DateFormat('MMMM yyyy').format(_listMonth)}.'
+                : 'No events in ${DateFormat('MMMM yyyy').format(_listMonth)} match your search.',
             style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
@@ -1087,7 +1231,139 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return widgets;
   }
 
-  Widget _buildTypeFilterChips() {
+  Widget _buildListSubModeToggle() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return SegmentedButton<_ListSubMode>(
+      style: SegmentedButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        backgroundColor: colorScheme.onSurface.withValues(alpha: 0.06),
+        foregroundColor: colorScheme.onSurfaceVariant,
+        selectedForegroundColor: colorScheme.onPrimary,
+        selectedBackgroundColor: colorScheme.primary.withValues(alpha: 0.4),
+        side: BorderSide(color: colorScheme.onSurface.withValues(alpha: 0.12)),
+      ),
+      showSelectedIcon: false,
+      segments: const [
+        ButtonSegment<_ListSubMode>(
+          value: _ListSubMode.byMonth,
+          label: Text('By Month'),
+        ),
+        ButtonSegment<_ListSubMode>(
+          value: _ListSubMode.upcoming,
+          label: Text('Upcoming'),
+        ),
+      ],
+      selected: {_listSubMode},
+      onSelectionChanged: (selection) => setState(() => _listSubMode = selection.first),
+    );
+  }
+
+  Widget _buildUpcomingSortBar() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            _upcomingAscending ? 'Soonest first' : 'Furthest first',
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ),
+        IconButton(
+          key: const Key('upcoming-sort-toggle'),
+          tooltip: _upcomingAscending
+              ? 'Sorted soonest first — tap for furthest first'
+              : 'Sorted furthest first — tap for soonest first',
+          onPressed: () => setState(() => _upcomingAscending = !_upcomingAscending),
+          icon: FaIcon(
+            _upcomingAscending
+                ? FontAwesomeIcons.arrowDownWideShort
+                : FontAwesomeIcons.arrowUpWideShort,
+            size: 16,
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Flat feed of not-yet-ended events sorted by distance from now (not
+  /// grouped by a browsed month like [_buildMonthListSections]) — still
+  /// broken into day-header groups since events span many different days,
+  /// just following whichever sort order [_upcomingAscending] picks rather
+  /// than always chronological-ascending.
+  List<Widget> _buildUpcomingListSections() {
+    if (!_eventsLoaded) return [_buildLoadingPanel()];
+
+    final now = DateTime.now();
+    final events = _events
+        .where((event) => event.endTime.isAfter(now))
+        .where(_passesTypeFilter)
+        .where(_passesCalendarSearch)
+        .toList()
+      ..sort((a, b) => _upcomingAscending
+          ? a.startTime.compareTo(b.startTime)
+          : b.startTime.compareTo(a.startTime));
+
+    if (events.isEmpty) {
+      return [
+        GlassPanel(
+          child: Text(
+            _calendarSearchQuery.trim().isEmpty
+                ? 'No upcoming events right now.'
+                : 'No upcoming events match your search.',
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+        ),
+      ];
+    }
+
+    final widgets = <Widget>[];
+    String? currentLabel;
+    for (final event in events) {
+      final label = DateFormat('EEEE, MMM d').format(event.startTime);
+      if (label != currentLabel) {
+        currentLabel = label;
+        widgets.add(Padding(
+          padding: EdgeInsets.only(top: widgets.isEmpty ? 0 : 10, bottom: 8),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  letterSpacing: 0.6,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ));
+      }
+      widgets.add(_buildEventCard(event));
+      widgets.add(const SizedBox(height: 12));
+    }
+    return widgets;
+  }
+
+  void _toggleTypeFilter(Set<String> filters, String? value) {
+    setState(() {
+      if (value == null) {
+        filters.clear();
+      } else if (filters.contains(value)) {
+        filters.remove(value);
+      } else {
+        filters.add(value);
+      }
+    });
+  }
+
+  /// Shared by the Calendar tab's own [_typeFilters] and the Feed tab's
+  /// independent [_feedTypeFilters] — filtering one shouldn't silently
+  /// affect what the other shows. [keyPrefix] keeps the two sets of chips
+  /// distinguishable in tests: both tabs stay mounted at once (they're
+  /// siblings in an `IndexedStack`, not swapped out), so identical labels
+  /// like "Personal" exist in both trees simultaneously.
+  Widget _buildTypeFilterChips(Set<String> filters,
+      {required String keyPrefix}) {
     final options = <({String? value, String label, FaIconData icon})>[
       (value: null, label: 'All', icon: FontAwesomeIcons.layerGroup),
       (value: EventType.public, label: 'Public', icon: FontAwesomeIcons.globe),
@@ -1107,19 +1383,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     // "All" is active when no specific type is checked; the type chips are
     // checkable so several can be enabled at once.
     bool isActive(String? value) =>
-        value == null ? _typeFilters.isEmpty : _typeFilters.contains(value);
-
-    void toggle(String? value) {
-      setState(() {
-        if (value == null) {
-          _typeFilters.clear();
-        } else if (_typeFilters.contains(value)) {
-          _typeFilters.remove(value);
-        } else {
-          _typeFilters.add(value);
-        }
-      });
-    }
+        value == null ? filters.isEmpty : filters.contains(value);
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -1127,8 +1391,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
         children: [
           for (final option in options) ...[
             InkWell(
+              key: Key('$keyPrefix-filter-${option.value ?? 'all'}'),
               borderRadius: BorderRadius.circular(999),
-              onTap: () => toggle(option.value),
+              onTap: () => _toggleTypeFilter(filters, option.value),
               child: GlassPanel(
                 borderRadius: 999,
                 padding:
@@ -1197,19 +1462,26 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _buildHeader() {
     final profile = _userProfile ?? widget.authService?.currentUser;
-    final barangayName = profile?.barangay?.trim().isNotEmpty == true
-        ? profile!.barangay!.toUpperCase()
-        : 'BARANGAY';
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Image.asset(
+            'assets/icons/Municipal_LOGO.png',
+            width: 40,
+            height: 40,
+            fit: BoxFit.cover,
+          ),
+        ),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                barangayName,
+                'MUNICIPAL OF BONGABONG',
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                       letterSpacing: 1.2,
@@ -1218,7 +1490,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
               const SizedBox(height: 2),
               Text(
-                'Community Calendar',
+                'eBongabong Calendar',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
@@ -1229,93 +1501,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
         if (widget.authService != null)
           InkWell(
             onTap: () => _handleTabSelected(3),
-            borderRadius: BorderRadius.circular(24),
-            child: IconBadge(
-              icon: FontAwesomeIcons.circleUser,
-              tint: Theme.of(context).colorScheme.primary,
+            borderRadius: BorderRadius.circular(28),
+            child: RoleAvatarFrame(
+              role: profile?.role ?? 'citizen',
               size: 48,
-              iconSize: 20,
+              child: profile?.avatarUrl != null
+                  ? Image.asset(profile!.avatarUrl!, fit: BoxFit.cover)
+                  : IconBadge(
+                      icon: FontAwesomeIcons.circleUser,
+                      tint: Theme.of(context).colorScheme.primary,
+                      size: 48,
+                      iconSize: 20,
+                    ),
             ),
           ),
       ],
-    );
-  }
-
-  Widget _buildAnnouncementBanner() {
-    if (!_eventsLoaded) return _buildLoadingPanel();
-
-    final event = _nextUpcomingEvent;
-    if (event == null) {
-      return GlassPanel(
-        child: Row(
-          children: [
-            IconBadge(
-                icon: FontAwesomeIcons.calendarCheck,
-                tint: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 14),
-            const Expanded(
-              child: Text(
-                'No upcoming events right now. Check back soon!',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(28),
-      onTap: () => _showEventDetails(event),
-      child: GlassPanel(
-        tint: _getEventTint(event.title),
-        tintAlpha: 0.16,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            IconBadge(
-                icon: _getEventIcon(event.title),
-                tint: _getEventTint(event.title)),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Next up',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.6,
-                        ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    event.title,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    event.isMultiDay
-                        ? '${event.location} • ${_dateRangeLabel(event)}'
-                        : '${event.location} • ${_formatDate(event.startTime)}, ${_formatTime(event.startTime)}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                  ),
-                ],
-              ),
-            ),
-            FaIcon(
-              FontAwesomeIcons.chevronRight,
-              size: 14,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1360,33 +1560,183 @@ class _CalendarScreenState extends State<CalendarScreen> {
     ];
   }
 
-  Widget _buildFeedTab() {
-    final feedEvents = List<BarangayEvent>.from(_events)
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  List<BarangayEvent> _filteredFeedEvents() {
+    final query = _feedSearchQuery.trim().toLowerCase();
+    final events = _events.where((event) {
+      if (_feedTypeFilters.isNotEmpty &&
+          !_feedTypeFilters.contains(event.eventType)) {
+        return false;
+      }
+      if (query.isEmpty) return true;
+      final haystack = [
+        event.title,
+        event.location,
+        event.description,
+        event.creatorLabel ?? '',
+        event.groupName ?? '',
+      ].join(' ').toLowerCase();
+      return haystack.contains(query);
+    }).toList();
+    events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return events;
+  }
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
-      children: [
-        _buildPageHeader(
-            'Feed', 'New events from people you follow and the community.'),
-        const SizedBox(height: 18),
-        if (!_eventsLoaded)
-          _buildLoadingPanel()
-        else if (feedEvents.isEmpty)
-          GlassPanel(
-            child: Text(
-              'Nothing here yet. Join groups from the Groups tab to see their '
-              'events, or check back for public announcements.',
-              style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+  /// Day-group header for the feed's timeline, based on when the event was
+  /// *posted* (`createdAt`) — the feed stays sorted newest-posted-first,
+  /// like a social feed, just with clearer day breaks.
+  String _feedDayLabel(DateTime time) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final date = DateTime(time.year, time.month, time.day);
+    final diff = today.difference(date).inDays;
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Yesterday';
+    return DateFormat('EEEE, MMM d').format(time);
+  }
+
+  Widget _buildFeedTab() {
+    final feedEvents = _filteredFeedEvents();
+    final hasActiveFilter =
+        _feedTypeFilters.isNotEmpty || _feedSearchQuery.trim().isNotEmpty;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return RefreshIndicator(
+      onRefresh: _refreshEvents,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
+        children: [
+          _buildPageHeader(
+              'Feed', 'New events from people you follow and the community.'),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _feedSearchController,
+            onChanged: (value) => setState(() => _feedSearchQuery = value),
+            decoration: InputDecoration(
+              labelText: 'Search the feed',
+              hintText: 'Title, location, or who posted it',
+              prefixIcon:
+                  glassFieldIcon(FontAwesomeIcons.magnifyingGlass, size: 14),
+              prefixIconConstraints: glassFieldIconConstraints,
+              suffixIcon: _feedSearchQuery.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear search',
+                      icon: const FaIcon(FontAwesomeIcons.xmark, size: 14),
+                      onPressed: () {
+                        _feedSearchController.clear();
+                        setState(() => _feedSearchQuery = '');
+                      },
+                    ),
             ),
-          )
-        else
-          for (final event in feedEvents) ...[
-            _buildFeedCard(event),
-            const SizedBox(height: 12),
-          ],
-      ],
+          ),
+          const SizedBox(height: 12),
+          _buildTypeFilterChips(_feedTypeFilters, keyPrefix: 'feed'),
+          const SizedBox(height: 18),
+          if (!_eventsLoaded)
+            _buildLoadingPanel()
+          else if (feedEvents.isEmpty)
+            GlassPanel(
+              child: Text(
+                hasActiveFilter
+                    ? 'No posts match your search or filter.'
+                    : 'Nothing here yet. Join groups from the Groups tab to see their '
+                        'events, or check back for public announcements.',
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
+              ),
+            )
+          else
+            ..._buildFeedTimeline(feedEvents),
+        ],
+      ),
+    );
+  }
+
+  /// Builds the feed's day-grouped timeline: a header per day break, and a
+  /// vertical rail + dot down the left of each entry connecting it to its
+  /// neighbors within the same day group (gapped at the very top/bottom of
+  /// each group, like a typical social-feed/agenda timeline).
+  List<Widget> _buildFeedTimeline(List<BarangayEvent> events) {
+    final widgets = <Widget>[];
+    String? currentLabel;
+
+    for (var i = 0; i < events.length; i++) {
+      final event = events[i];
+      final label = _feedDayLabel(event.createdAt);
+      if (label != currentLabel) {
+        currentLabel = label;
+        widgets.add(Padding(
+          padding: EdgeInsets.only(top: widgets.isEmpty ? 0 : 20, bottom: 10),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  letterSpacing: 0.6,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ));
+      }
+      final isFirstInGroup =
+          i == 0 || _feedDayLabel(events[i - 1].createdAt) != label;
+      final isLastInGroup = i == events.length - 1 ||
+          _feedDayLabel(events[i + 1].createdAt) != label;
+      widgets.add(_buildTimelineEntry(event,
+          isFirst: isFirstInGroup, isLast: isLastInGroup));
+    }
+    return widgets;
+  }
+
+  Widget _buildTimelineEntry(BarangayEvent event,
+      {required bool isFirst, required bool isLast}) {
+    final tint = _getEventTint(event.title);
+    final railColor = tint.withValues(alpha: 0.3);
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 44,
+            child: Column(
+              children: [
+                Text(
+                  _formatTime(event.startTime),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  width: 2,
+                  height: 6,
+                  color: isFirst ? Colors.transparent : railColor,
+                ),
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration:
+                      BoxDecoration(shape: BoxShape.circle, color: tint),
+                ),
+                Expanded(
+                  child: Container(
+                    width: 2,
+                    color: isLast ? Colors.transparent : railColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: _buildFeedCard(event),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1402,7 +1752,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _buildFeedCard(BarangayEvent event) {
     final colorScheme = Theme.of(context).colorScheme;
     final isNew = event.createdAt.millisecondsSinceEpoch > _feedNewThreshold;
-    final postedBy = event.creatorLabel ?? 'Community calendar';
+    final postedBy = event.creatorLabel ?? 'eBongabong Calendar';
 
     return InkWell(
       borderRadius: BorderRadius.circular(26),
@@ -1460,16 +1810,54 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       _buildEventTypePill(event.eventType),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Posted by $postedBy • ${_relativeTime(event.createdAt)}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                  const SizedBox(height: 5),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FaIcon(
+                        event.isMultiDay
+                            ? FontAwesomeIcons.calendarWeek
+                            : FontAwesomeIcons.clock,
+                        size: 12,
+                        color: colorScheme.primary,
+                      ),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          '${_dateRangeLabel(event)} • ${_formatTime(event.startTime)} - ${_formatTime(event.endTime)}',
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: colorScheme.onSurface,
+                                  ),
                         ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FaIcon(
+                        FontAwesomeIcons.locationDot,
+                        size: 12,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          event.location,
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '${_dateRangeLabel(event)} • ${_formatTime(event.startTime)} - ${_formatTime(event.endTime)}',
+                    'Posted by $postedBy • ${_relativeTime(event.createdAt)}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
@@ -1540,16 +1928,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
             lastDay: DateTime.utc(2030, 12, 31),
             focusedDay: _focusedDay,
             calendarFormat: _calendarFormat,
+            // Horizontal swipe still pages between months/weeks; the
+            // vertical swipe that silently flips Month<->Week format is
+            // disabled — that's the Month/Week/List buttons' job now, not
+            // a gesture the user might trigger by accident.
+            availableGestures: AvailableGestures.horizontalSwipe,
             availableCalendarFormats: const {
               CalendarFormat.month: 'Monthly',
               CalendarFormat.week: 'Weekly',
             },
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
             onDaySelected: (selectedDay, focusedDay) {
-              setState(() {
-                _selectedDay = selectedDay;
-                _focusedDay = focusedDay;
-              });
+              unawaited(_openDayDetail(selectedDay));
             },
             onFormatChanged: (format) {
               setState(() {
@@ -1597,7 +1987,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           child: DecoratedBox(
                             decoration: BoxDecoration(
                               color: Color(0xFFFFA726),
-                              borderRadius: BorderRadius.all(Radius.circular(2)),
+                              borderRadius:
+                                  BorderRadius.all(Radius.circular(2)),
                             ),
                           ),
                         ),
@@ -2053,90 +2444,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         const SizedBox(height: 24),
                       ],
 
-                      // Attendance status section
-                      Text(
-                        'Your Status',
-                        style:
-                            Theme.of(context).textTheme.labelMedium?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () async {
-                                await _handleEventAction('going', event);
-                                if (context.mounted) Navigator.pop(context);
-                              },
-                              icon: const FaIcon(
-                                FontAwesomeIcons.check,
-                                size: 16,
-                              ),
-                              label: const Text('Going'),
-                              style: OutlinedButton.styleFrom(
-                                backgroundColor:
-                                    event.attendanceStatus == 'going'
-                                        ? Theme.of(context)
-                                            .colorScheme
-                                            .primaryContainer
-                                        : null,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () async {
-                                await _handleEventAction('maybe', event);
-                                if (context.mounted) Navigator.pop(context);
-                              },
-                              icon: const FaIcon(
-                                FontAwesomeIcons.question,
-                                size: 16,
-                              ),
-                              label: const Text('Maybe'),
-                              style: OutlinedButton.styleFrom(
-                                backgroundColor:
-                                    event.attendanceStatus == 'maybe'
-                                        ? Theme.of(context)
-                                            .colorScheme
-                                            .secondaryContainer
-                                        : null,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () async {
-                                await _handleEventAction('not_going', event);
-                                if (context.mounted) Navigator.pop(context);
-                              },
-                              icon: const FaIcon(
-                                FontAwesomeIcons.xmark,
-                                size: 16,
-                              ),
-                              label: const Text('Not Going'),
-                              style: OutlinedButton.styleFrom(
-                                backgroundColor:
-                                    event.attendanceStatus == 'not_going'
-                                        ? Theme.of(context)
-                                            .colorScheme
-                                            .errorContainer
-                                        : null,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-
                       // Delete (only for the event's creator)
                       if (_canDeleteEvent(event)) ...[
-                        const SizedBox(height: 24),
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton.icon(
@@ -2249,7 +2558,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       FaIcon(
-                        event.isMultiDay ? FontAwesomeIcons.calendarWeek : FontAwesomeIcons.clock,
+                        event.isMultiDay
+                            ? FontAwesomeIcons.calendarWeek
+                            : FontAwesomeIcons.clock,
                         size: 13,
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
@@ -2325,20 +2636,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ],
               ),
             ),
-            PopupMenuButton<String>(
-              onSelected: (value) {
-                if (value == 'delete') {
-                  unawaited(_confirmDeleteEvent(event));
-                } else {
-                  unawaited(_handleEventAction(value, event));
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(value: 'going', child: Text('Going')),
-                const PopupMenuItem(value: 'maybe', child: Text('Maybe')),
-                const PopupMenuItem(
-                    value: 'not_going', child: Text('Not Going')),
-                if (_canDeleteEvent(event))
+            if (_canDeleteEvent(event))
+              PopupMenuButton<String>(
+                onSelected: (value) {
+                  if (value == 'delete') {
+                    unawaited(_confirmDeleteEvent(event));
+                  }
+                },
+                itemBuilder: (context) => [
                   PopupMenuItem(
                     value: 'delete',
                     child: Text(
@@ -2347,13 +2652,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           TextStyle(color: Theme.of(context).colorScheme.error),
                     ),
                   ),
-              ],
-              icon: FaIcon(
-                FontAwesomeIcons.ellipsisVertical,
-                size: 16,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ],
+                icon: FaIcon(
+                  FontAwesomeIcons.ellipsisVertical,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -2422,6 +2727,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   String? get _currentUserId =>
       (_userProfile ?? widget.authService?.currentUser)?.id;
+
+  bool get _canCreateGroups =>
+      (_userProfile ?? widget.authService?.currentUser)?.canCreateGroups ??
+      false;
 
   bool _canDeleteEvent(BarangayEvent event) {
     final userId = _currentUserId;
@@ -2529,9 +2838,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return FontAwesomeIcons.fileLines;
   }
 
-  String _formatTime(DateTime time) {
-    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-  }
+  String _formatTime(DateTime time) => formatDateTime12Hour(time);
 
   String _formatDate(DateTime date) {
     return DateFormat('EEEE, MMM d, yyyy').format(date);
@@ -2542,115 +2849,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
   String _dateRangeLabel(BarangayEvent event) {
     if (!event.isMultiDay) return _formatDate(event.startTime);
     final sameYear = event.startTime.year == event.endTime.year;
-    final start = DateFormat(sameYear ? 'MMM d' : 'MMM d, yyyy').format(event.startTime);
+    final start =
+        DateFormat(sameYear ? 'MMM d' : 'MMM d, yyyy').format(event.startTime);
     final end = DateFormat('MMM d, yyyy').format(event.endTime);
     return '$start – $end';
   }
 
-  Future<void> _handleEventAction(String action, BarangayEvent event) async {
-    await widget.eventRepository.updateAttendanceStatus(event.id, action);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content:
-            Text('You selected: ${action.toUpperCase()} for "${event.title}"'),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-      ),
-    );
-  }
-
-  int _timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
-
-  /// Events occurring on [date] (any type — public/group/personal, since
-  /// all of them show up together in this user's own Calendar/List/Feed)
-  /// whose time-of-day range overlaps [start]–[end]. For a multi-day event,
-  /// "occurring on [date]" uses [BarangayEvent.occursOnDay] and its
-  /// time-of-day is taken from its start/end *clock* time, applied on every
-  /// day it spans — e.g. a 3-day event timed 7–8 AM only blocks 7–8 AM on
-  /// each of those days, not the whole day.
-  List<BarangayEvent> _findOverlappingEvents(DateTime date, TimeOfDay start, TimeOfDay end) {
-    final startMinutes = _timeToMinutes(start);
-    final endMinutes = _timeToMinutes(end);
-
-    final overlapping = _events.where((event) {
-      if (!event.occursOnDay(date)) return false;
-      final eventStart = _timeToMinutes(TimeOfDay.fromDateTime(event.startTime));
-      final eventEnd = _timeToMinutes(TimeOfDay.fromDateTime(event.endTime));
-      // Half-open interval overlap — back-to-back events (one ending right
-      // as another starts) don't count as a conflict.
-      return startMinutes < eventEnd && eventStart < endMinutes;
-    }).toList();
-
-    overlapping.sort((a, b) => a.startTime.compareTo(b.startTime));
-    return overlapping;
-  }
-
-  /// The free time slot on [date], of the same length as [desiredStart]–
-  /// [desiredEnd], that starts closest to what was originally requested.
-  /// Null if the day has no gap long enough left.
-  ({TimeOfDay start, TimeOfDay end})? _suggestFreeSlot(
-    DateTime date,
-    TimeOfDay desiredStart,
-    TimeOfDay desiredEnd,
-  ) {
-    final duration = _timeToMinutes(desiredEnd) - _timeToMinutes(desiredStart);
-    if (duration <= 0) return null;
-
-    final busy = _events
-        .where((event) => event.occursOnDay(date))
-        .map((event) => (
-              start: _timeToMinutes(TimeOfDay.fromDateTime(event.startTime)),
-              end: _timeToMinutes(TimeOfDay.fromDateTime(event.endTime)),
-            ))
-        .toList()
-      ..sort((a, b) => a.start.compareTo(b.start));
-
-    // Merge overlapping/touching busy intervals.
-    final merged = <({int start, int end})>[];
-    for (final interval in busy) {
-      if (merged.isNotEmpty && interval.start <= merged.last.end) {
-        final last = merged.removeLast();
-        merged.add((start: last.start, end: interval.end > last.end ? interval.end : last.end));
-      } else {
-        merged.add(interval);
-      }
-    }
-
-    // Free gaps across the whole day.
-    final gaps = <({int start, int end})>[];
-    var cursor = 0;
-    for (final interval in merged) {
-      if (interval.start > cursor) {
-        gaps.add((start: cursor, end: interval.start));
-      }
-      cursor = interval.end > cursor ? interval.end : cursor;
-    }
-    if (cursor < 1440) {
-      gaps.add((start: cursor, end: 1440));
-    }
-
-    final desiredStartMinutes = _timeToMinutes(desiredStart);
-    ({int start, int end})? bestGap;
-    var bestDistance = 1 << 30;
-    for (final gap in gaps) {
-      if (gap.end - gap.start < duration) continue;
-      final latestFit = gap.end - duration;
-      final clampedStart = desiredStartMinutes < gap.start
-          ? gap.start
-          : (desiredStartMinutes > latestFit ? latestFit : desiredStartMinutes);
-      final distance = (clampedStart - desiredStartMinutes).abs();
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestGap = (start: clampedStart, end: clampedStart + duration);
-      }
-    }
-
-    if (bestGap == null) return null;
-    return (
-      start: TimeOfDay(hour: bestGap.start ~/ 60, minute: bestGap.start % 60),
-      end: TimeOfDay(hour: bestGap.end ~/ 60, minute: bestGap.end % 60),
-    );
-  }
 }
 
 /// The "Group" block inside the event details sheet for group events:

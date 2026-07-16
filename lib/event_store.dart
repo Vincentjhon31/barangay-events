@@ -205,6 +205,7 @@ class BarangayGroup {
     this.memberCount = 0,
     this.createdBy,
     this.isPrivate = false,
+    this.myRole,
   });
 
   final String id;
@@ -215,6 +216,69 @@ class BarangayGroup {
 
   /// Hidden from search; joining requires a request the creator accepts.
   final bool isPrivate;
+
+  /// The caller's role in this group ('admin' | 'member'), or null if the
+  /// caller isn't a member (e.g. a search result they haven't joined).
+  final String? myRole;
+
+  bool get isAdmin => myRole == 'admin';
+
+  BarangayGroup copyWith({
+    int? memberCount,
+    String? myRole,
+  }) {
+    return BarangayGroup(
+      id: id,
+      name: name,
+      code: code,
+      memberCount: memberCount ?? this.memberCount,
+      createdBy: createdBy,
+      isPrivate: isPrivate,
+      myRole: myRole ?? this.myRole,
+    );
+  }
+}
+
+/// One member of a [BarangayGroup]'s roster — name/avatar are a
+/// denormalized snapshot taken when they joined (mirrors how
+/// BarangayEvent.createdByName works), not a live profile lookup.
+class GroupMember {
+  const GroupMember({
+    required this.userId,
+    required this.displayName,
+    this.avatarUrl,
+    required this.role,
+    required this.joinedAt,
+    this.accountRole = 'citizen',
+  });
+
+  final String userId;
+  final String displayName;
+  final String? avatarUrl;
+
+  /// 'admin' | 'member' — this person's standing within THIS group. Not
+  /// to be confused with [accountRole].
+  final String role;
+  final DateTime joinedAt;
+
+  /// 'citizen' | 'lgu_member' | 'superadmin' — this person's app-wide
+  /// account role (see [[project-event-sharing-model]]/AppUserProfile.role),
+  /// shown via RoleAvatarFrame next to their group-admin star, not to be
+  /// confused with [role] (their admin/member standing in THIS group).
+  final String accountRole;
+
+  bool get isAdmin => role == 'admin';
+
+  GroupMember copyWith({String? role}) {
+    return GroupMember(
+      userId: userId,
+      displayName: displayName,
+      avatarUrl: avatarUrl,
+      role: role ?? this.role,
+      joinedAt: joinedAt,
+      accountRole: accountRole,
+    );
+  }
 }
 
 /// A pending request to join one of the current user's private groups,
@@ -295,6 +359,17 @@ abstract class EventRepository {
 
   /// Accepts or declines a pending request (creator-only).
   Future<void> respondToJoinRequest(String requestId, {required bool accept});
+
+  /// Full member roster for [groupId] — callable only by one of that
+  /// group's own members.
+  Future<List<GroupMember>> listGroupMembers(String groupId);
+
+  /// Promotes [userId] to admin within [groupId] (any admin may do this).
+  Future<void> promoteMember(String groupId, String userId);
+
+  /// Removes [userId] from [groupId]. Any admin may remove a regular
+  /// member; only the group's creator may remove a fellow admin.
+  Future<void> removeMember(String groupId, String userId);
 
   Future<void> dispose();
 }
@@ -383,6 +458,35 @@ class MemoryEventRepository implements EventRepository {
   // (that's scoped by createdBy, not _myGroupIds), so the seeded pending
   // request below still shows up in the approval inbox regardless.
   final Set<String> _myGroupIds = {};
+  // The mock user's role in each group they belong to.
+  final Map<String, String> _myRoleByGroupId = {};
+  final Map<String, List<GroupMember>> _members = {
+    'grp-mayor': [
+      GroupMember(
+        userId: 'mayor-1',
+        displayName: "Mayor's Office",
+        role: 'admin',
+        joinedAt: DateTime.now().subtract(const Duration(days: 200)),
+        accountRole: 'lgu_member',
+      ),
+      GroupMember(
+        userId: 'staff-1',
+        displayName: 'Liza Santos',
+        role: 'member',
+        joinedAt: DateTime.now().subtract(const Duration(days: 150)),
+        accountRole: 'citizen',
+      ),
+    ],
+    'grp-basketball': [
+      GroupMember(
+        userId: 'hrmo-1',
+        displayName: 'Mark Villanueva',
+        role: 'admin',
+        joinedAt: DateTime.now().subtract(const Duration(days: 90)),
+        accountRole: 'lgu_member',
+      ),
+    ],
+  };
   final List<GroupJoinRequest> _pendingRequests = [
     GroupJoinRequest(
       id: 'req-seed-1',
@@ -399,7 +503,10 @@ class MemoryEventRepository implements EventRepository {
 
   @override
   Future<List<BarangayGroup>> listMyGroups() async {
-    return _allGroups.where((group) => _myGroupIds.contains(group.id)).toList();
+    return _allGroups
+        .where((group) => _myGroupIds.contains(group.id))
+        .map((group) => group.copyWith(myRole: _myRoleByGroupId[group.id]))
+        .toList();
   }
 
   @override
@@ -426,6 +533,15 @@ class MemoryEventRepository implements EventRepository {
     );
     _allGroups.add(group);
     _myGroupIds.add(group.id);
+    _myRoleByGroupId[group.id] = 'admin';
+    _members.putIfAbsent(group.id, () => []).add(
+          GroupMember(
+            userId: _mockUserId,
+            displayName: 'You',
+            role: 'admin',
+            joinedAt: DateTime.now(),
+          ),
+        );
     return group;
   }
 
@@ -444,7 +560,7 @@ class MemoryEventRepository implements EventRepository {
     }
 
     if (!group.isPrivate) {
-      _myGroupIds.add(group.id);
+      _joinAsMockMember(group.id);
       return GroupJoinResult(group: group, status: GroupJoinStatus.joined);
     }
 
@@ -460,17 +576,32 @@ class MemoryEventRepository implements EventRepository {
     return GroupJoinResult(group: group, status: GroupJoinStatus.pending);
   }
 
+  void _joinAsMockMember(String groupId) {
+    _myGroupIds.add(groupId);
+    _myRoleByGroupId[groupId] = 'member';
+    _members.putIfAbsent(groupId, () => []).add(
+          GroupMember(
+            userId: _mockUserId,
+            displayName: 'You',
+            role: 'member',
+            joinedAt: DateTime.now(),
+          ),
+        );
+  }
+
   @override
   Future<void> joinGroup(String groupId) async {
     if (!_allGroups.any((group) => group.id == groupId)) {
       throw Exception('Group not found');
     }
-    _myGroupIds.add(groupId);
+    _joinAsMockMember(groupId);
   }
 
   @override
   Future<void> leaveGroup(String groupId) async {
     _myGroupIds.remove(groupId);
+    _myRoleByGroupId.remove(groupId);
+    _members[groupId]?.removeWhere((member) => member.userId == _mockUserId);
   }
 
   @override
@@ -504,15 +635,46 @@ class MemoryEventRepository implements EventRepository {
       final index = _allGroups.indexWhere((group) => group.id == request.groupId);
       if (index != -1) {
         final group = _allGroups[index];
-        _allGroups[index] = BarangayGroup(
-          id: group.id,
-          name: group.name,
-          code: group.code,
-          memberCount: group.memberCount + 1,
-          createdBy: group.createdBy,
-          isPrivate: group.isPrivate,
-        );
+        _allGroups[index] = group.copyWith(memberCount: group.memberCount + 1);
+        _members.putIfAbsent(group.id, () => []).add(
+              GroupMember(
+                userId: request.requesterId,
+                displayName: request.requesterName ?? 'Someone',
+                role: 'member',
+                joinedAt: DateTime.now(),
+              ),
+            );
       }
+    }
+  }
+
+  @override
+  Future<List<GroupMember>> listGroupMembers(String groupId) async {
+    return List.unmodifiable(_members[groupId] ?? const []);
+  }
+
+  @override
+  Future<void> promoteMember(String groupId, String userId) async {
+    final members = _members[groupId];
+    if (members == null) return;
+    final index = members.indexWhere((member) => member.userId == userId);
+    if (index == -1) return;
+    members[index] = members[index].copyWith(role: 'admin');
+    if (userId == _mockUserId) _myRoleByGroupId[groupId] = 'admin';
+  }
+
+  @override
+  Future<void> removeMember(String groupId, String userId) async {
+    _members[groupId]?.removeWhere((member) => member.userId == userId);
+    final index = _allGroups.indexWhere((group) => group.id == groupId);
+    if (index != -1) {
+      final group = _allGroups[index];
+      _allGroups[index] =
+          group.copyWith(memberCount: group.memberCount > 0 ? group.memberCount - 1 : 0);
+    }
+    if (userId == _mockUserId) {
+      _myGroupIds.remove(groupId);
+      _myRoleByGroupId.remove(groupId);
     }
   }
 
@@ -593,18 +755,35 @@ class SupabaseEventRepository implements EventRepository {
 
     final memberships = await _client
         .from('group_members')
-        .select('group_id')
+        .select('group_id, role')
         .eq('user_id', userId);
-    final groupIds =
-        memberships.map((row) => row['group_id'] as String).toList();
-    if (groupIds.isEmpty) return const [];
+    final roleByGroupId = {
+      for (final row in memberships)
+        row['group_id'] as String: row['role'] as String? ?? 'member',
+    };
+    if (roleByGroupId.isEmpty) return const [];
 
     final rows = await _client
         .from('groups')
         .select('id, name, code, created_by, is_private, group_members(count)')
-        .inFilter('id', groupIds)
+        .inFilter('id', roleByGroupId.keys.toList())
         .order('name', ascending: true);
-    return rows.map(_groupFromRow).toList();
+    return rows
+        .map((row) => _groupFromRow(row).copyWith(myRole: roleByGroupId[row['id']]))
+        .toList();
+  }
+
+  /// Snapshot of the caller's own display name/avatar, denormalized onto a
+  /// group_members row at join time (mirrors barangay_events.created_by_name).
+  Future<Map<String, String?>> _ownProfileSnapshot(String userId) async {
+    final row = await _client
+        .from('profiles')
+        .select('display_name, email, avatar_url')
+        .eq('id', userId)
+        .maybeSingle();
+    final rawName = row?['display_name'] as String?;
+    final displayName = rawName?.trim().isNotEmpty == true ? rawName : row?['email'] as String?;
+    return {'display_name': displayName, 'avatar_url': row?['avatar_url'] as String?};
   }
 
   @override
@@ -641,9 +820,14 @@ class SupabaseEventRepository implements EventRepository {
         .select('id, name, code, created_by')
         .single();
     final groupId = row['id'] as String;
-    await _client
-        .from('group_members')
-        .insert({'group_id': groupId, 'user_id': userId});
+    final snapshot = await _ownProfileSnapshot(userId);
+    await _client.from('group_members').insert({
+      'group_id': groupId,
+      'user_id': userId,
+      'role': 'admin',
+      'display_name': snapshot['display_name'],
+      'avatar_url': snapshot['avatar_url'],
+    });
 
     return BarangayGroup(
       id: groupId,
@@ -652,6 +836,7 @@ class SupabaseEventRepository implements EventRepository {
       memberCount: 1,
       createdBy: userId,
       isPrivate: isPrivate,
+      myRole: 'admin',
     );
   }
 
@@ -683,8 +868,15 @@ class SupabaseEventRepository implements EventRepository {
   Future<void> joinGroup(String groupId) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) return;
+    final snapshot = await _ownProfileSnapshot(userId);
     await _client.from('group_members').upsert(
-      {'group_id': groupId, 'user_id': userId},
+      {
+        'group_id': groupId,
+        'user_id': userId,
+        'role': 'member',
+        'display_name': snapshot['display_name'],
+        'avatar_url': snapshot['avatar_url'],
+      },
       onConflict: 'group_id,user_id',
       ignoreDuplicates: true,
     );
@@ -736,6 +928,44 @@ class SupabaseEventRepository implements EventRepository {
   }
 
   @override
+  Future<List<GroupMember>> listGroupMembers(String groupId) async {
+    final rows = await _client.rpc(
+      'list_group_members',
+      params: {'p_group_id': groupId},
+    ) as List<dynamic>;
+    return rows.map((row) {
+      final map = row as Map<String, dynamic>;
+      final rawName = map['member_display_name'] as String?;
+      return GroupMember(
+        userId: map['member_user_id'] as String,
+        displayName: rawName?.trim().isNotEmpty == true ? rawName! : 'Someone',
+        avatarUrl: map['member_avatar_url'] as String?,
+        role: map['member_role'] as String? ?? 'member',
+        joinedAt: DateTime.tryParse(map['member_joined_at'] as String? ?? '') ?? DateTime.now(),
+        accountRole: map['member_account_role'] as String? ?? 'citizen',
+      );
+    }).toList();
+  }
+
+  @override
+  Future<void> promoteMember(String groupId, String userId) async {
+    await _client
+        .from('group_members')
+        .update({'role': 'admin'})
+        .eq('group_id', groupId)
+        .eq('user_id', userId);
+  }
+
+  @override
+  Future<void> removeMember(String groupId, String userId) async {
+    await _client
+        .from('group_members')
+        .delete()
+        .eq('group_id', groupId)
+        .eq('user_id', userId);
+  }
+
+  @override
   Future<void> dispose() async {
   }
 }
@@ -746,6 +976,11 @@ Future<EventRepository> createEventRepository() async {
 }
 
 List<BarangayEvent> _seedEvents() {
+  // "Mayor Staff Meeting" below is relied on by tests as *today's* seeded
+  // event (day-detail/list-view flows tap into "today" to exercise it) —
+  // computed off DateTime.now() rather than a fixed date so the suite
+  // doesn't silently break the next time it's run on a different day.
+  final today = DateTime.now();
   return [
     BarangayEvent(
       id: 'seed-assembly',
@@ -791,8 +1026,8 @@ List<BarangayEvent> _seedEvents() {
       id: 'seed-mayor-meeting',
       title: 'Mayor Staff Meeting',
       location: "Mayor's Office",
-      startTime: DateTime(2026, 7, 15, 10, 0),
-      endTime: DateTime(2026, 7, 15, 11, 0),
+      startTime: DateTime(today.year, today.month, today.day, 10, 0),
+      endTime: DateTime(today.year, today.month, today.day, 11, 0),
       description: 'Weekly coordination meeting with department heads',
       hasAttachment: false,
       createdAt: DateTime(2026, 7, 8),

@@ -5,6 +5,22 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 bool isDarkContext(BuildContext context) => Theme.of(context).brightness == Brightness.dark;
 
+/// Formats a time as 12-hour with AM/PM (e.g. "9:00 AM"), regardless of the
+/// device's 24-hour clock setting. Deliberately does NOT use
+/// `TimeOfDay.format(context)`/`MediaQuery.alwaysUse24HourFormat` — some
+/// users' phones are set to 24-hour time and find it harder to read, so
+/// every time shown in this app is forced to 12-hour format instead of
+/// following the device.
+String formatTimeOfDay12Hour(TimeOfDay time) {
+  final hour12 = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+  final minute = time.minute.toString().padLeft(2, '0');
+  final period = time.period == DayPeriod.am ? 'AM' : 'PM';
+  return '$hour12:$minute $period';
+}
+
+String formatDateTime12Hour(DateTime dateTime) =>
+    formatTimeOfDay12Hour(TimeOfDay.fromDateTime(dateTime));
+
 /// A `TextField`/`DropdownButtonFormField` prefix icon, centered inside a
 /// fixed-size box. A bare `FaIcon` passed straight to `InputDecoration
 /// .prefixIcon` looks inconsistently positioned field-to-field: Font
@@ -27,6 +43,117 @@ const BoxConstraints glassFieldIconConstraints = BoxConstraints.tightFor(width: 
 /// The app's visual style: the fancy translucent "Liquid Glass" look, or a
 /// plain solid palette that renders much faster on low-end phones.
 enum UiStyle { liquid, solid }
+
+/// The ring/badge color for an account role ('citizen' | 'lgu_member' |
+/// 'superadmin') — citizens get a plain neutral ring, LGU members teal,
+/// the superadmin gold. Shared by [RoleAvatarFrame] and any plain text
+/// label/pill that also wants to match it.
+Color roleAccentColor(String role, ColorScheme colorScheme) {
+  switch (role) {
+    case 'superadmin':
+      return const Color(0xFFEFB93E);
+    case 'lgu_member':
+      return const Color(0xFF2DBE8F);
+    default:
+      return colorScheme.onSurfaceVariant.withValues(alpha: 0.4);
+  }
+}
+
+/// Human-readable label for an account role, used anywhere the role is
+/// spelled out rather than just color-coded (e.g. the Profile page).
+String roleLabel(String role) {
+  switch (role) {
+    case 'superadmin':
+      return 'Superadmin';
+    case 'lgu_member':
+      return 'LGU Member';
+    default:
+      return 'Citizen';
+  }
+}
+
+FaIconData? _roleBadgeIcon(String role) {
+  switch (role) {
+    case 'superadmin':
+      return FontAwesomeIcons.crown;
+    case 'lgu_member':
+      return FontAwesomeIcons.shieldHalved;
+    default:
+      return null;
+  }
+}
+
+/// Wraps an avatar with a role-colored ring and, for LGU members/the
+/// superadmin, a small corner badge icon — a "rank frame" so a person's
+/// account role (citizen/LGU member/superadmin) is visible at a glance
+/// wherever their avatar shows up (Profile page, the Calendar header, a
+/// group's member list), the same way a game shows player rank borders.
+/// [child] should already be the fully-built avatar circle (photo or
+/// fallback icon) at exactly [size] — this only adds the frame around it.
+class RoleAvatarFrame extends StatelessWidget {
+  const RoleAvatarFrame({
+    super.key,
+    required this.role,
+    required this.size,
+    required this.child,
+    this.badgeOnLeft = false,
+  });
+
+  final String role;
+  final double size;
+  final Widget child;
+
+  /// Puts the corner badge at bottom-left instead of the default
+  /// bottom-right — for avatars that already have something else pinned
+  /// to the bottom-right (e.g. the Profile page's edit-pencil badge).
+  final bool badgeOnLeft;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final ring = roleAccentColor(role, colorScheme);
+    final badgeIcon = _roleBadgeIcon(role);
+    final ringWidth = badgeIcon == null ? 1.5 : 2.5;
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: size,
+            height: size,
+            padding: EdgeInsets.all(ringWidth + 1),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: ring, width: ringWidth),
+            ),
+            child: ClipOval(child: child),
+          ),
+          if (badgeIcon != null)
+            Positioned(
+              left: badgeOnLeft ? -2 : null,
+              right: badgeOnLeft ? null : -2,
+              bottom: -2,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: ring,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    width: 1.5,
+                  ),
+                ),
+                child: FaIcon(badgeIcon, size: size * 0.24, color: Colors.white),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
 /// Makes the chosen [UiStyle] available to every glass component without
 /// threading it through constructors. Defaults to [UiStyle.liquid] when no
@@ -508,11 +635,28 @@ class GlassSubPage extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.children,
+    this.floatingActionButton,
+    this.bottomOverlay,
+    this.scrollController,
   });
 
   final String title;
   final String subtitle;
   final List<Widget> children;
+
+  /// Optional floating action button, same as `Scaffold.floatingActionButton`
+  /// — for pages that need their own primary action (e.g. an "Add" button),
+  /// rather than the usual bottom-of-content `FilledButton`.
+  final Widget? floatingActionButton;
+
+  /// Optional widget pinned to the bottom of the page, above the scrolling
+  /// content and independent of scroll position — e.g. a "more below" fade
+  /// hint. Unlike [children], this does NOT scroll with the list.
+  final Widget? bottomOverlay;
+
+  /// Optional controller for the page's internal `ListView`, so a caller can
+  /// track scroll position (e.g. to drive [bottomOverlay]'s visibility).
+  final ScrollController? scrollController;
 
   @override
   Widget build(BuildContext context) {
@@ -520,11 +664,13 @@ class GlassSubPage extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      floatingActionButton: floatingActionButton,
       body: Stack(
         children: [
           const Positioned.fill(child: LiquidGlassBackdrop()),
           SafeArea(
             child: ListView(
+              controller: scrollController,
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
               children: [
                 Row(
@@ -567,6 +713,8 @@ class GlassSubPage extends StatelessWidget {
               ],
             ),
           ),
+          if (bottomOverlay != null)
+            Positioned(left: 0, right: 0, bottom: 0, child: bottomOverlay!),
         ],
       ),
     );

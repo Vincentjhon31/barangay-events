@@ -68,11 +68,26 @@ class _AddEventPageState extends State<AddEventPage> {
     return DateTime(now.year, now.month, now.day);
   }
 
+  /// Public is superadmin-only; Group needs an lgu_member/superadmin role;
+  /// Personal is open to everyone signed in. A null [AddEventPage.creatorProfile]
+  /// (no session) gets the least-privilege default — Personal only — though
+  /// in practice nothing would save without a session anyway, since the
+  /// server-side RLS check requires auth.uid() regardless of event_type.
+  bool get _canCreatePublic => widget.creatorProfile?.canCreatePublicEvents ?? false;
+  bool get _canCreateGroupEvent => widget.creatorProfile?.canCreateGroupEvents ?? false;
+
+  List<String> get _allowedEventTypes => [
+        if (_canCreatePublic) EventType.public,
+        if (_canCreateGroupEvent) EventType.shared,
+        EventType.personal,
+      ];
+
   @override
   void initState() {
     super.initState();
     _startDate = widget.initialDate;
     _endDate = widget.initialDate;
+    _eventType = _allowedEventTypes.first;
     _selectedGroup = widget.myGroups.isNotEmpty ? widget.myGroups.first : null;
     _recomputeConflicts();
   }
@@ -87,7 +102,7 @@ class _AddEventPageState extends State<AddEventPage> {
 
   int _timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
 
-  String _formatClock(DateTime time) => TimeOfDay.fromDateTime(time).format(context);
+  String _formatClock(DateTime time) => formatDateTime12Hour(time);
 
   DateTime get _startDateTime => DateTime(
         _startDate.year,
@@ -214,14 +229,14 @@ class _AddEventPageState extends State<AddEventPage> {
   }
 
   String _typeHelperText() {
-    switch (_eventType) {
-      case EventType.shared:
-        return 'Only members of the group you pick can see this.';
-      case EventType.personal:
-        return 'Only you can see this.';
-      default:
-        return 'Everyone in the app can see this.';
-    }
+    final base = switch (_eventType) {
+      EventType.shared => 'Only members of the group you pick can see this.',
+      EventType.personal => 'Only you can see this.',
+      _ => 'Everyone in the app can see this.',
+    };
+    if (_allowedEventTypes.length > 1) return base;
+    return '$base Only verified LGU members can post Group events, and only '
+        'the admin can post Public events.';
   }
 
   Future<void> _save() async {
@@ -421,8 +436,8 @@ class _AddEventPageState extends State<AddEventPage> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Free slot: ${_suggestedSlot!.start.format(context)} – '
-                        '${_suggestedSlot!.end.format(context)} · Tap to use',
+                        'Free slot: ${formatTimeOfDay12Hour(_suggestedSlot!.start)} – '
+                        '${formatTimeOfDay12Hour(_suggestedSlot!.end)} · Tap to use',
                         style: TextStyle(
                           color: colorScheme.primary,
                           fontWeight: FontWeight.w700,
@@ -461,29 +476,50 @@ class _AddEventPageState extends State<AddEventPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SegmentedButton<String>(
-                style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact),
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment<String>(
-                    value: EventType.public,
-                    label: Text('Public'),
-                    icon: FaIcon(FontAwesomeIcons.globe, size: 12),
-                  ),
-                  ButtonSegment<String>(
-                    value: EventType.shared,
-                    label: Text('Group'),
-                    icon: FaIcon(FontAwesomeIcons.userGroup, size: 12),
-                  ),
-                  ButtonSegment<String>(
-                    value: EventType.personal,
-                    label: Text('Personal'),
-                    icon: FaIcon(FontAwesomeIcons.lock, size: 12),
-                  ),
-                ],
-                selected: {_eventType},
-                onSelectionChanged: (selection) => setState(() => _eventType = selection.first),
-              ),
+              if (_allowedEventTypes.length > 1)
+                SegmentedButton<String>(
+                  style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact),
+                  showSelectedIcon: false,
+                  segments: [
+                    if (_canCreatePublic)
+                      const ButtonSegment<String>(
+                        value: EventType.public,
+                        label: Text('Public'),
+                        icon: FaIcon(FontAwesomeIcons.globe, size: 12),
+                      ),
+                    if (_canCreateGroupEvent)
+                      const ButtonSegment<String>(
+                        value: EventType.shared,
+                        label: Text('Group'),
+                        icon: FaIcon(FontAwesomeIcons.userGroup, size: 12),
+                      ),
+                    const ButtonSegment<String>(
+                      value: EventType.personal,
+                      label: Text('Personal'),
+                      icon: FaIcon(FontAwesomeIcons.lock, size: 12),
+                    ),
+                  ],
+                  selected: {_eventType},
+                  onSelectionChanged: (selection) => setState(() => _eventType = selection.first),
+                )
+              else
+                Row(
+                  children: [
+                    FaIcon(
+                      FontAwesomeIcons.lock,
+                      size: 14,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Personal event',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleSmall
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
               const SizedBox(height: 8),
               Text(
                 _typeHelperText(),
@@ -609,13 +645,13 @@ class _AddEventPageState extends State<AddEventPage> {
               _buildPickerRow(
                 icon: FontAwesomeIcons.clock,
                 label: 'Start time',
-                value: _startTime.format(context),
+                value: formatTimeOfDay12Hour(_startTime),
                 onTap: _pickStartTime,
               ),
               _buildPickerRow(
                 icon: FontAwesomeIcons.hourglassStart,
                 label: 'End time',
-                value: _endTime.format(context),
+                value: formatTimeOfDay12Hour(_endTime),
                 onTap: _pickEndTime,
               ),
               if (_conflicts.isNotEmpty) _buildConflictWarning(),

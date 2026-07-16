@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>eBongabong Calendar — LGU Admin Portal</title>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(180deg, #05070C, #0A0D14);
+      color: #EAF2FF;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+    .wrap { width: 100%; max-width: 420px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: #9FB1CC; font-size: 14px; margin: 0 0 28px; line-height: 1.5; }
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: 16px;
+      padding: 22px;
+      margin-bottom: 16px;
+    }
+    .card h2 { font-size: 16px; margin: 0 0 4px; }
+    .card .hint { color: #9FB1CC; font-size: 13px; margin: 0 0 16px; line-height: 1.45; }
+    label { display: block; font-size: 13px; color: #9FB1CC; margin: 14px 0 6px; }
+    input, select {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(255, 255, 255, 0.04);
+      color: #EAF2FF;
+      font-size: 14px;
+    }
+    input:focus, select:focus { outline: 2px solid #2B7FFF; }
+    button {
+      appearance: none;
+      border: none;
+      border-radius: 10px;
+      padding: 11px 16px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 16px;
+    }
+    button.primary { background: #2B7FFF; color: white; }
+    button.primary:disabled { opacity: 0.5; cursor: default; }
+    button.ghost { background: transparent; color: #9FB1CC; border: 1px solid rgba(255,255,255,0.16); }
+    button.small { width: auto; margin: 0; padding: 8px 12px; font-size: 13px; }
+    .row { display: flex; gap: 8px; margin-top: 10px; }
+    .row button { margin-top: 0; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+    .tabs button {
+      margin: 0; flex: 1; background: rgba(255,255,255,0.05); color: #9FB1CC;
+      border: 1px solid rgba(255,255,255,0.10);
+    }
+    .tabs button.active { background: #2B7FFF; color: white; border-color: #2B7FFF; }
+    .msg { font-size: 13px; border-radius: 10px; padding: 10px 12px; margin-top: 14px; line-height: 1.4; }
+    .msg.error { background: rgba(229, 57, 53, 0.15); color: #FF9E9A; }
+    .msg.success { background: rgba(31, 157, 101, 0.18); color: #7CE0AE; }
+    .msg.info { background: rgba(43, 127, 255, 0.15); color: #9EC4FF; }
+    .pill { display: inline-block; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+    .pill.pending { background: rgba(255, 167, 38, 0.18); color: #FFC066; }
+    .pill.approved { background: rgba(31, 157, 101, 0.18); color: #7CE0AE; }
+    .pill.rejected { background: rgba(229, 57, 53, 0.15); color: #FF9E9A; }
+    .applicant {
+      border-top: 1px solid rgba(255,255,255,0.08);
+      padding: 14px 0;
+    }
+    .applicant:first-child { border-top: none; padding-top: 0; }
+    .applicant .name { font-weight: 700; font-size: 14px; }
+    .applicant .meta { color: #9FB1CC; font-size: 12.5px; margin-top: 2px; }
+    .hidden { display: none !important; }
+    a { color: #6EA8FF; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>eBongabong Calendar — LGU Admin Portal</h1>
+    <p class="sub">
+      Register your LGU account here to request verified access, or sign in
+      to check your status. Once approved, log into the eBongabong Calendar
+      app with the same email and password to unlock group and event
+      creation.
+    </p>
+
+    <!-- Signed-out: sign in / register -->
+    <div id="auth-card" class="card">
+      <div class="tabs">
+        <button id="tab-signin" class="active" type="button">Sign in</button>
+        <button id="tab-register" type="button">Register</button>
+      </div>
+
+      <form id="signin-form">
+        <label for="signin-email">Email</label>
+        <input id="signin-email" type="email" required autocomplete="email">
+        <label for="signin-password">Password</label>
+        <input id="signin-password" type="password" required autocomplete="current-password">
+        <button class="primary" type="submit">Sign in</button>
+      </form>
+
+      <form id="register-form" class="hidden">
+        <label for="register-name">Full name</label>
+        <input id="register-name" type="text" required autocomplete="name">
+        <label for="register-department">Office / Department</label>
+        <input id="register-department" type="text" required placeholder="e.g. Barangay Health Office">
+        <label for="register-email">Email</label>
+        <input id="register-email" type="email" required autocomplete="email">
+        <label for="register-password">Password</label>
+        <input id="register-password" type="password" required minlength="6" autocomplete="new-password">
+        <button class="primary" type="submit">Submit application</button>
+      </form>
+
+      <div id="auth-msg"></div>
+    </div>
+
+    <!-- Signed-in: applicant status -->
+    <div id="status-card" class="card hidden">
+      <h2>Your status</h2>
+      <p class="hint" id="status-text"></p>
+      <form id="apply-form" class="hidden">
+        <label for="apply-department">Office / Department</label>
+        <input id="apply-department" type="text" required placeholder="e.g. Barangay Health Office">
+        <button class="primary" type="submit">Submit application</button>
+      </form>
+      <button class="ghost" id="signout-btn" type="button">Sign out</button>
+    </div>
+
+    <!-- Signed-in as superadmin: approval dashboard -->
+    <div id="admin-card" class="card hidden">
+      <h2>Pending LGU applications</h2>
+      <p class="hint">Approve to grant group + event-posting access, or reject.</p>
+      <div id="applicant-list"><p class="hint">Loading…</p></div>
+      <button class="ghost" id="admin-signout-btn" type="button">Sign out</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script>
+    // Same public project URL + anon (publishable) key the Flutter app ships
+    // with (lib/main.dart) — safe to expose client-side, security is
+    // enforced by Postgres RLS + the security-definer RPCs this page calls.
+    var supabaseClient = window.supabase.createClient(
+      'https://xuxnoydakqembrytdbyz.supabase.co',
+      'sb_publishable_XnqlZ-m2efmbasNuZ7fyVg_74qTnghA'
+    );
+
+    var authCard = document.getElementById('auth-card');
+    var statusCard = document.getElementById('status-card');
+    var adminCard = document.getElementById('admin-card');
+    var authMsg = document.getElementById('auth-msg');
+
+    function showMessage(el, text, kind) {
+      el.innerHTML = text ? '<div class="msg ' + kind + '">' + text + '</div>' : '';
+    }
+
+    function friendlyError(err) {
+      return (err && err.message) ? err.message : 'Something went wrong. Please try again.';
+    }
+
+    // ---- Tabs (sign in / register) ----
+    var tabSignin = document.getElementById('tab-signin');
+    var tabRegister = document.getElementById('tab-register');
+    var signinForm = document.getElementById('signin-form');
+    var registerForm = document.getElementById('register-form');
+
+    tabSignin.addEventListener('click', function () {
+      tabSignin.classList.add('active');
+      tabRegister.classList.remove('active');
+      signinForm.classList.remove('hidden');
+      registerForm.classList.add('hidden');
+      showMessage(authMsg, '', '');
+    });
+    tabRegister.addEventListener('click', function () {
+      tabRegister.classList.add('active');
+      tabSignin.classList.remove('active');
+      registerForm.classList.remove('hidden');
+      signinForm.classList.add('hidden');
+      showMessage(authMsg, '', '');
+    });
+
+    // ---- Sign in ----
+    signinForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var email = document.getElementById('signin-email').value.trim();
+      var password = document.getElementById('signin-password').value;
+      showMessage(authMsg, 'Signing in…', 'info');
+      supabaseClient.auth.signInWithPassword({ email: email, password: password })
+        .then(function (res) {
+          if (res.error) throw res.error;
+          showMessage(authMsg, '', '');
+        })
+        .catch(function (err) { showMessage(authMsg, friendlyError(err), 'error'); });
+    });
+
+    // ---- Register (LGU applicant) ----
+    registerForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var name = document.getElementById('register-name').value.trim();
+      var department = document.getElementById('register-department').value.trim();
+      var email = document.getElementById('register-email').value.trim();
+      var password = document.getElementById('register-password').value;
+
+      showMessage(authMsg, 'Creating your account…', 'info');
+      supabaseClient.auth.signUp({ email: email, password: password })
+        .then(function (res) {
+          if (res.error) throw res.error;
+          var user = res.data.user;
+          var session = res.data.session;
+          if (!user || !session) {
+            // Email confirmation is required before a session exists, so
+            // there's no authenticated context yet to write a profile row
+            // under RLS. refreshSignedInView()'s ensureProfileExists step
+            // creates it (without name/department — lost across the email
+            // round-trip) the first time they sign in here after
+            // confirming; the apply form lets them fill department in then.
+            showMessage(
+              authMsg,
+              'Account created. Check your email to confirm it, then come back and sign in to finish your application.',
+              'success'
+            );
+            tabSignin.click();
+            return null;
+          }
+          return supabaseClient
+            .from('profiles')
+            .upsert({ id: user.id, email: email, display_name: name, department: department }, { onConflict: 'id' })
+            .then(function (upsertRes) {
+              if (upsertRes.error) throw upsertRes.error;
+              return supabaseClient.rpc('request_lgu_status', { p_department: department });
+            })
+            .then(function (rpcRes) {
+              if (rpcRes && rpcRes.error) throw rpcRes.error;
+              return refreshSignedInView();
+            });
+        })
+        .catch(function (err) { showMessage(authMsg, friendlyError(err), 'error'); });
+    });
+
+    // ---- Apply / re-apply form (shown once signed in, if applicable) ----
+    var applyForm = document.getElementById('apply-form');
+    applyForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var department = document.getElementById('apply-department').value.trim();
+      supabaseClient.rpc('request_lgu_status', { p_department: department })
+        .then(function (res) {
+          if (res.error) throw res.error;
+          return refreshSignedInView();
+        })
+        .catch(function (err) { showMessage(authMsg, friendlyError(err), 'error'); });
+    });
+
+    // ---- Sign out ----
+    function signOut() { supabaseClient.auth.signOut(); }
+    document.getElementById('signout-btn').addEventListener('click', signOut);
+    document.getElementById('admin-signout-btn').addEventListener('click', signOut);
+
+    // ---- Superadmin dashboard ----
+    function renderApplicants(rows) {
+      var list = document.getElementById('applicant-list');
+      if (!rows || rows.length === 0) {
+        list.innerHTML = '<p class="hint">No pending applications right now.</p>';
+        return;
+      }
+      list.innerHTML = '';
+      rows.forEach(function (row) {
+        var el = document.createElement('div');
+        el.className = 'applicant';
+        var name = row.display_name || row.email || 'Unnamed applicant';
+        el.innerHTML =
+          '<div class="name">' + name + '</div>' +
+          '<div class="meta">' + (row.department || 'No department given') + ' · ' + row.email + '</div>' +
+          '<div class="row">' +
+          '<button class="primary small" data-approve="' + row.user_id + '">Approve</button>' +
+          '<button class="ghost small" data-reject="' + row.user_id + '">Reject</button>' +
+          '</div>';
+        list.appendChild(el);
+      });
+      list.querySelectorAll('[data-approve]').forEach(function (btn) {
+        btn.addEventListener('click', function () { respond(btn.getAttribute('data-approve'), true); });
+      });
+      list.querySelectorAll('[data-reject]').forEach(function (btn) {
+        btn.addEventListener('click', function () { respond(btn.getAttribute('data-reject'), false); });
+      });
+    }
+
+    function respond(userId, approve) {
+      supabaseClient.rpc('respond_to_lgu_application', { p_user_id: userId, p_approve: approve })
+        .then(function (res) {
+          if (res.error) throw res.error;
+          return loadPendingApplications();
+        })
+        .catch(function (err) { alert(friendlyError(err)); });
+    }
+
+    function loadPendingApplications() {
+      return supabaseClient.rpc('list_pending_lgu_applications').then(function (res) {
+        if (res.error) throw res.error;
+        renderApplicants(res.data);
+      });
+    }
+
+    // ---- Route the signed-in view based on the profile's role/status ----
+    function refreshSignedInView() {
+      return supabaseClient.auth.getUser().then(function (userRes) {
+        var user = userRes.data && userRes.data.user;
+        if (!user) {
+          authCard.classList.remove('hidden');
+          statusCard.classList.add('hidden');
+          adminCard.classList.add('hidden');
+          return;
+        }
+
+        authCard.classList.add('hidden');
+
+        return supabaseClient.from('profiles').select('*').eq('id', user.id).maybeSingle()
+          .then(function (profRes) {
+            if (profRes.error) throw profRes.error;
+            if (profRes.data) return profRes.data;
+            // No profile row yet — happens the first time someone signs in
+            // here after confirming their email (signUp couldn't write one
+            // itself, with no session yet at that point). Create a bare
+            // one now; the apply form below lets them fill in department.
+            return supabaseClient
+              .from('profiles')
+              .upsert({ id: user.id, email: user.email }, { onConflict: 'id' })
+              .select()
+              .single()
+              .then(function (createRes) {
+                if (createRes.error) throw createRes.error;
+                return createRes.data;
+              });
+          })
+          .then(function (profile) {
+            if (profile && profile.role === 'superadmin') {
+              statusCard.classList.add('hidden');
+              adminCard.classList.remove('hidden');
+              return loadPendingApplications();
+            }
+
+            adminCard.classList.add('hidden');
+            statusCard.classList.remove('hidden');
+
+            var statusText = document.getElementById('status-text');
+            var status = profile ? profile.lgu_request_status : null;
+            var role = profile ? profile.role : 'citizen';
+
+            if (role === 'lgu_member') {
+              statusText.innerHTML = '<span class="pill approved">Verified</span><br><br>' +
+                'You\'re a verified LGU member. Log into the eBongabong Calendar app with this ' +
+                'same email and password to create groups and post Group events.';
+              applyForm.classList.add('hidden');
+            } else if (status === 'pending') {
+              statusText.innerHTML = '<span class="pill pending">Pending</span><br><br>' +
+                'Your application is awaiting review by the superadmin.';
+              applyForm.classList.add('hidden');
+            } else if (status === 'rejected') {
+              statusText.innerHTML = '<span class="pill rejected">Not approved</span><br><br>' +
+                'Your application wasn\'t approved. You can submit a new one below.';
+              applyForm.classList.remove('hidden');
+            } else {
+              statusText.textContent = 'You\'re signed in, but haven\'t applied for LGU access yet.';
+              applyForm.classList.remove('hidden');
+            }
+          });
+      });
+    }
+
+    supabaseClient.auth.onAuthStateChange(function () { refreshSignedInView(); });
+    refreshSignedInView();
+  </script>
+</body>
+</html>

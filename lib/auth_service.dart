@@ -2,6 +2,10 @@ import 'dart:async';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// 'citizen' (default, self-registers in the app) | 'lgu_member'
+/// (registers via the separate GitHub Pages admin portal, needs
+/// superadmin approval) | 'superadmin' (one account; the only role that
+/// can post Public events, and approves LGU applications).
 class AppUserProfile {
   const AppUserProfile({
     required this.id,
@@ -14,6 +18,8 @@ class AppUserProfile {
     this.city,
     this.bio,
     this.avatarUrl,
+    this.role = 'citizen',
+    this.lguRequestStatus,
   });
 
   final String id;
@@ -26,6 +32,22 @@ class AppUserProfile {
   final String? city;
   final String? bio;
   final String? avatarUrl;
+
+  /// Server-assigned; see the class doc. Never sent back to the server —
+  /// [toJson] deliberately omits it, since the "save your own profile"
+  /// path must never be able to grant a role. Changing it requires the
+  /// request_lgu_status/respond_to_lgu_application RPCs (see
+  /// AppAuthService.requestLguStatus) or direct superadmin action.
+  final String role;
+
+  /// null (never applied) | 'pending' | 'approved' | 'rejected'.
+  final String? lguRequestStatus;
+
+  bool get isLguMember => role == 'lgu_member';
+  bool get isSuperadmin => role == 'superadmin';
+  bool get canCreatePublicEvents => role == 'superadmin';
+  bool get canCreateGroupEvents => role == 'lgu_member' || role == 'superadmin';
+  bool get canCreateGroups => role == 'lgu_member' || role == 'superadmin';
 
   String get initials {
     final source = (displayName?.trim().isNotEmpty == true ? displayName : email)
@@ -58,9 +80,16 @@ class AppUserProfile {
       city: json['city'] as String?,
       bio: json['bio'] as String?,
       avatarUrl: json['avatar_url'] as String?,
+      role: json['role'] as String? ?? 'citizen',
+      lguRequestStatus: json['lgu_request_status'] as String?,
     );
   }
 
+  /// Deliberately omits [role]/[lguRequestStatus] — this is what the
+  /// generic "save your own profile" upsert sends, and that path must
+  /// never be able to write a role. The server-side trigger
+  /// (guard_profile_role_columns) enforces this too, but not sending the
+  /// columns at all is the first line of defense.
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -89,6 +118,12 @@ abstract class AppAuthService {
     String? department,
   });
   Future<void> updateDisplayName(String displayName);
+
+  /// Sets the signed-in user's profile picture to one of the bundled
+  /// options in `lib/avatar_catalog.dart` (an asset path, e.g.
+  /// `assets/avatars/animal/animal_01.png`) — never an uploaded/captured
+  /// image, this app only offers picking from the fixed catalog.
+  Future<void> updateAvatar(String assetPath);
 
   /// Raw `theme_mode`/`ui_style` values from the signed-in user's profile
   /// (mirrors `ThemeMode`/`UiStyle` enum `.name`s), or null if unavailable —
@@ -236,6 +271,34 @@ class SupabaseAuthService implements AppAuthService {
   }
 
   @override
+  Future<void> updateAvatar(String assetPath) async {
+    final user = _client.auth.currentUser;
+    if (user == null) return;
+
+    // Carry the rest of the current profile forward — createOrUpdateProfile
+    // upserts the whole row, so building an AppUserProfile with only
+    // avatarUrl set would null out name/department/bio/etc.
+    final current = await fetchUserProfile();
+    final base = current ??
+        AppUserProfile(id: user.id, email: user.email ?? '');
+
+    await createOrUpdateProfile(
+      AppUserProfile(
+        id: base.id,
+        email: base.email,
+        displayName: base.displayName,
+        department: base.department,
+        phoneNumber: base.phoneNumber,
+        streetAddress: base.streetAddress,
+        barangay: base.barangay,
+        city: base.city,
+        bio: base.bio,
+        avatarUrl: assetPath,
+      ),
+    );
+  }
+
+  @override
   Future<({String themeMode, String uiStyle})?> fetchPreferences() async {
     final user = _client.auth.currentUser;
     if (user == null) return null;
@@ -282,14 +345,20 @@ class MemoryAuthService implements AppAuthService {
     _controller.add(_signedIn);
   }
 
-  factory MemoryAuthService.signedIn() {
+  /// [role] defaults to 'superadmin' so the existing test suite (written
+  /// before roles existed, and mostly not about permissions) keeps
+  /// exercising the full feature set unmodified — pass 'citizen' or
+  /// 'lgu_member' explicitly for tests that specifically cover role
+  /// restrictions.
+  factory MemoryAuthService.signedIn({String role = 'superadmin'}) {
     return MemoryAuthService._(
       true,
-      const AppUserProfile(
+      AppUserProfile(
         id: 'mock-user-id',
         email: 'user@example.com',
         displayName: 'Barangay Officer',
         department: "Mayor's Office",
+        role: role,
       ),
     );
   }
@@ -357,6 +426,29 @@ class MemoryAuthService implements AppAuthService {
       city: current.city,
       bio: current.bio,
       avatarUrl: current.avatarUrl,
+      role: current.role,
+      lguRequestStatus: current.lguRequestStatus,
+    );
+    _controller.add(true);
+  }
+
+  @override
+  Future<void> updateAvatar(String assetPath) async {
+    final current = _currentUser;
+    if (current == null) return;
+    _currentUser = AppUserProfile(
+      id: current.id,
+      email: current.email,
+      displayName: current.displayName,
+      department: current.department,
+      phoneNumber: current.phoneNumber,
+      streetAddress: current.streetAddress,
+      barangay: current.barangay,
+      city: current.city,
+      bio: current.bio,
+      avatarUrl: assetPath,
+      role: current.role,
+      lguRequestStatus: current.lguRequestStatus,
     );
     _controller.add(true);
   }

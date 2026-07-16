@@ -57,3 +57,7 @@ supabase/.temp/
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Raw source avatar images (1080x1080, ~20MB) — the app only ships the
+# resized/compressed copies actually bundled at assets/avatars/.
+/PixCons/
