@@ -850,3 +850,54 @@ create policy "LGU members create groups"
 -- plain SQL-editor UPDATE, not just app-side writes.
 select set_config('app.bypass_role_guard', 'on', true);
 update public.profiles set role = 'superadmin' where email = 'anime10315466@gmail.com';
+
+-- ============================================================
+-- Event editing (July 2026).
+-- The event's creator, or an admin of the group it's posted to (for
+-- Group events), can now fully edit it — title/location/description/
+-- date(s)/time(s)/type/group, not just RSVP status. Also adds per-day
+-- time-of-day overrides for multi-day events (see DailyOverride in
+-- lib/event_store.dart) — e.g. day 1 all day, day 2 just 1-5 PM.
+-- Safe to re-run on an existing database.
+-- ============================================================
+
+alter table public.barangay_events add column if not exists daily_overrides jsonb not null default '[]'::jsonb;
+
+-- Replaces the old "Authenticated update events" policy, which let ANY
+-- signed-in user update ANY event row — harmless back when the only
+-- update path was updateAttendanceStatus, but not once full content
+-- editing existed. Creator can always edit their own; for a Group event,
+-- any admin of that specific group can too (see [[project-event-sharing-model]]
+-- for why "promote to admin" already existing was reused here rather than
+-- inventing a separate edit-permission concept).
+drop policy if exists "Authenticated update events" on public.barangay_events;
+drop policy if exists "Creator or group admin can edit events" on public.barangay_events;
+create policy "Creator or group admin can edit events"
+  on public.barangay_events
+  for update
+  using (
+    created_by_id = auth.uid()
+    or (
+      event_type = 'shared'
+      and group_id is not null
+      and exists (
+        select 1 from group_members gm
+        where gm.group_id = barangay_events.group_id
+          and gm.user_id = auth.uid()
+          and gm.role = 'admin'
+      )
+    )
+  )
+  with check (
+    created_by_id = auth.uid()
+    or (
+      event_type = 'shared'
+      and group_id is not null
+      and exists (
+        select 1 from group_members gm
+        where gm.group_id = barangay_events.group_id
+          and gm.user_id = auth.uid()
+          and gm.role = 'admin'
+      )
+    )
+  );

@@ -13,7 +13,9 @@ import 'liquid_glass_components.dart';
 typedef AddEventResult = ({DateTime date, String title, String? groupName});
 
 /// Full-page replacement for the old Add Event modal. Supports both a
-/// regular single-day event and a multi-day date range.
+/// regular single-day event and a multi-day date range. Also doubles as
+/// the Edit Event page — pass [existingEvent] to pre-fill every field and
+/// save via `EventRepository.updateEvent` instead of `addEvent`.
 class AddEventPage extends StatefulWidget {
   const AddEventPage({
     super.key,
@@ -23,14 +25,21 @@ class AddEventPage extends StatefulWidget {
     required this.creatorProfile,
     required this.findOverlappingEvents,
     required this.suggestFreeSlot,
+    this.existingEvent,
   });
 
   final EventRepository eventRepository;
   final List<BarangayGroup> myGroups;
 
-  /// Pre-clamped by the caller so it's never in the past.
+  /// Pre-clamped by the caller so it's never in the past. Ignored (in
+  /// favor of [existingEvent]'s own dates) when editing.
   final DateTime initialDate;
   final AppUserProfile? creatorProfile;
+
+  /// When non-null, this page edits that event instead of creating a new
+  /// one — every field pre-filled, saved via `updateEvent`. Its
+  /// id/createdAt/creator fields never change regardless of what's edited.
+  final BarangayEvent? existingEvent;
 
   /// Same-day overlap check owned by the calendar screen (reads its live
   /// `_events`) — passed in rather than duplicated here.
@@ -63,6 +72,14 @@ class _AddEventPageState extends State<AddEventPage> {
   List<({BarangayEvent event, DateTime day})> _conflicts = const [];
   ({TimeOfDay start, TimeOfDay end})? _suggestedSlot;
 
+  /// Per-day time-of-day overrides for a multi-day event, keyed by
+  /// UTC-normalized day (matching `BarangayEvent.dayKey`) — a day missing
+  /// from this map uses the default [_startTime]/[_endTime] uniformly,
+  /// same as an event that's never had any overrides set.
+  final Map<DateTime, ({TimeOfDay start, TimeOfDay end})> _perDayOverrides = {};
+
+  bool get _isEditing => widget.existingEvent != null;
+
   DateTime get _today {
     final now = DateTime.now();
     return DateTime(now.year, now.month, now.day);
@@ -76,19 +93,49 @@ class _AddEventPageState extends State<AddEventPage> {
   bool get _canCreatePublic => widget.creatorProfile?.canCreatePublicEvents ?? false;
   bool get _canCreateGroupEvent => widget.creatorProfile?.canCreateGroupEvents ?? false;
 
-  List<String> get _allowedEventTypes => [
+  /// The existing event's own type is always included even if the editor
+  /// (e.g. a group admin editing someone else's event) couldn't
+  /// independently create that type — editing shouldn't force a type
+  /// change nobody asked for.
+  List<String> get _allowedEventTypes => {
         if (_canCreatePublic) EventType.public,
         if (_canCreateGroupEvent) EventType.shared,
         EventType.personal,
-      ];
+        if (widget.existingEvent != null) widget.existingEvent!.eventType,
+      }.toList();
 
   @override
   void initState() {
     super.initState();
-    _startDate = widget.initialDate;
-    _endDate = widget.initialDate;
-    _eventType = _allowedEventTypes.first;
-    _selectedGroup = widget.myGroups.isNotEmpty ? widget.myGroups.first : null;
+    final existing = widget.existingEvent;
+    if (existing != null) {
+      _titleController.text = existing.title;
+      _locationController.text = existing.location;
+      _descriptionController.text = existing.description;
+      _startDate = DateTime(existing.startTime.year, existing.startTime.month, existing.startTime.day);
+      _endDate = DateTime(existing.endTime.year, existing.endTime.month, existing.endTime.day);
+      _startTime = TimeOfDay.fromDateTime(existing.startTime);
+      _endTime = TimeOfDay.fromDateTime(existing.endTime);
+      _eventType = existing.eventType;
+      _isMultiDay = existing.isMultiDay;
+      for (final group in widget.myGroups) {
+        if (group.id == existing.groupId) {
+          _selectedGroup = group;
+          break;
+        }
+      }
+      for (final override in existing.dailyOverrides) {
+        _perDayOverrides[override.day] = (
+          start: TimeOfDay(hour: override.startMinutes ~/ 60, minute: override.startMinutes % 60),
+          end: TimeOfDay(hour: override.endMinutes ~/ 60, minute: override.endMinutes % 60),
+        );
+      }
+    } else {
+      _startDate = widget.initialDate;
+      _endDate = widget.initialDate;
+      _eventType = _allowedEventTypes.first;
+      _selectedGroup = widget.myGroups.isNotEmpty ? widget.myGroups.first : null;
+    }
     _recomputeConflicts();
   }
 
@@ -120,19 +167,30 @@ class _AddEventPageState extends State<AddEventPage> {
         _endTime.minute,
       );
 
+  /// This form's own time-of-day window for [day] — the per-day override
+  /// in [_perDayOverrides] if that specific day has been customized,
+  /// otherwise the default [_startTime]/[_endTime] applied uniformly.
+  ({TimeOfDay start, TimeOfDay end}) _windowForFormDay(DateTime day) {
+    final normalized = DateTime.utc(day.year, day.month, day.day);
+    return _perDayOverrides[normalized] ?? (start: _startTime, end: _endTime);
+  }
+
   /// Checks every day from [_startDate] to [_endDate] (just [_startDate]
   /// for a single-day event, since they're the same) against
-  /// [AddEventPage.findOverlappingEvents] — each existing event's
-  /// time-of-day window applies on every day *it* spans too, so a 3-day
-  /// event timed 7–8 AM only conflicts with something else scheduled
-  /// 7–8 AM, leaving the rest of those days free. An event conflicting on
-  /// more than one spanned day is only reported once (its first
-  /// conflicting day).
+  /// [AddEventPage.findOverlappingEvents], using that day's own window
+  /// from [_windowForFormDay] — each existing event's time-of-day window
+  /// applies on every day *it* spans too, so a 3-day event timed 7–8 AM
+  /// only conflicts with something else scheduled 7–8 AM, leaving the
+  /// rest of those days free. An event conflicting on more than one
+  /// spanned day is only reported once (its first conflicting day). When
+  /// editing, the event being edited never conflicts with itself.
   List<({BarangayEvent event, DateTime day})> _computeConflicts() {
     final seen = <String>{};
     final entries = <({BarangayEvent event, DateTime day})>[];
     for (var day = _startDate; !day.isAfter(_endDate); day = day.add(const Duration(days: 1))) {
-      for (final event in widget.findOverlappingEvents(day, _startTime, _endTime)) {
+      final window = _windowForFormDay(day);
+      for (final event in widget.findOverlappingEvents(day, window.start, window.end)) {
+        if (_isEditing && event.id == widget.existingEvent!.id) continue;
         if (seen.add(event.id)) {
           entries.add((event: event, day: day));
         }
@@ -156,6 +214,7 @@ class _AddEventPageState extends State<AddEventPage> {
       _isMultiDay = value;
       if (!value) {
         _endDate = _startDate;
+        _perDayOverrides.clear();
       }
       _recomputeConflicts();
     });
@@ -251,7 +310,11 @@ class _AddEventPageState extends State<AddEventPage> {
       return;
     }
 
-    if (_startDate.isBefore(_today)) {
+    // Skipped when editing: an existing multi-day event may already be
+    // underway (started in the past, still running today or later), and
+    // that's exactly the "day 1 already happened, adjust day 2" scenario
+    // editing exists for — it shouldn't be blocked by this check.
+    if (!_isEditing && _startDate.isBefore(_today)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Events can't be added on a past date.")),
       );
@@ -288,28 +351,66 @@ class _AddEventPageState extends State<AddEventPage> {
     }
 
     final group = _eventType == EventType.shared ? _selectedGroup : null;
-    final newEventId = DateTime.now().microsecondsSinceEpoch.toString();
+    // Filters out any override left over from a wider range the date
+    // picker has since been narrowed to (or from before "Multi-day" was
+    // ever toggled off and back on) — only days actually in the current
+    // range are meaningful to save.
+    final dailyOverrides = [
+      for (final entry in _perDayOverrides.entries)
+        if (!entry.key.isBefore(DateTime.utc(_startDate.year, _startDate.month, _startDate.day)) &&
+            !entry.key.isAfter(DateTime.utc(_endDate.year, _endDate.month, _endDate.day)))
+          DailyOverride(
+            day: entry.key,
+            startMinutes: _timeToMinutes(entry.value.start),
+            endMinutes: _timeToMinutes(entry.value.end),
+          ),
+    ];
 
     setState(() => _saving = true);
     try {
-      await widget.eventRepository.addEvent(
-        BarangayEvent(
-          id: newEventId,
-          title: title,
-          location: location,
-          startTime: _startDateTime,
-          endTime: _endDateTime,
-          description: description,
-          hasAttachment: false,
-          createdAt: DateTime.now(),
-          createdByName: widget.creatorProfile?.displayName,
-          createdByDepartment: widget.creatorProfile?.department,
-          createdById: widget.creatorProfile?.id,
-          eventType: _eventType,
-          groupId: group?.id,
-          groupName: group?.name,
-        ),
-      );
+      final existing = widget.existingEvent;
+      if (existing != null) {
+        await widget.eventRepository.updateEvent(
+          BarangayEvent(
+            id: existing.id,
+            title: title,
+            location: location,
+            startTime: _startDateTime,
+            endTime: _endDateTime,
+            description: description,
+            hasAttachment: existing.hasAttachment,
+            attachmentType: existing.attachmentType,
+            createdAt: existing.createdAt,
+            createdByName: existing.createdByName,
+            createdByDepartment: existing.createdByDepartment,
+            createdById: existing.createdById,
+            eventType: _eventType,
+            groupId: group?.id,
+            groupName: group?.name,
+            dailyOverrides: dailyOverrides,
+          ),
+        );
+      } else {
+        await widget.eventRepository.addEvent(
+          BarangayEvent(
+            id: DateTime.now().microsecondsSinceEpoch.toString(),
+            title: title,
+            location: location,
+            startTime: _startDateTime,
+            endTime: _endDateTime,
+            description: description,
+            hasAttachment: false,
+            createdAt: DateTime.now(),
+            createdByName: widget.creatorProfile?.displayName,
+            createdByDepartment: widget.creatorProfile?.department,
+            createdById: widget.creatorProfile?.id,
+            eventType: _eventType,
+            groupId: group?.id,
+            groupName: group?.name,
+            dailyOverrides: dailyOverrides,
+          ),
+        );
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -469,8 +570,10 @@ class _AddEventPageState extends State<AddEventPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return GlassSubPage(
-      title: 'Add Event',
-      subtitle: 'Share something happening in the barangay.',
+      title: _isEditing ? 'Edit Event' : 'Add Event',
+      subtitle: _isEditing
+          ? 'Update the details for this event.'
+          : 'Share something happening in the barangay.',
       children: [
         GlassPanel(
           child: Column(
@@ -644,13 +747,13 @@ class _AddEventPageState extends State<AddEventPage> {
                 ),
               _buildPickerRow(
                 icon: FontAwesomeIcons.clock,
-                label: 'Start time',
+                label: _isMultiDay ? 'Default start time' : 'Start time',
                 value: formatTimeOfDay12Hour(_startTime),
                 onTap: _pickStartTime,
               ),
               _buildPickerRow(
                 icon: FontAwesomeIcons.hourglassStart,
-                label: 'End time',
+                label: _isMultiDay ? 'Default end time' : 'End time',
                 value: formatTimeOfDay12Hour(_endTime),
                 onTap: _pickEndTime,
               ),
@@ -658,6 +761,10 @@ class _AddEventPageState extends State<AddEventPage> {
             ],
           ),
         ),
+        if (_isMultiDay) ...[
+          const SizedBox(height: 16),
+          _buildPerDaySchedule(),
+        ],
         const SizedBox(height: 20),
         FilledButton.icon(
           style: FilledButton.styleFrom(
@@ -665,10 +772,112 @@ class _AddEventPageState extends State<AddEventPage> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           ),
           onPressed: _saving ? null : () => unawaited(_save()),
-          icon: const FaIcon(FontAwesomeIcons.calendarPlus, size: 14),
-          label: Text(_saving ? 'Saving...' : 'Save event'),
+          icon: FaIcon(_isEditing ? FontAwesomeIcons.check : FontAwesomeIcons.calendarPlus, size: 14),
+          label: Text(_saving ? 'Saving...' : (_isEditing ? 'Save changes' : 'Save event')),
         ),
       ],
     );
+  }
+
+  /// Lists every day the event spans with its own time-of-day window —
+  /// "Default" (using the shared start/end time above) unless customized,
+  /// e.g. day 1 full day, day 2 just a half-day. Days list is capped
+  /// implicitly by the date-range picker; a very long range just scrolls
+  /// within the page like everything else here.
+  Widget _buildPerDaySchedule() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final days = <DateTime>[];
+    for (var d = _startDate; !d.isAfter(_endDate); d = d.add(const Duration(days: 1))) {
+      days.add(DateTime.utc(d.year, d.month, d.day));
+    }
+
+    return GlassPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Per-day schedule',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Every day uses the default time above unless you customize it — '
+            'e.g. a full day on day 1, just a few hours on day 2.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 8),
+          for (final day in days) _buildDayOverrideRow(day),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDayOverrideRow(DateTime day) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final override = _perDayOverrides[day];
+    final isCustom = override != null;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  DateFormat('EEEE, MMM d').format(day),
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                Text(
+                  isCustom
+                      ? '${formatTimeOfDay12Hour(override.start)} – ${formatTimeOfDay12Hour(override.end)}'
+                      : '${formatTimeOfDay12Hour(_startTime)} – ${formatTimeOfDay12Hour(_endTime)} (default)',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          if (isCustom)
+            TextButton(
+              onPressed: () => setState(() {
+                _perDayOverrides.remove(day);
+                _recomputeConflicts();
+              }),
+              child: const Text('Reset'),
+            )
+          else
+            TextButton(
+              onPressed: () => setState(() {
+                _perDayOverrides[day] = (start: const TimeOfDay(hour: 0, minute: 0), end: const TimeOfDay(hour: 23, minute: 59));
+                _recomputeConflicts();
+              }),
+              child: const Text('All day'),
+            ),
+          TextButton(
+            onPressed: () => unawaited(_customizeDay(day)),
+            child: Text(isCustom ? 'Edit' : 'Customize'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _customizeDay(DateTime day) async {
+    final current = _perDayOverrides[day];
+    final start = await showTimePicker(
+      context: context,
+      initialTime: current?.start ?? _startTime,
+    );
+    if (start == null || !mounted) return;
+    final end = await showTimePicker(
+      context: context,
+      initialTime: current?.end ?? _endTime,
+    );
+    if (end == null || !mounted) return;
+    setState(() {
+      _perDayOverrides[day] = (start: start, end: end);
+      _recomputeConflicts();
+    });
   }
 }

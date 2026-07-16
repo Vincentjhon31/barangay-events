@@ -140,14 +140,15 @@ class _ProfileTabState extends State<ProfileTab> {
             key: const Key('profile-avatar-button'),
             borderRadius: BorderRadius.circular(999),
             onTap: () => unawaited(_openAvatarPicker()),
-            child: RoleAvatarFrame(
-              role: accountRole,
-              size: 76,
-              badgeOnLeft: true,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  CircleAvatar(
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                RoleAvatarFrame(
+                  role: accountRole,
+                  size: 76,
+                  badgeOnLeft: true,
+                  child: CircleAvatar(
                     radius: 38,
                     backgroundColor: colorScheme.primaryContainer,
                     backgroundImage: profile?.avatarUrl != null
@@ -164,18 +165,18 @@ class _ProfileTabState extends State<ProfileTab> {
                           )
                         : null,
                   ),
-                  Positioned(
-                    right: -2,
-                    bottom: -2,
-                    child: IconBadge(
-                      icon: FontAwesomeIcons.pen,
-                      tint: colorScheme.primary,
-                      size: 26,
-                      iconSize: 11,
-                    ),
+                ),
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: IconBadge(
+                    icon: FontAwesomeIcons.pen,
+                    tint: colorScheme.primary,
+                    size: 30,
+                    iconSize: 11,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -183,7 +184,10 @@ class _ProfileTabState extends State<ProfileTab> {
         Text(
           displayName,
           textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+          style: Theme.of(context)
+              .textTheme
+              .titleLarge
+              ?.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 4),
         Text(
@@ -220,12 +224,14 @@ class _ProfileTabState extends State<ProfileTab> {
               decoration: BoxDecoration(
                 color: colorScheme.primary.withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: colorScheme.primary.withValues(alpha: 0.35)),
+                border: Border.all(
+                    color: colorScheme.primary.withValues(alpha: 0.35)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  FaIcon(FontAwesomeIcons.buildingUser, size: 12, color: colorScheme.primary),
+                  FaIcon(FontAwesomeIcons.buildingUser,
+                      size: 12, color: colorScheme.primary),
                   const SizedBox(width: 6),
                   Text(
                     department,
@@ -334,6 +340,11 @@ class ProfileInformationPage extends StatefulWidget {
 }
 
 class _ProfileInformationPageState extends State<ProfileInformationPage> {
+  /// Citizens don't have a department/office — that's an LGU-role concept
+  /// (see [[project-event-sharing-model]]) — so the field is hidden for
+  /// them entirely rather than shown-but-irrelevant.
+  bool get _isCitizen => (widget.initialProfile?.role ?? 'citizen') == 'citizen';
+
   late final TextEditingController _displayNameController;
   late final TextEditingController _departmentController;
   late final TextEditingController _phoneController;
@@ -348,10 +359,13 @@ class _ProfileInformationPageState extends State<ProfileInformationPage> {
   void initState() {
     super.initState();
     final profile = widget.initialProfile;
-    _displayNameController = TextEditingController(text: profile?.displayName ?? '');
-    _departmentController = TextEditingController(text: profile?.department ?? '');
+    _displayNameController =
+        TextEditingController(text: profile?.displayName ?? '');
+    _departmentController =
+        TextEditingController(text: profile?.department ?? '');
     _phoneController = TextEditingController(text: profile?.phoneNumber ?? '');
-    _streetAddressController = TextEditingController(text: profile?.streetAddress ?? '');
+    _streetAddressController =
+        TextEditingController(text: profile?.streetAddress ?? '');
     _barangayController = TextEditingController(text: profile?.barangay ?? '');
     _cityController = TextEditingController(text: profile?.city ?? '');
     _bioController = TextEditingController(text: profile?.bio ?? '');
@@ -389,7 +403,7 @@ class _ProfileInformationPageState extends State<ProfileInformationPage> {
       id: widget.initialProfile?.id ?? currentProfile?.id ?? '',
       email: widget.initialProfile?.email ?? currentProfile?.email ?? '',
       displayName: nextName,
-      department: valueOrNull(_departmentController),
+      department: _isCitizen ? null : valueOrNull(_departmentController),
       phoneNumber: valueOrNull(_phoneController),
       streetAddress: valueOrNull(_streetAddressController),
       barangay: valueOrNull(_barangayController),
@@ -418,7 +432,8 @@ class _ProfileInformationPageState extends State<ProfileInformationPage> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not save your profile. Please try again.')),
+        const SnackBar(
+            content: Text('Could not save your profile. Please try again.')),
       );
     } finally {
       if (mounted) {
@@ -439,7 +454,10 @@ class _ProfileInformationPageState extends State<ProfileInformationPage> {
             children: [
               Text(
                 'Personal Information',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -450,16 +468,18 @@ class _ProfileInformationPageState extends State<ProfileInformationPage> {
                   prefixIconConstraints: glassFieldIconConstraints,
                 ),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _departmentController,
-                decoration: InputDecoration(
-                  labelText: 'Department / Office',
-                  hintText: "e.g. Mayor's Office, HRMO",
-                  prefixIcon: glassFieldIcon(FontAwesomeIcons.buildingUser),
-                  prefixIconConstraints: glassFieldIconConstraints,
+              if (!_isCitizen) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _departmentController,
+                  decoration: InputDecoration(
+                    labelText: 'Department / Office',
+                    hintText: "e.g. Mayor's Office, HRMO",
+                    prefixIcon: glassFieldIcon(FontAwesomeIcons.buildingUser),
+                    prefixIconConstraints: glassFieldIconConstraints,
+                  ),
                 ),
-              ),
+              ],
               const SizedBox(height: 12),
               TextField(
                 controller: _phoneController,
@@ -491,7 +511,10 @@ class _ProfileInformationPageState extends State<ProfileInformationPage> {
             children: [
               Text(
                 'Address',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -527,7 +550,8 @@ class _ProfileInformationPageState extends State<ProfileInformationPage> {
         FilledButton.icon(
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           ),
           onPressed: _saving ? null : () => unawaited(_saveProfile()),
           icon: const FaIcon(FontAwesomeIcons.floppyDisk),
@@ -619,10 +643,12 @@ class _GroupsTabState extends State<GroupsTab> {
     }
   }
 
-  Future<void> _respondToRequest(GroupJoinRequest request, {required bool accept}) async {
+  Future<void> _respondToRequest(GroupJoinRequest request,
+      {required bool accept}) async {
     setState(() => _respondingIds.add(request.id));
     try {
-      await widget.eventRepository.respondToJoinRequest(request.id, accept: accept);
+      await widget.eventRepository
+          .respondToJoinRequest(request.id, accept: accept);
       if (!mounted) return;
       await Future.wait([_loadPendingRequests(), _loadMyGroups()]);
       if (!mounted) return;
@@ -638,7 +664,9 @@ class _GroupsTabState extends State<GroupsTab> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not respond to the request. Please try again.')),
+        const SnackBar(
+            content:
+                Text('Could not respond to the request. Please try again.')),
       );
     } finally {
       if (mounted) setState(() => _respondingIds.remove(request.id));
@@ -661,7 +689,8 @@ class _GroupsTabState extends State<GroupsTab> {
 
     final created = await Navigator.of(context).push<BarangayGroup>(
       MaterialPageRoute(
-        builder: (_) => CreateGroupPage(eventRepository: widget.eventRepository),
+        builder: (_) =>
+            CreateGroupPage(eventRepository: widget.eventRepository),
       ),
     );
     if (created == null || !mounted) return;
@@ -698,9 +727,11 @@ class _GroupsTabState extends State<GroupsTab> {
       GroupJoinStatus.joined => 'You joined "${result.group.name}".',
       GroupJoinStatus.pending =>
         'Request sent — waiting for "${result.group.name}" to approve you.',
-      GroupJoinStatus.alreadyMember => 'You\'re already in "${result.group.name}".',
+      GroupJoinStatus.alreadyMember =>
+        'You\'re already in "${result.group.name}".',
     };
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _openGroupMembers(BarangayGroup group) async {
@@ -714,9 +745,13 @@ class _GroupsTabState extends State<GroupsTab> {
       ),
     );
     // Membership/role may have changed while the member page was open
-    // (self-promotion state, someone else removed us, etc.).
+    // (self-promotion state, someone else removed us, etc.) — this also
+    // needs to reach the calendar screen, since its admin-gated Edit
+    // button relies on a cache that's otherwise only refreshed on
+    // app start, pull-to-refresh, or join/leave/create.
     if (!mounted) return;
     await _loadMyGroups();
+    widget.onGroupsChanged?.call();
   }
 
   Future<void> _search() async {
@@ -755,7 +790,8 @@ class _GroupsTabState extends State<GroupsTab> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not join the group. Please try again.')),
+        const SnackBar(
+            content: Text('Could not join the group. Please try again.')),
       );
     } finally {
       if (mounted) setState(() => _busyIds.remove(group.id));
@@ -772,7 +808,8 @@ class _GroupsTabState extends State<GroupsTab> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not leave the group. Please try again.')),
+        const SnackBar(
+            content: Text('Could not leave the group. Please try again.')),
       );
     } finally {
       if (mounted) setState(() => _busyIds.remove(group.id));
@@ -810,7 +847,9 @@ class _GroupsTabState extends State<GroupsTab> {
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         children: [
-          FaIcon(icon, size: 18, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
+          FaIcon(icon,
+              size: 18,
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -862,14 +901,18 @@ class _GroupsTabState extends State<GroupsTab> {
                 Row(
                   children: [
                     OutlinedButton(
-                      onPressed:
-                          busy ? null : () => unawaited(_respondToRequest(request, accept: false)),
+                      onPressed: busy
+                          ? null
+                          : () => unawaited(
+                              _respondToRequest(request, accept: false)),
                       child: const Text('Decline'),
                     ),
                     const SizedBox(width: 8),
                     FilledButton(
-                      onPressed:
-                          busy ? null : () => unawaited(_respondToRequest(request, accept: true)),
+                      onPressed: busy
+                          ? null
+                          : () => unawaited(
+                              _respondToRequest(request, accept: true)),
                       child: const Text('Accept'),
                     ),
                   ],
@@ -1026,7 +1069,8 @@ class _GroupsTabState extends State<GroupsTab> {
             decoration: InputDecoration(
               labelText: 'Search by name',
               hintText: 'e.g. Mayor',
-              prefixIcon: glassFieldIcon(FontAwesomeIcons.magnifyingGlass, size: 14),
+              prefixIcon:
+                  glassFieldIcon(FontAwesomeIcons.magnifyingGlass, size: 14),
               prefixIconConstraints: glassFieldIconConstraints,
               suffixIcon: TextButton(
                 key: const Key('groups-search-button'),
@@ -1116,9 +1160,10 @@ class _GroupsTabState extends State<GroupsTab> {
                   children: [
                     Text(
                       'Groups',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
+                      style:
+                          Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -1141,7 +1186,9 @@ class _GroupsTabState extends State<GroupsTab> {
                   }
                 }),
                 icon: FaIcon(
-                  _searchExpanded ? FontAwesomeIcons.xmark : FontAwesomeIcons.magnifyingGlass,
+                  _searchExpanded
+                      ? FontAwesomeIcons.xmark
+                      : FontAwesomeIcons.magnifyingGlass,
                   size: 18,
                 ),
               ),
@@ -1156,12 +1203,16 @@ class _GroupsTabState extends State<GroupsTab> {
             children: [
               Expanded(
                 child: _buildModuleTile(
-                  icon: widget.canCreateGroups ? FontAwesomeIcons.plus : FontAwesomeIcons.lock,
+                  icon: widget.canCreateGroups
+                      ? FontAwesomeIcons.plus
+                      : FontAwesomeIcons.lock,
                   tint: widget.canCreateGroups
                       ? colorScheme.primary
                       : colorScheme.onSurfaceVariant,
                   label: 'Create',
-                  caption: widget.canCreateGroups ? 'Start a new group' : 'LGU members only',
+                  caption: widget.canCreateGroups
+                      ? 'Start a new group'
+                      : 'LGU members only',
                   onTap: () => unawaited(_openCreateGroup()),
                 ),
               ),
@@ -1222,7 +1273,8 @@ class _GroupsTabState extends State<GroupsTab> {
                     'Join requests (${_pendingRequests.length})',
                   ),
                   const SizedBox(height: 8),
-                  for (final request in _pendingRequests) _buildRequestRow(request),
+                  for (final request in _pendingRequests)
+                    _buildRequestRow(request),
                 ],
               ),
             ),
@@ -1354,7 +1406,8 @@ class _ThemeOptionTile extends StatelessWidget {
         tintAlpha: selected ? 0.18 : null,
         child: Row(
           children: [
-            IconBadge(icon: icon, tint: colorScheme.primary, size: 40, iconSize: 16),
+            IconBadge(
+                icon: icon, tint: colorScheme.primary, size: 40, iconSize: 16),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -1362,7 +1415,10 @@ class _ThemeOptionTile extends StatelessWidget {
                 children: [
                   Text(
                     label,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                   if (subtitle != null)
                     Text(
@@ -1375,7 +1431,8 @@ class _ThemeOptionTile extends StatelessWidget {
               ),
             ),
             if (selected)
-              FaIcon(FontAwesomeIcons.circleCheck, size: 18, color: colorScheme.primary),
+              FaIcon(FontAwesomeIcons.circleCheck,
+                  size: 18, color: colorScheme.primary),
           ],
         ),
       ),

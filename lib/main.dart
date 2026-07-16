@@ -286,8 +286,8 @@ class SignInScreen extends StatefulWidget {
 class _SignInScreenState extends State<SignInScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   final _displayNameController = TextEditingController();
-  final _departmentController = TextEditingController();
   bool _isSignUpMode = false;
   bool _isSubmitting = false;
 
@@ -295,16 +295,16 @@ class _SignInScreenState extends State<SignInScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     _displayNameController.dispose();
-    _departmentController.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
+    final confirmPassword = _confirmPasswordController.text;
     final displayName = _displayNameController.text.trim();
-    final department = _departmentController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -313,9 +313,9 @@ class _SignInScreenState extends State<SignInScreen> {
       return;
     }
 
-    if (_isSignUpMode && (displayName.isEmpty || department.isEmpty)) {
+    if (_isSignUpMode && displayName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Name and department are required.')),
+        const SnackBar(content: Text('Name is required.')),
       );
       return;
     }
@@ -328,6 +328,13 @@ class _SignInScreenState extends State<SignInScreen> {
       return;
     }
 
+    if (_isSignUpMode && password != confirmPassword) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Passwords do not match.')),
+      );
+      return;
+    }
+
     setState(() => _isSubmitting = true);
 
     try {
@@ -336,7 +343,6 @@ class _SignInScreenState extends State<SignInScreen> {
           email: email,
           password: password,
           displayName: displayName.isEmpty ? null : displayName,
-          department: department.isEmpty ? null : department,
         );
 
         if (!mounted) {
@@ -493,13 +499,6 @@ class _SignInScreenState extends State<SignInScreen> {
                                 icon: FontAwesomeIcons.user,
                               ),
                               const SizedBox(height: 14),
-                              _buildGlassField(
-                                controller: _departmentController,
-                                label: 'Department / Office',
-                                hint: "e.g. Mayor's Office, HRMO",
-                                icon: FontAwesomeIcons.buildingUser,
-                              ),
-                              const SizedBox(height: 14),
                             ],
                             _buildGlassField(
                               controller: _emailController,
@@ -514,6 +513,15 @@ class _SignInScreenState extends State<SignInScreen> {
                               icon: FontAwesomeIcons.lock,
                               obscureText: true,
                             ),
+                            if (_isSignUpMode) ...[
+                              const SizedBox(height: 14),
+                              _buildGlassField(
+                                controller: _confirmPasswordController,
+                                label: 'Confirm password',
+                                icon: FontAwesomeIcons.lock,
+                                obscureText: true,
+                              ),
+                            ],
                             const SizedBox(height: 22),
                             FilledButton(
                               style: FilledButton.styleFrom(
@@ -606,6 +614,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
   final _calendarSearchController = TextEditingController();
   String _calendarSearchQuery = '';
 
+  // Refreshed alongside push-topic sync (both need listMyGroups()) — used
+  // by _canEditEvent to let a promoted group admin edit that group's
+  // events, not just the event's own creator.
+  final Set<String> _adminGroupIds = {};
+
   static const String _feedLastSeenKey = 'feed_last_seen';
   int _feedLastSeenMillis = 0; // persisted; drives the tab dot
   int _feedNewThreshold = 0; // snapshot at feed-open; drives the NEW pills
@@ -615,6 +628,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
   final Set<String> _feedTypeFilters = {};
   final _feedSearchController = TextEditingController();
   String _feedSearchQuery = '';
+
+  // A long feed is otherwise an endless scroll — paginated in fixed-size
+  // chunks rather than infinite-scroll/load-more, so there's a clear
+  // "how much is left" sense (Prev/Next, like the List view's month nav).
+  static const int _feedPageSize = 15;
+  int _feedPage = 0;
 
   List<BarangayEvent> _events = const [];
   bool _eventsLoaded = false;
@@ -686,6 +705,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
     if (widget.authService == null) return;
     try {
       final groups = await widget.eventRepository.listMyGroups();
+      if (mounted) {
+        setState(() {
+          _adminGroupIds
+            ..clear()
+            ..addAll(groups.where((group) => group.isAdmin).map((group) => group.id));
+        });
+      }
       await widget.pushNotificationService.syncTopics(
         groups.map((group) => group.id).toList(),
       );
@@ -765,7 +791,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
 
     if (!mounted) return;
-    setState(() => _userProfile = profile);
+    setState(() {
+      _userProfile = profile;
+      // The Groups tab can disappear out from under the currently-selected
+      // index once the real role loads (it defaults to showing Groups
+      // until proven otherwise — see _showGroupsTab) — land on Profile
+      // instead of silently showing the wrong tab or, worse, an
+      // out-of-range IndexedStack index.
+      if (!_showGroupsTab && _selectedTab >= 2) {
+        _selectedTab = _profileTabIndex;
+      }
+    });
   }
 
   @override
@@ -893,12 +929,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     children: [
                       _buildCalendarTab(),
                       _buildFeedTab(),
-                      GroupsTab(
-                        eventRepository: widget.eventRepository,
-                        currentUserId: _currentUserId,
-                        canCreateGroups: _canCreateGroups,
-                        onGroupsChanged: _resubscribeEvents,
-                      ),
+                      if (_showGroupsTab)
+                        GroupsTab(
+                          eventRepository: widget.eventRepository,
+                          currentUserId: _currentUserId,
+                          canCreateGroups: _canCreateGroups,
+                          onGroupsChanged: _resubscribeEvents,
+                        ),
                       if (widget.authService != null)
                         ProfileTab(
                           authService: widget.authService!,
@@ -921,17 +958,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
             child: SafeArea(
               top: false,
               child: LiquidTabBar(
-                items: const [
+                items: [
                   (icon: FontAwesomeIcons.calendarDays, label: 'Calendar'),
                   (icon: FontAwesomeIcons.newspaper, label: 'Feed'),
-                  (icon: FontAwesomeIcons.peopleGroup, label: 'Groups'),
+                  if (_showGroupsTab)
+                    (icon: FontAwesomeIcons.peopleGroup, label: 'Groups'),
                   (icon: FontAwesomeIcons.user, label: 'Profile'),
                 ],
                 selectedIndex: _selectedTab,
                 onSelect: _handleTabSelected,
                 dotIndices: {
                   if (_hasUnseenFeedItems) 1,
-                  if (_availableUpdate != null) 3,
+                  if (_availableUpdate != null) _profileTabIndex,
                 },
               ),
             ),
@@ -1015,6 +1053,44 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 : 'Added "${result.title}" to the calendar.',
           ),
         ),
+      );
+    }
+  }
+
+  /// Edit an existing event — creator, or (for a Group event) an admin of
+  /// the group it's posted to. Reuses AddEventPage in edit mode, pre-filled.
+  Future<void> _openEditEvent(BarangayEvent event) async {
+    List<BarangayGroup> myGroups = const [];
+    try {
+      myGroups = await widget.eventRepository.listMyGroups();
+    } catch (_) {
+      // Groups unavailable (e.g. migration not run) — editing a
+      // Public/Personal event still works.
+    }
+    if (!mounted) return;
+
+    final result = await Navigator.of(context).push<AddEventResult>(
+      MaterialPageRoute(
+        builder: (_) => AddEventPage(
+          eventRepository: widget.eventRepository,
+          myGroups: myGroups,
+          initialDate: event.startTime,
+          existingEvent: event,
+          creatorProfile: _userProfile ?? widget.authService?.currentUser,
+          findOverlappingEvents: (date, start, end) =>
+              findOverlappingEvents(_events, date, start, end),
+          suggestFreeSlot: (date, start, end) =>
+              suggestFreeSlot(_events, date, start, end),
+        ),
+      ),
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _selectedDay = result.date;
+        _focusedDay = result.date;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Updated "${result.title}".')),
       );
     }
   }
@@ -1353,6 +1429,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
       } else {
         filters.add(value);
       }
+      // Changing which posts match should always land back on page 1,
+      // rather than possibly stranding the user on a now out-of-range page.
+      if (identical(filters, _feedTypeFilters)) _feedPage = 0;
     });
   }
 
@@ -1481,7 +1560,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'MUNICIPAL OF BONGABONG',
+                'MUNICIPALITY OF BONGABONG',
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                       letterSpacing: 1.2,
@@ -1500,7 +1579,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
         if (widget.authService != null)
           InkWell(
-            onTap: () => _handleTabSelected(3),
+            onTap: () => _handleTabSelected(_profileTabIndex),
             borderRadius: BorderRadius.circular(28),
             child: RoleAvatarFrame(
               role: profile?.role ?? 'citizen',
@@ -1600,6 +1679,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
         _feedTypeFilters.isNotEmpty || _feedSearchQuery.trim().isNotEmpty;
     final colorScheme = Theme.of(context).colorScheme;
 
+    final totalPages =
+        feedEvents.isEmpty ? 1 : (feedEvents.length / _feedPageSize).ceil();
+    final safePage = _feedPage.clamp(0, totalPages - 1);
+    final pageStart = safePage * _feedPageSize;
+    final pageEnd = (pageStart + _feedPageSize) > feedEvents.length
+        ? feedEvents.length
+        : pageStart + _feedPageSize;
+    final pageEvents = feedEvents.sublist(pageStart, pageEnd);
+
     return RefreshIndicator(
       onRefresh: _refreshEvents,
       child: ListView(
@@ -1610,7 +1698,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
           const SizedBox(height: 16),
           TextField(
             controller: _feedSearchController,
-            onChanged: (value) => setState(() => _feedSearchQuery = value),
+            onChanged: (value) => setState(() {
+              _feedSearchQuery = value;
+              _feedPage = 0;
+            }),
             decoration: InputDecoration(
               labelText: 'Search the feed',
               hintText: 'Title, location, or who posted it',
@@ -1624,7 +1715,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       icon: const FaIcon(FontAwesomeIcons.xmark, size: 14),
                       onPressed: () {
                         _feedSearchController.clear();
-                        setState(() => _feedSearchQuery = '');
+                        setState(() {
+                          _feedSearchQuery = '';
+                          _feedPage = 0;
+                        });
                       },
                     ),
             ),
@@ -1644,8 +1738,58 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 style: TextStyle(color: colorScheme.onSurfaceVariant),
               ),
             )
-          else
-            ..._buildFeedTimeline(feedEvents),
+          else ...[
+            ..._buildFeedTimeline(pageEvents),
+            if (totalPages > 1) ...[
+              const SizedBox(height: 8),
+              _buildFeedPaginationBar(safePage, totalPages),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeedPaginationBar(int currentPage, int totalPages) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return GlassPanel(
+      borderRadius: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      child: Row(
+        children: [
+          IconButton(
+            key: const Key('feed-prev-page'),
+            tooltip: 'Previous page',
+            onPressed: currentPage > 0
+                ? () => setState(() => _feedPage = currentPage - 1)
+                : null,
+            icon: FaIcon(
+              FontAwesomeIcons.chevronLeft,
+              size: 15,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              'Page ${currentPage + 1} of $totalPages',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+          ),
+          IconButton(
+            key: const Key('feed-next-page'),
+            tooltip: 'Next page',
+            onPressed: currentPage < totalPages - 1
+                ? () => setState(() => _feedPage = currentPage + 1)
+                : null,
+            icon: FaIcon(
+              FontAwesomeIcons.chevronRight,
+              size: 15,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
         ],
       ),
     );
@@ -2444,30 +2588,51 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         const SizedBox(height: 24),
                       ],
 
-                      // Delete (only for the event's creator)
-                      if (_canDeleteEvent(event)) ...[
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor:
-                                  Theme.of(context).colorScheme.error,
-                              side: BorderSide(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .error
-                                    .withValues(alpha: 0.6),
+                      // Edit (creator, or an admin of the event's group)
+                      // and Delete (creator only)
+                      if (_canEditEvent(event) || _canDeleteEvent(event)) ...[
+                        Row(
+                          children: [
+                            if (_canEditEvent(event))
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                  ),
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    unawaited(_openEditEvent(event));
+                                  },
+                                  icon: const FaIcon(FontAwesomeIcons.penToSquare, size: 16),
+                                  label: const Text('Edit'),
+                                ),
                               ),
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                            ),
-                            onPressed: () {
-                              Navigator.pop(context);
-                              unawaited(_confirmDeleteEvent(event));
-                            },
-                            icon: const FaIcon(FontAwesomeIcons.trashCan,
-                                size: 16),
-                            label: const Text('Delete event'),
-                          ),
+                            if (_canEditEvent(event) && _canDeleteEvent(event))
+                              const SizedBox(width: 10),
+                            if (_canDeleteEvent(event))
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor:
+                                        Theme.of(context).colorScheme.error,
+                                    side: BorderSide(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .error
+                                          .withValues(alpha: 0.6),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                  ),
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    unawaited(_confirmDeleteEvent(event));
+                                  },
+                                  icon: const FaIcon(FontAwesomeIcons.trashCan,
+                                      size: 16),
+                                  label: const Text('Delete event'),
+                                ),
+                              ),
+                          ],
                         ),
                       ],
                     ],
@@ -2636,22 +2801,27 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ],
               ),
             ),
-            if (_canDeleteEvent(event))
+            if (_canEditEvent(event) || _canDeleteEvent(event))
               PopupMenuButton<String>(
                 onSelected: (value) {
-                  if (value == 'delete') {
+                  if (value == 'edit') {
+                    unawaited(_openEditEvent(event));
+                  } else if (value == 'delete') {
                     unawaited(_confirmDeleteEvent(event));
                   }
                 },
                 itemBuilder: (context) => [
-                  PopupMenuItem(
-                    value: 'delete',
-                    child: Text(
-                      'Delete event',
-                      style:
-                          TextStyle(color: Theme.of(context).colorScheme.error),
+                  if (_canEditEvent(event))
+                    const PopupMenuItem(value: 'edit', child: Text('Edit event')),
+                  if (_canDeleteEvent(event))
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text(
+                        'Delete event',
+                        style:
+                            TextStyle(color: Theme.of(context).colorScheme.error),
+                      ),
                     ),
-                  ),
                 ],
                 icon: FaIcon(
                   FontAwesomeIcons.ellipsisVertical,
@@ -2732,9 +2902,32 @@ class _CalendarScreenState extends State<CalendarScreen> {
       (_userProfile ?? widget.authService?.currentUser)?.canCreateGroups ??
       false;
 
+  /// Citizens don't get a Groups tab at all — group creation/events are an
+  /// LGU-level feature (see [[project-event-sharing-model]]), so there's
+  /// nothing for them to do there besides being confused by an empty tab.
+  bool get _showGroupsTab =>
+      (_userProfile ?? widget.authService?.currentUser)?.role != 'citizen';
+
+  /// Profile's index in the bottom tab bar shifts left by one when the
+  /// Groups tab is hidden — Calendar (0) and Feed (1) never move.
+  int get _profileTabIndex => _showGroupsTab ? 3 : 2;
+
   bool _canDeleteEvent(BarangayEvent event) {
     final userId = _currentUserId;
     return userId != null && event.createdById == userId;
+  }
+
+  /// Creator can always edit; for a Group event, an admin of that specific
+  /// group can too (promoted via the Group Members page) — "in case of
+  /// emergency" per the original ask, reusing the existing admin
+  /// permission rather than a separate edit-only role.
+  bool _canEditEvent(BarangayEvent event) {
+    final userId = _currentUserId;
+    if (userId == null) return false;
+    if (event.createdById == userId) return true;
+    return event.eventType == EventType.shared &&
+        event.groupId != null &&
+        _adminGroupIds.contains(event.groupId);
   }
 
   Future<void> _confirmDeleteEvent(BarangayEvent event) async {

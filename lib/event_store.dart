@@ -9,6 +9,42 @@ abstract final class EventType {
   static const String personal = 'personal';
 }
 
+/// A per-day time-of-day override for one specific day of a multi-day
+/// event — e.g. day 1 all day (0-1440), day 2 just 1-5 PM. Days not
+/// listed in [BarangayEvent.dailyOverrides] fall back to the event's own
+/// [BarangayEvent.startTime]/[endTime] clock-time applied uniformly (the
+/// original, pre-override behavior — see [[project-event-sharing-model]]).
+/// Minutes-since-midnight (not `TimeOfDay`) so this data-layer file
+/// doesn't need to depend on Flutter's material library — UI code
+/// converts at the boundary (`add_event_page.dart`).
+class DailyOverride {
+  const DailyOverride({
+    required this.day,
+    required this.startMinutes,
+    required this.endMinutes,
+  });
+
+  /// Normalized via DateTime.utc(y,m,d) — matches [BarangayEvent.dayKey].
+  final DateTime day;
+  final int startMinutes;
+  final int endMinutes;
+
+  Map<String, dynamic> toJson() => {
+        'day': day.toIso8601String(),
+        'start_minutes': startMinutes,
+        'end_minutes': endMinutes,
+      };
+
+  factory DailyOverride.fromJson(Map<String, dynamic> json) {
+    final day = DateTime.parse(json['day'] as String);
+    return DailyOverride(
+      day: DateTime.utc(day.year, day.month, day.day),
+      startMinutes: json['start_minutes'] as int,
+      endMinutes: json['end_minutes'] as int,
+    );
+  }
+}
+
 class BarangayEvent {
   const BarangayEvent({
     required this.id,
@@ -27,6 +63,7 @@ class BarangayEvent {
     this.eventType = EventType.public,
     this.groupId,
     this.groupName,
+    this.dailyOverrides = const [],
   });
 
   final String id;
@@ -48,6 +85,11 @@ class BarangayEvent {
   /// [groupName] is denormalized for display, like [createdByName].
   final String? groupId;
   final String? groupName;
+
+  /// Per-day time-of-day overrides for a multi-day event — see
+  /// [DailyOverride]. Empty for the common case (every spanned day uses
+  /// this event's own [startTime]/[endTime] clock-time uniformly).
+  final List<DailyOverride> dailyOverrides;
 
   /// "Name • Department", or whichever half is available; null when neither is.
   String? get creatorLabel {
@@ -76,6 +118,24 @@ class BarangayEvent {
     return !normalized.isBefore(dayKey) && !normalized.isAfter(endDayKey);
   }
 
+  /// The (startMinutes, endMinutes) time-of-day window that applies on
+  /// [day] — the matching [dailyOverrides] entry if [day] has one,
+  /// otherwise this event's own start/end clock-time (the original
+  /// uniform-every-day behavior, unchanged for any event that has never
+  /// had a per-day override set).
+  ({int startMinutes, int endMinutes}) minutesWindowForDay(DateTime day) {
+    final normalized = DateTime.utc(day.year, day.month, day.day);
+    for (final override in dailyOverrides) {
+      if (override.day == normalized) {
+        return (startMinutes: override.startMinutes, endMinutes: override.endMinutes);
+      }
+    }
+    return (
+      startMinutes: startTime.hour * 60 + startTime.minute,
+      endMinutes: endTime.hour * 60 + endTime.minute,
+    );
+  }
+
   BarangayEvent copyWith({
     String? attendanceStatus,
   }) {
@@ -96,6 +156,7 @@ class BarangayEvent {
       eventType: eventType,
       groupId: groupId,
       groupName: groupName,
+      dailyOverrides: dailyOverrides,
     );
   }
 
@@ -117,6 +178,7 @@ class BarangayEvent {
       'eventType': eventType,
       'groupId': groupId,
       'groupName': groupName,
+      'dailyOverrides': dailyOverrides.map((o) => o.toJson()).toList(),
     };
   }
 
@@ -139,6 +201,7 @@ class BarangayEvent {
       'event_type': eventType,
       'group_id': groupId,
       'group_name': groupName,
+      'daily_overrides': dailyOverrides.map((o) => o.toJson()).toList(),
     };
   }
 
@@ -160,6 +223,10 @@ class BarangayEvent {
       eventType: json['eventType'] as String? ?? EventType.public,
       groupId: json['groupId'] as String?,
       groupName: json['groupName'] as String?,
+      dailyOverrides: (json['dailyOverrides'] as List<dynamic>?)
+              ?.map((e) => DailyOverride.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
     );
   }
 
@@ -181,6 +248,10 @@ class BarangayEvent {
       eventType: row['event_type'] as String? ?? EventType.public,
       groupId: row['group_id'] as String?,
       groupName: row['group_name'] as String?,
+      dailyOverrides: (row['daily_overrides'] as List<dynamic>?)
+              ?.map((e) => DailyOverride.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
     );
   }
 
@@ -327,6 +398,14 @@ class GroupJoinResult {
 abstract class EventRepository {
   Stream<List<BarangayEvent>> watchAllEvents();
   Future<void> addEvent(BarangayEvent event);
+
+  /// Full edit of an existing event (title, location, description,
+  /// date/time, type, group, per-day overrides — everything except its
+  /// [BarangayEvent.id]/[BarangayEvent.createdAt]/creator fields, which
+  /// never change). Restricted server-side to the event's creator or an
+  /// admin of the group it's posted to (see [[project-event-sharing-model]]).
+  Future<void> updateEvent(BarangayEvent event);
+
   Future<void> deleteEvent(String eventId);
   Future<void> updateAttendanceStatus(String eventId, String? status);
 
@@ -396,6 +475,12 @@ class MemoryEventRepository implements EventRepository {
   @override
   Future<void> addEvent(BarangayEvent event) async {
     _events = [..._events, event];
+    _updates.add(_sortedEvents);
+  }
+
+  @override
+  Future<void> updateEvent(BarangayEvent event) async {
+    _events = _events.map((e) => e.id == event.id ? event : e).toList();
     _updates.add(_sortedEvents);
   }
 
@@ -718,6 +803,11 @@ class SupabaseEventRepository implements EventRepository {
   }
 
   @override
+  Future<void> updateEvent(BarangayEvent event) async {
+    await _client.from(tableName).update(event.toSupabaseJson()).eq('id', event.id);
+  }
+
+  @override
   Future<void> deleteEvent(String eventId) async {
     await _client.from(tableName).delete().eq('id', eventId);
   }
@@ -1026,6 +1116,13 @@ List<BarangayEvent> _seedEvents() {
       id: 'seed-mayor-meeting',
       title: 'Mayor Staff Meeting',
       location: "Mayor's Office",
+      // Deliberately a narrow, fixed 10-11 AM slot (not e.g. spanning the
+      // whole day) — widening it to always stay "upcoming" regardless of
+      // time-of-day previously made it overlap AddEventPage's fixed 9-10 AM
+      // default for every newly-created test event, tripping conflict
+      // detection across unrelated tests. Tests that specifically need an
+      // always-upcoming event add their own (see the "Upcoming" mode tests
+      // in test/widget_test.dart) rather than relying on this one's timing.
       startTime: DateTime(today.year, today.month, today.day, 10, 0),
       endTime: DateTime(today.year, today.month, today.day, 11, 0),
       description: 'Weekly coordination meeting with department heads',

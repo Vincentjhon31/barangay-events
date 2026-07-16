@@ -7,10 +7,11 @@ int timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
 /// Events in [events] occurring on [date] (any type — public/group/personal,
 /// since all of them show up together in a given user's own view) whose
 /// time-of-day range overlaps [start]–[end]. For a multi-day event,
-/// "occurring on [date]" uses [BarangayEvent.occursOnDay] and its
-/// time-of-day is taken from its start/end *clock* time, applied on every
-/// day it spans — e.g. a 3-day event timed 7–8 AM only blocks 7–8 AM on
-/// each of those days, not the whole day.
+/// "occurring on [date]" uses [BarangayEvent.occursOnDay], and its
+/// time-of-day comes from [BarangayEvent.minutesWindowForDay] — its own
+/// start/end *clock* time applied on every spanned day by default, unless
+/// that specific day has a per-day override (e.g. day 1 all day, day 2
+/// just 1-5 PM), in which case that day's own window is used instead.
 List<BarangayEvent> findOverlappingEvents(
   List<BarangayEvent> events,
   DateTime date,
@@ -22,11 +23,10 @@ List<BarangayEvent> findOverlappingEvents(
 
   final overlapping = events.where((event) {
     if (!event.occursOnDay(date)) return false;
-    final eventStart = timeToMinutes(TimeOfDay.fromDateTime(event.startTime));
-    final eventEnd = timeToMinutes(TimeOfDay.fromDateTime(event.endTime));
+    final window = event.minutesWindowForDay(date);
     // Half-open interval overlap — back-to-back events (one ending right as
     // another starts) don't count as a conflict.
-    return startMinutes < eventEnd && eventStart < endMinutes;
+    return startMinutes < window.endMinutes && window.startMinutes < endMinutes;
   }).toList();
 
   overlapping.sort((a, b) => a.startTime.compareTo(b.startTime));
@@ -47,10 +47,10 @@ List<BarangayEvent> findOverlappingEvents(
 
   final busy = events
       .where((event) => event.occursOnDay(date))
-      .map((event) => (
-            start: timeToMinutes(TimeOfDay.fromDateTime(event.startTime)),
-            end: timeToMinutes(TimeOfDay.fromDateTime(event.endTime)),
-          ))
+      .map((event) {
+        final window = event.minutesWindowForDay(date);
+        return (start: window.startMinutes, end: window.endMinutes);
+      })
       .toList()
     ..sort((a, b) => a.start.compareTo(b.start));
 
