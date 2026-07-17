@@ -15,6 +15,8 @@ import 'package:eCalendar/day_detail_page.dart';
 import 'package:eCalendar/event_store.dart';
 import 'package:eCalendar/auth_service.dart';
 import 'package:eCalendar/liquid_glass_components.dart';
+import 'package:eCalendar/responsive_scale.dart';
+import 'package:eCalendar/theme_controller.dart';
 
 /// Taps today's cell on the Month grid, which navigates to that day's
 /// full-page view. Safe to find by plain day number: the grid hides
@@ -39,6 +41,21 @@ Future<void> openAddEventForToday(WidgetTester tester) async {
 }
 
 void main() {
+  // flutter_test's default surface (800x600 @ ratio 1.0) is wider than
+  // ResponsiveScaler's 430-logical-px design-width reference, which would
+  // silently activate the scale-up path in every test below and break their
+  // tap-coordinate assumptions. Pin a realistic phone viewport instead, so
+  // these tests keep exercising today's actual scale=1.0 behavior.
+  setUp(() {
+    final view = TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.views.first;
+    view.physicalSize = const Size(1080, 2340);
+    view.devicePixelRatio = 3.0; // logical 360x780 — below the 430 design width
+    addTearDown(() {
+      view.resetPhysicalSize();
+      view.resetDevicePixelRatio();
+    });
+  });
+
   testWidgets('Login screen renders when signed out', (WidgetTester tester) async {
     await tester.pumpWidget(
       BarangayCalendarApp(
@@ -261,6 +278,12 @@ void main() {
       300,
       scrollable: find.byType(Scrollable).first,
     );
+    // scrollUntilVisible only guarantees the text itself cleared the fold —
+    // the card's own popup button can still land under the floating tab bar
+    // overlay, so nudge further to clear it before tapping (same fix used
+    // for the feed pagination test's next-page button).
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -200));
+    await tester.pumpAndSettle();
     expect(find.text('Cleanup Drive'), findsWidgets);
 
     // Delete it via the card menu (creator-only option).
@@ -662,13 +685,21 @@ void main() {
     // Public (no explicit eventType — defaults to public). Keyed finders,
     // not find.text('Personal') — the Calendar tab has identical chip
     // labels and stays mounted alongside Feed in the shared IndexedStack.
+    // The filter row is its own horizontal-scrolling strip, and on a
+    // realistically narrow phone width not every chip fits without
+    // scrolling to it first.
+    await tester.ensureVisible(find.byKey(const Key('feed-filter-personal')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('feed-filter-personal')));
     await tester.pumpAndSettle();
 
     expect(find.text('Health Check-up'), findsOneWidget);
     expect(find.text('Basketball Tournament'), findsNothing);
 
-    // Back to "All" clears the filter.
+    // Back to "All" clears the filter — scrolled out of view to the left
+    // after scrolling to reach "Personal" above.
+    await tester.ensureVisible(find.byKey(const Key('feed-filter-all')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('feed-filter-all')));
     await tester.pumpAndSettle();
     expect(find.text('Basketball Tournament'), findsOneWidget);
@@ -938,6 +969,12 @@ void main() {
       'Purok 3',
     );
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Create group'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Create group'));
     await tester.pumpAndSettle();
 
@@ -1033,9 +1070,9 @@ void main() {
     expect(find.text('Overlaps with an existing event:'), findsOneWidget);
     expect(find.textContaining('Team Meeting • '), findsOneWidget);
 
-    // Saving while still conflicting is blocked; the dialog stays open.
-    // A single pump (not pumpAndSettle, which would fast-forward past the
-    // SnackBar's whole show-and-auto-dismiss cycle) catches it on screen.
+    // Saving while still conflicting now prompts a confirmation dialog
+    // instead of hard-blocking — canceling it keeps Add Event open with the
+    // conflicting data untouched.
     await tester.scrollUntilVisible(
       find.text('Save event'),
       300,
@@ -1043,15 +1080,12 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save event'));
-    await tester.pump();
-    // The blocking SnackBar only renders if the page is still mounted (a
-    // popped page's ScaffoldMessenger wouldn't show it) — proof enough
-    // that the save was blocked and Add Event stayed open, without relying
-    // on the page title still being within the ListView's cache extent
-    // after scrolling down to reach the Save button.
-    expect(find.textContaining('overlaps with'), findsOneWidget);
-    await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
+    expect(find.textContaining('overlaps with'), findsWidgets);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    // Still on Add Event, still conflicting — canceling didn't save it.
+    expect(find.text('Overlaps with an existing event:'), findsOneWidget);
 
     // Tapping the suggested free slot clears the conflict...
     await tester.ensureVisible(find.textContaining('Free slot:'));
@@ -1487,6 +1521,161 @@ void main() {
 
       expect(find.text('Group'), findsOneWidget);
       expect(find.text('Public'), findsNothing);
+    });
+  });
+
+  group('responsive scaling', () {
+    testWidgets('scales up on a large kiosk-sized viewport but taps still work',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(3840, 2160);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Feed'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Feed'), findsWidgets);
+    });
+
+    testWidgets('Settings lets you switch between Auto/Mobile/Tablet/Windows display size',
+        (WidgetTester tester) async {
+      // Verified against the controller directly, not by re-inspecting the
+      // widget tree after selecting "Windows / Kiosk" — that preset forces a
+      // fixed 2x scale on the *whole app*, which on this test's small
+      // phone-sized viewport shrinks the effective canvas to something even
+      // Settings' own content can't render sanely (a real Windows/kiosk
+      // screen wouldn't have this problem, only this test's tiny viewport).
+      final themeController = ThemeController();
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+          themeController: themeController,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Profile'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Settings'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Auto'), findsOneWidget);
+      expect(find.text('Mobile'), findsOneWidget);
+      expect(find.text('Tablet'), findsOneWidget);
+      expect(find.text('Windows / Kiosk'), findsOneWidget);
+      expect(themeController.displayMode, DisplayMode.auto);
+
+      await tester.ensureVisible(find.text('Windows / Kiosk'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Windows / Kiosk'));
+      await tester.pumpAndSettle();
+
+      expect(themeController.displayMode, DisplayMode.windows);
+    });
+  });
+
+  group('add-event overlap confirmation', () {
+    testWidgets('proceeding through the overlap dialog still saves the event',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // First event keeps the dialog's default 9:00-10:00 AM slot today.
+      await openAddEventForToday(tester);
+      var textFields = find.byType(TextField);
+      await tester.enterText(textFields.at(0), 'Team Meeting');
+      await tester.enterText(textFields.at(1), 'Room A');
+      await tester.scrollUntilVisible(
+        find.text('Save event'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save event'));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+
+      // Second event defaults to the exact same slot -> conflict.
+      await tester.tap(find.byKey(const Key('day-detail-add-event-fab')));
+      await tester.pumpAndSettle();
+      textFields = find.byType(TextField);
+      await tester.enterText(textFields.at(0), 'Board Meeting');
+      await tester.enterText(textFields.at(1), 'Room B');
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text('Save event'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save event'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('overlaps with'), findsWidgets);
+      await tester.tap(find.text('Proceed anyway'));
+      await tester.pumpAndSettle();
+
+      // Back on the day page — both conflicting events were saved.
+      await tester.scrollUntilVisible(
+        find.text('Board Meeting'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('Team Meeting'), findsOneWidget);
+      expect(find.text('Board Meeting'), findsOneWidget);
+    });
+  });
+
+  group('upcoming empty state', () {
+    testWidgets("shows nearby upcoming events when today has none",
+        (WidgetTester tester) async {
+      final repo = MemoryEventRepository.seeded();
+      // Today's own seeded event is removed so today is genuinely empty —
+      // see _seedEvents()'s comment on 'seed-mayor-meeting'.
+      await repo.deleteEvent('seed-mayor-meeting');
+      final now = DateTime.now();
+      await repo.addEvent(BarangayEvent(
+        id: 'future-fiesta',
+        title: 'Fiesta Planning',
+        location: 'Barangay Hall',
+        startTime: now.add(const Duration(days: 3)),
+        endTime: now.add(const Duration(days: 3, hours: 1)),
+        description: '',
+        hasAttachment: false,
+        createdAt: now,
+      ));
+
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repo,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text("Nothing today — here's what's coming up:"), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Fiesta Planning'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('Fiesta Planning'), findsOneWidget);
     });
   });
 }

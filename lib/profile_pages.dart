@@ -13,6 +13,7 @@ import 'event_store.dart';
 import 'group_members_page.dart';
 import 'join_group_page.dart';
 import 'liquid_glass_components.dart';
+import 'responsive_scale.dart';
 import 'theme_controller.dart';
 
 /// The Profile tab: a hub that shows the user's identity and links out to
@@ -900,20 +901,24 @@ class _GroupsTabState extends State<GroupsTab> {
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    OutlinedButton(
-                      onPressed: busy
-                          ? null
-                          : () => unawaited(
-                              _respondToRequest(request, accept: false)),
-                      child: const Text('Decline'),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: busy
+                            ? null
+                            : () => unawaited(
+                                _respondToRequest(request, accept: false)),
+                        child: const Text('Decline'),
+                      ),
                     ),
                     const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: busy
-                          ? null
-                          : () => unawaited(
-                              _respondToRequest(request, accept: true)),
-                      child: const Text('Accept'),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: busy
+                            ? null
+                            : () => unawaited(
+                                _respondToRequest(request, accept: true)),
+                        child: const Text('Accept'),
+                      ),
                     ),
                   ],
                 ),
@@ -1369,6 +1374,50 @@ class SettingsPage extends StatelessWidget {
                   selected: style == UiStyle.solid,
                   onTap: () => themeController.setUiStyle(UiStyle.solid),
                 ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 22),
+        Text(
+          'Display size',
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                letterSpacing: 0.6,
+                fontWeight: FontWeight.w700,
+              ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Auto fits the screen automatically — pick a fixed size instead if '
+          'this device (e.g. a kiosk display) needs it locked.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 10),
+        ListenableBuilder(
+          listenable: themeController,
+          builder: (context, _) {
+            final displayMode = themeController.displayMode;
+            const options = <(DisplayMode, FaIconData, String)>[
+              (DisplayMode.auto, FontAwesomeIcons.wandMagicSparkles, 'Fits the screen automatically'),
+              (DisplayMode.mobile, FontAwesomeIcons.mobileScreen, 'Compact, no scaling'),
+              (DisplayMode.tablet, FontAwesomeIcons.tabletScreenButton, 'Medium — about 1.5x'),
+              (DisplayMode.windows, FontAwesomeIcons.desktop, 'Large — about 2x, for kiosk displays'),
+            ];
+            return Column(
+              children: [
+                for (final (mode, icon, subtitle) in options) ...[
+                  _ThemeOptionTile(
+                    icon: icon,
+                    label: mode.label,
+                    subtitle: subtitle,
+                    selected: displayMode == mode,
+                    onTap: () => themeController.setDisplayMode(mode),
+                  ),
+                  if (mode != options.last.$1) const SizedBox(height: 10),
+                ],
               ],
             );
           },

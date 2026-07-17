@@ -298,6 +298,62 @@ class _AddEventPageState extends State<AddEventPage> {
         'the admin can post Public events.';
   }
 
+  /// Shown at save time when [_computeConflicts] still isn't empty — lets
+  /// the user post anyway instead of hard-blocking, per feedback that an
+  /// overlap is sometimes intentional (e.g. two departments sharing a
+  /// venue). The in-form banner above stays as the earlier, softer heads-up;
+  /// this dialog is the explicit "are you sure" moment right before saving.
+  Future<bool?> _confirmOverlapDialog(
+    List<({BarangayEvent event, DateTime day})> conflicts,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: FaIcon(FontAwesomeIcons.triangleExclamation, color: colorScheme.error),
+        title: Text(
+          conflicts.length == 1
+              ? 'This overlaps with an existing event'
+              : 'This overlaps with ${conflicts.length} existing events',
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('You can still save it, but people may see two events '
+                  'scheduled at the same time:'),
+              const SizedBox(height: 12),
+              for (final entry in conflicts)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    _isMultiDay
+                        ? '• ${entry.event.title} • ${DateFormat('MMM d').format(entry.day)}, '
+                            '${_formatClock(entry.event.startTime)}–${_formatClock(entry.event.endTime)}'
+                        : '• ${entry.event.title} • ${_formatClock(entry.event.startTime)}–'
+                            '${_formatClock(entry.event.endTime)}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: colorScheme.error),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Proceed anyway'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _save() async {
     final title = _titleController.text.trim();
     final location = _locationController.text.trim();
@@ -339,15 +395,8 @@ class _AddEventPageState extends State<AddEventPage> {
 
     final finalConflicts = _computeConflicts();
     if (finalConflicts.isNotEmpty) {
-      final first = finalConflicts.first;
-      final dayNote = _isMultiDay ? ' on ${DateFormat('MMM d').format(first.day)}' : '';
-      final hint = !_isMultiDay && _suggestedSlot != null
-          ? ' Try the suggested free time.'
-          : ' Pick a different time.';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('This still overlaps with "${first.event.title}"$dayNote.$hint')),
-      );
-      return;
+      final proceed = await _confirmOverlapDialog(finalConflicts);
+      if (!mounted || proceed != true) return;
     }
 
     final group = _eventType == EventType.shared ? _selectedGroup : null;
@@ -684,7 +733,7 @@ class _AddEventPageState extends State<AddEventPage> {
                 controller: _descriptionController,
                 maxLines: 3,
                 decoration: InputDecoration(
-                  labelText: 'Description',
+                  labelText: 'Additional Details (optional)',
                   hintText: 'Add a short note for residents',
                   prefixIcon: glassFieldIcon(FontAwesomeIcons.alignLeft, size: 14),
                   prefixIconConstraints: glassFieldIconConstraints,

@@ -5,9 +5,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'auth_service.dart' show AppAuthService;
 import 'liquid_glass_components.dart' show UiStyle;
+import 'responsive_scale.dart' show DisplayMode;
 
 const String _themeModePrefKey = 'app_theme_mode';
 const String _uiStylePrefKey = 'app_ui_style';
+const String _displayModePrefKey = 'app_display_mode';
 
 ThemeMode? _themeModeFromName(String? name) {
   for (final value in ThemeMode.values) {
@@ -32,14 +34,22 @@ class ThemeController extends ChangeNotifier {
   ThemeController({
     ThemeMode initial = ThemeMode.dark,
     UiStyle initialStyle = UiStyle.liquid,
+    DisplayMode initialDisplayMode = DisplayMode.auto,
   })  : _themeMode = initial,
-        _uiStyle = initialStyle;
+        _uiStyle = initialStyle,
+        _displayMode = initialDisplayMode;
 
   ThemeMode _themeMode;
   ThemeMode get themeMode => _themeMode;
 
   UiStyle _uiStyle;
   UiStyle get uiStyle => _uiStyle;
+
+  /// Device-specific, unlike [themeMode]/[uiStyle] — a phone and a kiosk
+  /// signed into the same account should each keep their own display size,
+  /// so this is never synced to the user's profile.
+  DisplayMode _displayMode;
+  DisplayMode get displayMode => _displayMode;
 
   AppAuthService? _authService;
 
@@ -90,7 +100,16 @@ class ThemeController extends ChangeNotifier {
       (value) => value.name == storedStyle,
       orElse: () => UiStyle.liquid,
     );
-    return ThemeController(initial: mode, initialStyle: style);
+    final storedDisplayMode = prefs.getString(_displayModePrefKey);
+    final displayMode = DisplayMode.values.firstWhere(
+      (value) => value.name == storedDisplayMode,
+      orElse: () => DisplayMode.auto,
+    );
+    return ThemeController(
+      initial: mode,
+      initialStyle: style,
+      initialDisplayMode: displayMode,
+    );
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
@@ -111,5 +130,16 @@ class ThemeController extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_uiStylePrefKey, style.name);
     unawaited(_authService?.savePreferences(themeMode: _themeMode.name, uiStyle: style.name));
+  }
+
+  /// Local-only (see [_displayMode]'s doc) — no profile sync call, unlike
+  /// [setThemeMode]/[setUiStyle].
+  Future<void> setDisplayMode(DisplayMode mode) async {
+    if (mode == _displayMode) return;
+    _displayMode = mode;
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_displayModePrefKey, mode.name);
   }
 }

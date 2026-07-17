@@ -18,6 +18,7 @@ import 'event_store.dart';
 import 'liquid_glass_components.dart';
 import 'profile_pages.dart';
 import 'push_notifications.dart';
+import 'responsive_scale.dart';
 import 'theme_controller.dart';
 
 Future<void> main() async {
@@ -127,9 +128,12 @@ class _BarangayCalendarAppState extends State<BarangayCalendarApp> {
           theme: _buildTheme(Brightness.light),
           darkTheme: _buildTheme(Brightness.dark),
           themeMode: widget.themeController.themeMode,
-          builder: (context, child) => AppStyleScope(
-            style: widget.themeController.uiStyle,
-            child: child ?? const SizedBox.shrink(),
+          builder: (context, child) => ResponsiveScaler(
+            displayMode: widget.themeController.displayMode,
+            child: AppStyleScope(
+              style: widget.themeController.uiStyle,
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
           home: FutureBuilder<AppAuthService>(
             future: _authServiceFuture,
@@ -1614,20 +1618,57 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  /// Nearest events strictly after now, filtered the same way
+  /// [_getEventsForDay] is, for the "nothing today" fallback below.
+  List<BarangayEvent> _nearestUpcomingEvents({int limit = 5}) {
+    final now = DateTime.now();
+    final events = _events
+        .where(_passesTypeFilter)
+        .where(_passesCalendarSearch)
+        .where((event) => event.startTime.isAfter(now))
+        .toList()
+      ..sort((a, b) => a.startTime.compareTo(b.startTime));
+    return events.take(limit).toList();
+  }
+
   List<Widget> _buildUpcomingEventCards() {
     if (!_eventsLoaded) return [_buildLoadingPanel()];
 
     final events = _getEventsForDay(_selectedDay ?? _focusedDay);
 
     if (events.isEmpty) {
+      // Only today's own (empty) view gets the "here's what's coming up"
+      // fallback — a specific day the user deliberately picked just shows
+      // it's empty, rather than substituting unrelated events.
+      final selected = _selectedDay;
+      final isToday = selected == null || isSameDay(selected, DateTime.now());
+      final fallback = isToday ? _nearestUpcomingEvents() : const <BarangayEvent>[];
+
+      if (fallback.isEmpty) {
+        return [
+          GlassPanel(
+            child: Text(
+              'No events for ${_formatDate(_selectedDay ?? _focusedDay)}',
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+          ),
+        ];
+      }
+
       return [
         GlassPanel(
           child: Text(
-            'No events for ${_formatDate(_selectedDay ?? _focusedDay)}',
-            style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
+            "Nothing today — here's what's coming up:",
+            style:
+                TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
         ),
+        const SizedBox(height: 12),
+        for (final event in fallback) ...[
+          _buildEventCard(event),
+          const SizedBox(height: 12),
+        ],
       ];
     }
 
@@ -1915,19 +1956,28 @@ class _CalendarScreenState extends State<CalendarScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
+                  Wrap(
+                    // A Row here can hard-overflow on narrow phones — the
+                    // type pill's icon alone doesn't compress, so once the
+                    // title's flex share leaves it too little room there's
+                    // no amount of text-shrinking that helps. Wrap instead
+                    // drops the pill (and NEW badge) to their own line when
+                    // there's no room, and behaves identically to Row
+                    // (single line) whenever everything already fits.
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
                     children: [
-                      Flexible(
-                        child: Text(
-                          event.title,
-                          style:
-                              Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                        ),
+                      Text(
+                        event.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w800),
                       ),
-                      if (isNew) ...[
-                        const SizedBox(width: 8),
+                      if (isNew)
                         Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 7, vertical: 2),
@@ -1949,8 +1999,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             ),
                           ),
                         ),
-                      ],
-                      const SizedBox(width: 8),
                       _buildEventTypePill(event.eventType),
                     ],
                   ),
@@ -2234,6 +2282,38 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final formattedDate = _dateRangeLabel(event);
     final startTimeStr = _formatTime(startTime);
     final endTimeStr = _formatTime(endTime);
+    final eventTint = _getEventTint(event.title);
+
+    // Time/Location/Posted-by/Group, all sharing one tint (the event's own
+    // type color) and grouped into a single card with dividers, instead of
+    // four separately-tinted, identically-shaped floating containers.
+    final infoRows = <Widget>[
+      _DetailInfoRow(
+        icon: FontAwesomeIcons.clock,
+        tint: eventTint,
+        label: 'Time',
+        value: '$startTimeStr - $endTimeStr',
+      ),
+      _DetailInfoRow(
+        icon: FontAwesomeIcons.locationDot,
+        tint: eventTint,
+        label: 'Location',
+        value: event.location,
+      ),
+      if (event.creatorLabel != null)
+        _DetailInfoRow(
+          icon: FontAwesomeIcons.userPen,
+          tint: eventTint,
+          label: 'Posted by',
+          value: event.creatorLabel!,
+        ),
+      if (event.eventType == EventType.shared)
+        _GroupInfoSection(
+          event: event,
+          repository: widget.eventRepository,
+          tint: eventTint,
+        ),
+    ];
 
     return showModalBottomSheet(
       context: context,
@@ -2274,21 +2354,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Event title with icon
+                      // Event title with icon — carries the event's own
+                      // type color/icon, matching the card that opened this.
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          CircleAvatar(
-                            radius: 28,
-                            backgroundColor: Theme.of(context)
-                                .colorScheme
-                                .primary
-                                .withValues(alpha: 0.1),
-                            child: FaIcon(
-                              _getEventIcon(event.title),
-                              color: Theme.of(context).colorScheme.primary,
-                              size: 24,
-                            ),
+                          IconBadge(
+                            icon: _getEventIcon(event.title),
+                            tint: eventTint,
+                            size: 52,
+                            iconSize: 22,
                           ),
                           const SizedBox(width: 16),
                           Expanded(
@@ -2319,168 +2394,35 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 24),
 
-                      // Time section
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primaryContainer
-                              .withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
+                      // Time/Location/Posted-by/Group, one card.
+                      GlassPanel(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Column(
                           children: [
-                            FaIcon(
-                              FontAwesomeIcons.clock,
-                              color: Theme.of(context).colorScheme.primary,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Time',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelSmall
-                                        ?.copyWith(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurfaceVariant,
-                                        ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '$startTimeStr - $endTimeStr',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyLarge
-                                        ?.copyWith(fontWeight: FontWeight.w500),
-                                  ),
-                                ],
+                            for (var i = 0; i < infoRows.length; i++) ...[
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                child: infoRows[i],
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Location section
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .secondaryContainer
-                              .withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            FaIcon(
-                              FontAwesomeIcons.locationDot,
-                              color: Theme.of(context).colorScheme.secondary,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Location',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelSmall
-                                        ?.copyWith(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurfaceVariant,
-                                        ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    event.location,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyLarge
-                                        ?.copyWith(fontWeight: FontWeight.w500),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Posted by section (if creator info is available)
-                      if (event.creatorLabel != null) ...[
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .tertiaryContainer
-                                .withValues(alpha: 0.3),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              FaIcon(
-                                FontAwesomeIcons.userPen,
-                                color: Theme.of(context).colorScheme.tertiary,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Posted by',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelSmall
-                                          ?.copyWith(
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .onSurfaceVariant,
-                                          ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      event.creatorLabel!,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyLarge
-                                          ?.copyWith(
-                                              fontWeight: FontWeight.w500),
-                                    ),
-                                  ],
+                              if (i != infoRows.length - 1)
+                                Divider(
+                                  height: 1,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .outlineVariant
+                                      .withValues(alpha: 0.5),
                                 ),
-                              ),
                             ],
-                          ),
+                          ],
                         ),
-                        const SizedBox(height: 16),
-                      ],
+                      ),
+                      const SizedBox(height: 16),
 
-                      // Group info (group events): which group + member count.
-                      if (event.eventType == EventType.shared) ...[
-                        _GroupInfoSection(
-                          event: event,
-                          repository: widget.eventRepository,
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-
-                      // Description section (if not empty)
+                      // Description section (if not empty) — the one place
+                      // that keeps a heavier, bordered treatment, since it's
+                      // free-form text rather than a label/value pair.
                       if (event.description.isNotEmpty) ...[
                         Text(
                           'Description',
@@ -2492,17 +2434,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                   ),
                         ),
                         const SizedBox(height: 8),
-                        Container(
+                        GlassPanel(
+                          borderRadius: 12,
                           padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color:
-                                Theme.of(context).colorScheme.surfaceContainer,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color:
-                                  Theme.of(context).colorScheme.outlineVariant,
-                            ),
-                          ),
                           child: Text(
                             event.description,
                             style: Theme.of(context).textTheme.bodyMedium,
@@ -2513,28 +2447,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
                       // Attachment section (if available)
                       if (event.hasAttachment) ...[
-                        Container(
+                        GlassPanel(
                           padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .tertiaryContainer
-                                .withValues(alpha: 0.3),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .tertiary
-                                  .withValues(alpha: 0.5),
-                            ),
-                          ),
+                          tint: eventTint,
+                          tintAlpha: 0.12,
                           child: Row(
                             children: [
-                              FaIcon(
-                                _getFileIcon(event.attachmentType ??
+                              IconBadge(
+                                icon: _getFileIcon(event.attachmentType ??
                                     'application/octet-stream'),
-                                color: Theme.of(context).colorScheme.tertiary,
-                                size: 20,
+                                tint: eventTint,
+                                size: 38,
+                                iconSize: 15,
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -2567,20 +2491,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                 ),
                               ),
                               const SizedBox(width: 12),
-                              FilledButton.icon(
-                                onPressed: () {
-                                  // TODO: Implement attachment download
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                        content: Text(
-                                            'Download attachment coming soon')),
-                                  );
-                                },
+                              // Real download isn't built yet — an honestly
+                              // disabled button beats one that pretends to
+                              // work.
+                              OutlinedButton.icon(
+                                onPressed: null,
                                 icon: const FaIcon(
                                   FontAwesomeIcons.download,
-                                  size: 16,
+                                  size: 14,
                                 ),
-                                label: const Text('View'),
+                                label: const Text('Coming soon'),
                               ),
                             ],
                           ),
@@ -2589,14 +2509,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ],
 
                       // Edit (creator, or an admin of the event's group)
-                      // and Delete (creator only)
+                      // and Delete (creator only) — Edit is the far more
+                      // common action, so it gets the primary (filled)
+                      // treatment; Delete stays a secondary, error-tinted
+                      // outline.
                       if (_canEditEvent(event) || _canDeleteEvent(event)) ...[
                         Row(
                           children: [
                             if (_canEditEvent(event))
                               Expanded(
-                                child: OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
+                                child: FilledButton.icon(
+                                  style: FilledButton.styleFrom(
                                     padding: const EdgeInsets.symmetric(vertical: 14),
                                   ),
                                   onPressed: () {
@@ -2685,6 +2608,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       Flexible(
                         child: Text(
                           event.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style:
                               Theme.of(context).textTheme.titleSmall?.copyWith(
                                     fontWeight: FontWeight.w800,
@@ -2788,11 +2713,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           color: Theme.of(context).colorScheme.primary,
                         ),
                         const SizedBox(width: 4),
-                        Text(
-                          'Attachment available',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context).colorScheme.primary,
+                        Expanded(
+                          child: Text(
+                            'Attachment available',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
                           ),
                         ),
                       ],
@@ -2882,12 +2811,22 @@ class _CalendarScreenState extends State<CalendarScreen> {
         children: [
           FaIcon(_eventTypeIcon(type), size: 9, color: tint),
           const SizedBox(width: 4),
-          Text(
-            _eventTypeLabel(type),
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              color: tint,
+          // A fixed cap (not Flexible/Expanded) — this pill gets placed both
+          // inside a bounded Flexible slot and in plain, unbounded Row
+          // contexts, and Flexible here would break intrinsic-width
+          // computation for the latter. A hard ConstrainedBox works safely
+          // in both.
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 80),
+            child: Text(
+              _eventTypeLabel(type),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: tint,
+              ),
             ),
           ),
         ],
@@ -3052,14 +2991,84 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
 /// The "Group" block inside the event details sheet for group events:
 /// shows which group the event belongs to and how many members it has.
+/// A compact icon+label+value row used throughout the event details sheet
+/// (Time/Location/Posted-by/Group) — replaces four differently-tinted,
+/// identically-shaped `Container`s with one consistent, lighter-weight
+/// pattern, all sharing the event's own type color instead of an arbitrary
+/// primary/secondary/tertiary rotation.
+class _DetailInfoRow extends StatelessWidget {
+  const _DetailInfoRow({
+    required this.icon,
+    required this.tint,
+    required this.label,
+    required this.value,
+    this.subtitle,
+  });
+
+  final FaIconData icon;
+  final Color tint;
+  final String label;
+  final String value;
+  /// Extra line always reserved (even as a placeholder) so async-loaded
+  /// content — see [_GroupInfoSection] — never shifts the layout once it
+  /// resolves.
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        IconBadge(icon: icon, tint: tint, size: 38, iconSize: 15),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3,
+                    ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyLarge
+                    ?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 2),
+                Text(
+                  subtitle!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _GroupInfoSection extends StatefulWidget {
   const _GroupInfoSection({
     required this.event,
     required this.repository,
+    required this.tint,
   });
 
   final BarangayEvent event;
   final EventRepository repository;
+  final Color tint;
 
   @override
   State<_GroupInfoSection> createState() => _GroupInfoSectionState();
@@ -3088,51 +3097,18 @@ class _GroupInfoSectionState extends State<_GroupInfoSection> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     final groupName = widget.event.groupName?.trim().isNotEmpty == true
         ? widget.event.groupName!
         : 'Group event';
     final count = _memberCount;
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colorScheme.primaryContainer.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          FaIcon(
-            FontAwesomeIcons.userGroup,
-            color: colorScheme.primary,
-            size: 20,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Group',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  count == null
-                      ? groupName
-                      : '$groupName • $count member${count == 1 ? '' : 's'}',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyLarge
-                      ?.copyWith(fontWeight: FontWeight.w500),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return _DetailInfoRow(
+      icon: FontAwesomeIcons.userGroup,
+      tint: widget.tint,
+      label: 'Group',
+      value: groupName,
+      subtitle:
+          count == null ? 'Loading members…' : '$count member${count == 1 ? '' : 's'}',
     );
   }
 }

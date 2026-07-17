@@ -21,7 +21,12 @@
       padding: 40px 16px;
     }
     .wrap { width: 100%; max-width: 420px; }
-    h1 { font-size: 22px; margin: 0 0 4px; }
+    .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+    .brand img {
+      width: 44px; height: 44px; border-radius: 12px;
+      box-shadow: 0 4px 14px rgba(43, 127, 255, 0.35);
+    }
+    h1 { font-size: 20px; margin: 0; line-height: 1.25; }
     .sub { color: #9FB1CC; font-size: 14px; margin: 0 0 28px; line-height: 1.5; }
     .card {
       background: rgba(255, 255, 255, 0.05);
@@ -29,7 +34,21 @@
       border-radius: 16px;
       padding: 22px;
       margin-bottom: 16px;
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
     }
+    .btn-spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      margin-right: 8px;
+      vertical-align: -2px;
+      border: 2px solid rgba(255, 255, 255, 0.35);
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .card h2 { font-size: 16px; margin: 0 0 4px; }
     .card .hint { color: #9FB1CC; font-size: 13px; margin: 0 0 16px; line-height: 1.45; }
     label { display: block; font-size: 13px; color: #9FB1CC; margin: 14px 0 6px; }
@@ -87,7 +106,10 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>eBongabong Calendar — LGU Admin Portal</h1>
+    <div class="brand">
+      <img src="app-icon.png" alt="eBongabong Calendar">
+      <h1>LGU Admin Portal</h1>
+    </div>
     <p class="sub">
       Register your LGU account here to request verified access, or sign in
       to check your status. Once approved, log into the eBongabong Calendar
@@ -142,6 +164,7 @@
       <h2>Pending LGU applications</h2>
       <p class="hint">Approve to grant group + event-posting access, or reject.</p>
       <div id="applicant-list"><p class="hint">Loading…</p></div>
+      <div id="admin-msg"></div>
       <button class="ghost" id="admin-signout-btn" type="button">Sign out</button>
     </div>
   </div>
@@ -160,6 +183,7 @@
     var statusCard = document.getElementById('status-card');
     var adminCard = document.getElementById('admin-card');
     var authMsg = document.getElementById('auth-msg');
+    var adminMsg = document.getElementById('admin-msg');
 
     function showMessage(el, text, kind) {
       el.innerHTML = text ? '<div class="msg ' + kind + '">' + text + '</div>' : '';
@@ -167,6 +191,22 @@
 
     function friendlyError(err) {
       return (err && err.message) ? err.message : 'Something went wrong. Please try again.';
+    }
+
+    // Disables a button and swaps in a small spinner + busy label while an
+    // async request is in flight, restoring its original label afterwards —
+    // used everywhere a button previously stayed clickable during a request.
+    function setBusy(button, busy, busyText) {
+      if (busy) {
+        if (button.dataset.originalText === undefined) {
+          button.dataset.originalText = button.textContent;
+        }
+        button.disabled = true;
+        button.innerHTML = '<span class="btn-spinner"></span>' + (busyText || 'Please wait…');
+      } else {
+        button.disabled = false;
+        button.textContent = button.dataset.originalText || button.textContent;
+      }
     }
 
     // ---- Tabs (sign in / register) ----
@@ -195,13 +235,16 @@
       event.preventDefault();
       var email = document.getElementById('signin-email').value.trim();
       var password = document.getElementById('signin-password').value;
-      showMessage(authMsg, 'Signing in…', 'info');
+      var button = signinForm.querySelector('button.primary');
+      showMessage(authMsg, '', '');
+      setBusy(button, true, 'Signing in…');
       supabaseClient.auth.signInWithPassword({ email: email, password: password })
         .then(function (res) {
           if (res.error) throw res.error;
           showMessage(authMsg, '', '');
         })
-        .catch(function (err) { showMessage(authMsg, friendlyError(err), 'error'); });
+        .catch(function (err) { showMessage(authMsg, friendlyError(err), 'error'); })
+        .then(function () { setBusy(button, false); });
     });
 
     // ---- Register (LGU applicant) ----
@@ -211,8 +254,10 @@
       var department = document.getElementById('register-department').value.trim();
       var email = document.getElementById('register-email').value.trim();
       var password = document.getElementById('register-password').value;
+      var button = registerForm.querySelector('button.primary');
 
-      showMessage(authMsg, 'Creating your account…', 'info');
+      showMessage(authMsg, '', '');
+      setBusy(button, true, 'Creating your account…');
       supabaseClient.auth.signUp({ email: email, password: password })
         .then(function (res) {
           if (res.error) throw res.error;
@@ -245,7 +290,8 @@
               return refreshSignedInView();
             });
         })
-        .catch(function (err) { showMessage(authMsg, friendlyError(err), 'error'); });
+        .catch(function (err) { showMessage(authMsg, friendlyError(err), 'error'); })
+        .then(function () { setBusy(button, false); });
     });
 
     // ---- Apply / re-apply form (shown once signed in, if applicable) ----
@@ -253,12 +299,15 @@
     applyForm.addEventListener('submit', function (event) {
       event.preventDefault();
       var department = document.getElementById('apply-department').value.trim();
+      var button = applyForm.querySelector('button.primary');
+      setBusy(button, true, 'Submitting…');
       supabaseClient.rpc('request_lgu_status', { p_department: department })
         .then(function (res) {
           if (res.error) throw res.error;
           return refreshSignedInView();
         })
-        .catch(function (err) { showMessage(authMsg, friendlyError(err), 'error'); });
+        .catch(function (err) { showMessage(authMsg, friendlyError(err), 'error'); })
+        .then(function () { setBusy(button, false); });
     });
 
     // ---- Sign out ----
@@ -288,20 +337,22 @@
         list.appendChild(el);
       });
       list.querySelectorAll('[data-approve]').forEach(function (btn) {
-        btn.addEventListener('click', function () { respond(btn.getAttribute('data-approve'), true); });
+        btn.addEventListener('click', function () { respond(btn, btn.getAttribute('data-approve'), true); });
       });
       list.querySelectorAll('[data-reject]').forEach(function (btn) {
-        btn.addEventListener('click', function () { respond(btn.getAttribute('data-reject'), false); });
+        btn.addEventListener('click', function () { respond(btn, btn.getAttribute('data-reject'), false); });
       });
     }
 
-    function respond(userId, approve) {
+    function respond(button, userId, approve) {
+      showMessage(adminMsg, '', '');
+      setBusy(button, true, approve ? 'Approving…' : 'Rejecting…');
       supabaseClient.rpc('respond_to_lgu_application', { p_user_id: userId, p_approve: approve })
         .then(function (res) {
           if (res.error) throw res.error;
           return loadPendingApplications();
         })
-        .catch(function (err) { alert(friendlyError(err)); });
+        .catch(function (err) { showMessage(adminMsg, friendlyError(err), 'error'); setBusy(button, false); });
     }
 
     function loadPendingApplications() {
