@@ -103,3 +103,53 @@ jobs:
             -H "Authorization: Bearer $RELEASE_NOTIFY_SECRET" \
             -H "Content-Type: application/json" \
             -d "{\"version\":\"${VERSION}\",\"releaseUrl\":\"${RELEASE_URL}\"}"
+
+  build-windows:
+    # Runs after the Android job so the release it creates already exists —
+    # this job only adds the Windows zip onto it, avoiding two jobs racing
+    # to create the same GitHub Release at once.
+    needs: build
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.1'
+          channel: stable
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Install MSVC ATL component
+        # flutter_local_notifications' Windows plugin needs ATL headers
+        # (atlbase.h), which aren't part of the runner's default C++
+        # workload — same fix as a local dev machine hitting "Cannot open
+        # include file: 'atlbase.h'" when running `flutter build windows`.
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -property installationPath
+          $vsInstaller = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
+          & $vsInstaller modify --installPath "$vsPath" --add Microsoft.VisualStudio.Component.VC.ATL --quiet --norestart | Out-Null
+
+      - name: Build release Windows app
+        run: flutter build windows --release
+
+      - name: Zip Windows build
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v') -replace '\+.*',''
+          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "e-calendar-$version-windows.zip"
+
+      - name: Add Windows build to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: e-calendar-*-windows.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

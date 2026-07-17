@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_update_service.dart';
@@ -22,6 +23,10 @@ class AboutPage extends StatefulWidget {
 }
 
 class _AboutPageState extends State<AboutPage> {
+  // Permanent URL printed on the QR code below — always forwards to the
+  // newest release's APK (see docs/index.html), so it never goes stale.
+  static const String _downloadUrl = 'https://vincentjhon31.github.io/barangay-events/';
+
   String? _installedVersion;
   AppReleaseInfo? _latestRelease;
   bool _checking = false;
@@ -69,6 +74,15 @@ class _AboutPageState extends State<AboutPage> {
     }
   }
 
+  Future<void> _shareApp() async {
+    await SharePlus.instance.share(
+      ShareParams(
+        text: 'Download eBongabong Calendar: $_downloadUrl',
+        subject: 'eBongabong Calendar',
+      ),
+    );
+  }
+
   Widget _sectionHeader(FaIconData icon, Color tint, String title) {
     return Row(
       children: [
@@ -81,6 +95,47 @@ class _AboutPageState extends State<AboutPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildShareAppPanel() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return GlassPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _sectionHeader(FontAwesomeIcons.shareNodes, const Color(0xFF2B7FFF), 'Share app'),
+          const SizedBox(height: 12),
+          Text(
+            'Scan the QR code or share the link so others can install eBongabong Calendar.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.asset(
+                'docs/download-qr.png',
+                width: 180,
+                height: 180,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            ),
+            onPressed: () => unawaited(_shareApp()),
+            icon: const FaIcon(FontAwesomeIcons.shareNodes, size: 14),
+            label: const Text('Share download link'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -194,6 +249,8 @@ class _AboutPageState extends State<AboutPage> {
             ],
           ),
         ),
+        const SizedBox(height: 16),
+        _buildShareAppPanel(),
         const SizedBox(height: 16),
         _buildUpdatesPanel(),
         if (release != null && release.releaseNotes.isNotEmpty) ...[

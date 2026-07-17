@@ -92,8 +92,8 @@ git push origin v1.1.2+9
 
 ### After pushing the tag
 
-1. Go to **https://github.com/Vincentjhon31/barangay-events/actions** and watch the **Release** workflow (takes several minutes).
-2. When it turns green, check **https://github.com/Vincentjhon31/barangay-events/releases** — the new release should have `app-release.apk` attached.
+1. Go to **https://github.com/Vincentjhon31/barangay-events/actions** and watch the **Release** workflow (takes several minutes — it runs an Android job and a Windows job, the Windows one starts after the Android one finishes).
+2. When it turns green, check **https://github.com/Vincentjhon31/barangay-events/releases** — the new release should have `e-calendar-<version>.apk` *and* `e-calendar-<version>-windows.zip` attached.
 3. Open the app on a phone with the old version — it should show the "Update available" banner/dialog.
 
 ---
