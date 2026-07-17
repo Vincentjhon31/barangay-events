@@ -15,19 +15,36 @@
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       background: linear-gradient(180deg, #05070C, #0A0D14);
       color: #EAF2FF;
-      display: flex;
-      align-items: flex-start;
-      justify-content: center;
-      padding: 40px 16px;
     }
-    .wrap { width: 100%; max-width: 420px; }
-    .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-    .brand img {
-      width: 44px; height: 44px; border-radius: 12px;
+    .page { max-width: 1080px; margin: 0 auto; padding: 28px 20px 60px; }
+
+    /* ---- Top bar ---- */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      row-gap: 14px;
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .topbar-brand { display: flex; align-items: center; gap: 12px; }
+    .topbar-brand img {
+      width: 38px; height: 38px; border-radius: 11px;
       box-shadow: 0 4px 14px rgba(43, 127, 255, 0.35);
     }
-    h1 { font-size: 20px; margin: 0; line-height: 1.25; }
-    .sub { color: #9FB1CC; font-size: 14px; margin: 0 0 28px; line-height: 1.5; }
+    .topbar-brand h1 { font-size: 16px; margin: 0; line-height: 1.3; }
+    .topbar-brand .tag { font-size: 12px; color: #9FB1CC; }
+    .topbar-account { display: flex; align-items: center; gap: 14px; }
+    .topbar-account .who { text-align: right; }
+    .topbar-account .email { font-size: 13px; font-weight: 700; }
+    .topbar-account .role { font-size: 11.5px; color: #9FB1CC; margin-top: 1px; }
+    .topbar-account button { width: auto; margin: 0; padding: 8px 14px; font-size: 13px; }
+
+    /* ---- Shared bits ---- */
+    .narrow { max-width: 440px; margin: 0 auto; }
+    .hero-copy { color: #9FB1CC; font-size: 14px; margin: 0 0 24px; line-height: 1.6; text-align: center; }
     .card {
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid rgba(255, 255, 255, 0.10);
@@ -38,6 +55,8 @@
       -webkit-backdrop-filter: blur(18px);
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
     }
+    .card h2 { font-size: 16px; margin: 0 0 4px; }
+    .card .hint { color: #9FB1CC; font-size: 13px; margin: 0 0 16px; line-height: 1.45; }
     .btn-spinner {
       display: inline-block;
       width: 14px; height: 14px;
@@ -49,8 +68,6 @@
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .card h2 { font-size: 16px; margin: 0 0 4px; }
-    .card .hint { color: #9FB1CC; font-size: 13px; margin: 0 0 16px; line-height: 1.45; }
     label { display: block; font-size: 13px; color: #9FB1CC; margin: 14px 0 6px; }
     input, select {
       width: 100%;
@@ -76,7 +93,7 @@
     button.primary { background: #2B7FFF; color: white; }
     button.primary:disabled { opacity: 0.5; cursor: default; }
     button.ghost { background: transparent; color: #9FB1CC; border: 1px solid rgba(255,255,255,0.16); }
-    button.small { width: auto; margin: 0; padding: 8px 12px; font-size: 13px; }
+    button.small { width: auto; margin: 0 0 0 8px; padding: 8px 12px; font-size: 13px; }
     .row { display: flex; gap: 8px; margin-top: 10px; }
     .row button { margin-top: 0; }
     .tabs { display: flex; gap: 8px; margin-bottom: 18px; }
@@ -93,62 +110,115 @@
     .pill.pending { background: rgba(255, 167, 38, 0.18); color: #FFC066; }
     .pill.approved { background: rgba(31, 157, 101, 0.18); color: #7CE0AE; }
     .pill.rejected { background: rgba(229, 57, 53, 0.15); color: #FF9E9A; }
-    .applicant {
-      border-top: 1px solid rgba(255,255,255,0.08);
-      padding: 14px 0;
-    }
-    .applicant:first-child { border-top: none; padding-top: 0; }
-    .applicant .name { font-weight: 700; font-size: 14px; }
-    .applicant .meta { color: #9FB1CC; font-size: 12.5px; margin-top: 2px; }
     .hidden { display: none !important; }
     a { color: #6EA8FF; }
+
+    /* ---- Superadmin dashboard ---- */
+    .stats { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+    .stat-tile {
+      position: relative;
+      flex: 1;
+      min-width: 180px;
+      padding: 14px 18px 14px 22px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: 16px;
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+    .stat-tile::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 14px; bottom: 14px; width: 4px;
+      border-radius: 4px;
+      background: #2B7FFF;
+    }
+    .stat-tile .num { font-size: 26px; font-weight: 800; line-height: 1.2; }
+    .stat-tile .label { font-size: 12.5px; color: #9FB1CC; margin-top: 2px; }
+    .table-wrap { overflow-x: auto; margin: 0 -6px; }
+    table.applicants { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    table.applicants th {
+      text-align: left;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+      color: #9FB1CC;
+      padding: 0 12px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+      white-space: nowrap;
+    }
+    table.applicants td {
+      padding: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      vertical-align: middle;
+    }
+    table.applicants tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
+    table.applicants td.name { font-weight: 700; }
+    table.applicants td.meta { color: #9FB1CC; }
+    table.applicants td.actions { white-space: nowrap; text-align: right; }
+    table.applicants td.hint { color: #9FB1CC; text-align: center; padding: 22px 12px; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="brand">
-      <img src="app-icon.png" alt="eBongabong Calendar">
-      <h1>LGU Admin Portal</h1>
-    </div>
-    <p class="sub">
-      Register your LGU account here to request verified access, or sign in
-      to check your status. Once approved, log into the eBongabong Calendar
-      app with the same email and password to unlock group and event
-      creation.
-    </p>
+  <div class="page">
+    <header class="topbar">
+      <div class="topbar-brand">
+        <img src="app-icon.png" alt="eBongabong Calendar">
+        <div>
+          <h1>eBongabong Calendar</h1>
+          <div class="tag">LGU Admin Portal</div>
+        </div>
+      </div>
+      <div class="topbar-account hidden" id="topbar-account">
+        <div class="who">
+          <div class="email" id="topbar-email"></div>
+          <div class="role" id="topbar-role"></div>
+        </div>
+        <button class="ghost" id="topbar-signout-btn" type="button">Sign out</button>
+      </div>
+    </header>
 
     <!-- Signed-out: sign in / register -->
-    <div id="auth-card" class="card">
-      <div class="tabs">
-        <button id="tab-signin" class="active" type="button">Sign in</button>
-        <button id="tab-register" type="button">Register</button>
+    <div id="auth-section" class="narrow">
+      <p class="hero-copy">
+        Register your LGU account here to request verified access, or sign in
+        to check your status. Once approved, log into the eBongabong Calendar
+        app with the same email and password to unlock group and event
+        creation.
+      </p>
+      <div id="auth-card" class="card">
+        <div class="tabs">
+          <button id="tab-signin" class="active" type="button">Sign in</button>
+          <button id="tab-register" type="button">Register</button>
+        </div>
+
+        <form id="signin-form">
+          <label for="signin-email">Email</label>
+          <input id="signin-email" type="email" required autocomplete="email">
+          <label for="signin-password">Password</label>
+          <input id="signin-password" type="password" required autocomplete="current-password">
+          <button class="primary" type="submit">Sign in</button>
+        </form>
+
+        <form id="register-form" class="hidden">
+          <label for="register-name">Full name</label>
+          <input id="register-name" type="text" required autocomplete="name">
+          <label for="register-department">Office / Department</label>
+          <input id="register-department" type="text" required placeholder="e.g. Barangay Health Office">
+          <label for="register-email">Email</label>
+          <input id="register-email" type="email" required autocomplete="email">
+          <label for="register-password">Password</label>
+          <input id="register-password" type="password" required minlength="6" autocomplete="new-password">
+          <button class="primary" type="submit">Submit application</button>
+        </form>
+
+        <div id="auth-msg"></div>
       </div>
-
-      <form id="signin-form">
-        <label for="signin-email">Email</label>
-        <input id="signin-email" type="email" required autocomplete="email">
-        <label for="signin-password">Password</label>
-        <input id="signin-password" type="password" required autocomplete="current-password">
-        <button class="primary" type="submit">Sign in</button>
-      </form>
-
-      <form id="register-form" class="hidden">
-        <label for="register-name">Full name</label>
-        <input id="register-name" type="text" required autocomplete="name">
-        <label for="register-department">Office / Department</label>
-        <input id="register-department" type="text" required placeholder="e.g. Barangay Health Office">
-        <label for="register-email">Email</label>
-        <input id="register-email" type="email" required autocomplete="email">
-        <label for="register-password">Password</label>
-        <input id="register-password" type="password" required minlength="6" autocomplete="new-password">
-        <button class="primary" type="submit">Submit application</button>
-      </form>
-
-      <div id="auth-msg"></div>
     </div>
 
     <!-- Signed-in: applicant status -->
-    <div id="status-card" class="card hidden">
+    <div id="status-card" class="card narrow hidden">
       <h2>Your status</h2>
       <p class="hint" id="status-text"></p>
       <form id="apply-form" class="hidden">
@@ -156,16 +226,64 @@
         <input id="apply-department" type="text" required placeholder="e.g. Barangay Health Office">
         <button class="primary" type="submit">Submit application</button>
       </form>
-      <button class="ghost" id="signout-btn" type="button">Sign out</button>
     </div>
 
     <!-- Signed-in as superadmin: approval dashboard -->
-    <div id="admin-card" class="card hidden">
-      <h2>Pending LGU applications</h2>
-      <p class="hint">Approve to grant group + event-posting access, or reject.</p>
-      <div id="applicant-list"><p class="hint">Loading…</p></div>
-      <div id="admin-msg"></div>
-      <button class="ghost" id="admin-signout-btn" type="button">Sign out</button>
+    <div id="admin-section" class="hidden">
+      <div class="stats">
+        <div class="stat-tile">
+          <div class="num" id="stat-pending">0</div>
+          <div class="label">Pending applications</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Pending LGU applications</h2>
+        <p class="hint">Approve to grant group + event-posting access, or reject.</p>
+        <div class="table-wrap">
+          <table class="applicants">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Department</th>
+                <th>Email</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="applicant-list">
+              <tr><td class="hint" colspan="4">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="admin-msg"></div>
+      </div>
+
+      <div class="card">
+        <h2>Add account</h2>
+        <p class="hint">
+          Create an LGU member or another superadmin directly — active
+          immediately, no application/approval step. Tell the new person
+          the password you set here yourself.
+        </p>
+        <form id="add-account-form">
+          <label for="new-account-name">Full name</label>
+          <input id="new-account-name" type="text" required autocomplete="off">
+          <label for="new-account-email">Email</label>
+          <input id="new-account-email" type="email" required autocomplete="off">
+          <label for="new-account-password">Password</label>
+          <input id="new-account-password" type="password" required minlength="6" autocomplete="new-password">
+          <label for="new-account-role">Role</label>
+          <select id="new-account-role">
+            <option value="lgu_member">LGU member</option>
+            <option value="superadmin">Superadmin</option>
+          </select>
+          <div id="new-account-department-field">
+            <label for="new-account-department">Office / Department</label>
+            <input id="new-account-department" type="text" placeholder="e.g. Barangay Health Office">
+          </div>
+          <button class="primary" type="submit">Create account</button>
+        </form>
+        <div id="add-account-msg"></div>
+      </div>
     </div>
   </div>
 
@@ -179,11 +297,15 @@
       'sb_publishable_XnqlZ-m2efmbasNuZ7fyVg_74qTnghA'
     );
 
-    var authCard = document.getElementById('auth-card');
+    var authSection = document.getElementById('auth-section');
     var statusCard = document.getElementById('status-card');
-    var adminCard = document.getElementById('admin-card');
+    var adminSection = document.getElementById('admin-section');
     var authMsg = document.getElementById('auth-msg');
     var adminMsg = document.getElementById('admin-msg');
+    var addAccountMsg = document.getElementById('add-account-msg');
+    var topbarAccount = document.getElementById('topbar-account');
+    var topbarEmail = document.getElementById('topbar-email');
+    var topbarRole = document.getElementById('topbar-role');
 
     function showMessage(el, text, kind) {
       el.innerHTML = text ? '<div class="msg ' + kind + '">' + text + '</div>' : '';
@@ -191,6 +313,28 @@
 
     function friendlyError(err) {
       return (err && err.message) ? err.message : 'Something went wrong. Please try again.';
+    }
+
+    // supabase-js wraps a non-2xx Edge Function response in a generic error
+    // (its .message doesn't include what the function actually returned) —
+    // the real text is on err.context, a Response, and has to be read
+    // separately. Falls back to friendlyError(err) for anything else
+    // (network failure, etc.) that isn't shaped like a function-call error.
+    function functionErrorMessage(err) {
+      if (err && err.context && typeof err.context.text === 'function') {
+        return err.context.text().then(function (text) {
+          return text || friendlyError(err);
+        }).catch(function () {
+          return friendlyError(err);
+        });
+      }
+      return Promise.resolve(friendlyError(err));
+    }
+
+    function roleLabel(role) {
+      if (role === 'superadmin') return 'Superadmin';
+      if (role === 'lgu_member') return 'LGU member';
+      return 'Citizen';
     }
 
     // Disables a button and swaps in a small spinner + busy label while an
@@ -310,31 +454,33 @@
         .then(function () { setBusy(button, false); });
     });
 
-    // ---- Sign out ----
-    function signOut() { supabaseClient.auth.signOut(); }
-    document.getElementById('signout-btn').addEventListener('click', signOut);
-    document.getElementById('admin-signout-btn').addEventListener('click', signOut);
+    // ---- Sign out (single top bar button, works from either signed-in view) ----
+    document.getElementById('topbar-signout-btn').addEventListener('click', function () {
+      supabaseClient.auth.signOut();
+    });
 
     // ---- Superadmin dashboard ----
     function renderApplicants(rows) {
       var list = document.getElementById('applicant-list');
+      document.getElementById('stat-pending').textContent = rows ? rows.length : 0;
+
       if (!rows || rows.length === 0) {
-        list.innerHTML = '<p class="hint">No pending applications right now.</p>';
+        list.innerHTML = '<tr><td class="hint" colspan="4">No pending applications right now.</td></tr>';
         return;
       }
       list.innerHTML = '';
       rows.forEach(function (row) {
-        var el = document.createElement('div');
-        el.className = 'applicant';
+        var tr = document.createElement('tr');
         var name = row.display_name || row.email || 'Unnamed applicant';
-        el.innerHTML =
-          '<div class="name">' + name + '</div>' +
-          '<div class="meta">' + (row.department || 'No department given') + ' · ' + row.email + '</div>' +
-          '<div class="row">' +
+        tr.innerHTML =
+          '<td class="name">' + name + '</td>' +
+          '<td class="meta">' + (row.department || 'No department given') + '</td>' +
+          '<td class="meta">' + row.email + '</td>' +
+          '<td class="actions">' +
           '<button class="primary small" data-approve="' + row.user_id + '">Approve</button>' +
           '<button class="ghost small" data-reject="' + row.user_id + '">Reject</button>' +
-          '</div>';
-        list.appendChild(el);
+          '</td>';
+        list.appendChild(tr);
       });
       list.querySelectorAll('[data-approve]').forEach(function (btn) {
         btn.addEventListener('click', function () { respond(btn, btn.getAttribute('data-approve'), true); });
@@ -362,18 +508,78 @@
       });
     }
 
+    // ---- Add account (superadmin creates an LGU member or another
+    // superadmin directly, instead of them self-registering + waiting for
+    // approval) ----
+    var addAccountForm = document.getElementById('add-account-form');
+    var newAccountRole = document.getElementById('new-account-role');
+    var newAccountDepartmentField = document.getElementById('new-account-department-field');
+    var newAccountDepartment = document.getElementById('new-account-department');
+
+    function syncDepartmentFieldVisibility() {
+      var isLguMember = newAccountRole.value === 'lgu_member';
+      newAccountDepartmentField.classList.toggle('hidden', !isLguMember);
+      newAccountDepartment.required = isLguMember;
+    }
+    newAccountRole.addEventListener('change', syncDepartmentFieldVisibility);
+    syncDepartmentFieldVisibility();
+
+    addAccountForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var name = document.getElementById('new-account-name').value.trim();
+      var email = document.getElementById('new-account-email').value.trim();
+      var password = document.getElementById('new-account-password').value;
+      var role = newAccountRole.value;
+      var department = newAccountDepartment.value.trim();
+
+      if (role === 'superadmin') {
+        var confirmed = window.confirm(
+          'Create a new SUPERADMIN account for ' + email + '? This grants full access.'
+        );
+        if (!confirmed) return;
+      }
+
+      var button = addAccountForm.querySelector('button.primary');
+      showMessage(addAccountMsg, '', '');
+      setBusy(button, true, 'Creating…');
+      supabaseClient.functions.invoke('admin-create-account', {
+        body: {
+          email: email,
+          password: password,
+          displayName: name,
+          role: role,
+          department: department,
+        },
+      })
+        .then(function (res) {
+          if (res.error) throw res.error;
+          showMessage(addAccountMsg, 'Account created for ' + email + '.', 'success');
+          addAccountForm.reset();
+          syncDepartmentFieldVisibility();
+        })
+        .catch(function (err) {
+          return functionErrorMessage(err).then(function (text) {
+            showMessage(addAccountMsg, text, 'error');
+          });
+        })
+        .then(function () { setBusy(button, false); });
+    });
+
     // ---- Route the signed-in view based on the profile's role/status ----
     function refreshSignedInView() {
       return supabaseClient.auth.getUser().then(function (userRes) {
         var user = userRes.data && userRes.data.user;
         if (!user) {
-          authCard.classList.remove('hidden');
+          authSection.classList.remove('hidden');
           statusCard.classList.add('hidden');
-          adminCard.classList.add('hidden');
+          adminSection.classList.add('hidden');
+          topbarAccount.classList.add('hidden');
           return;
         }
 
-        authCard.classList.add('hidden');
+        authSection.classList.add('hidden');
+        topbarAccount.classList.remove('hidden');
+        topbarEmail.textContent = user.email || '';
 
         return supabaseClient.from('profiles').select('*').eq('id', user.id).maybeSingle()
           .then(function (profRes) {
@@ -394,18 +600,20 @@
               });
           })
           .then(function (profile) {
-            if (profile && profile.role === 'superadmin') {
+            var role = profile ? profile.role : 'citizen';
+            topbarRole.textContent = roleLabel(role);
+
+            if (role === 'superadmin') {
               statusCard.classList.add('hidden');
-              adminCard.classList.remove('hidden');
+              adminSection.classList.remove('hidden');
               return loadPendingApplications();
             }
 
-            adminCard.classList.add('hidden');
+            adminSection.classList.add('hidden');
             statusCard.classList.remove('hidden');
 
             var statusText = document.getElementById('status-text');
             var status = profile ? profile.lgu_request_status : null;
-            var role = profile ? profile.role : 'citizen';
 
             if (role === 'lgu_member') {
               statusText.innerHTML = '<span class="pill approved">Verified</span><br><br>' +
