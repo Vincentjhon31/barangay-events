@@ -62,21 +62,38 @@ jobs:
         run: flutter build apk --release
 
       - name: Rename APK to e-calendar-<version>.apk
+        id: version
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           VERSION="${VERSION%%+*}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           # The permanent QR/download link is the GitHub Pages redirect at
           # https://vincentjhon31.github.io/barangay-events/ (docs/index.html),
           # which always forwards to this versioned file.
           cp build/app/outputs/flutter-apk/app-release.apk "build/app/outputs/flutter-apk/e-calendar-${VERSION}.apk"
           ls -lh build/app/outputs/flutter-apk/e-calendar-*.apk
 
+      - name: Build categorized changelog
+        id: build_changelog
+        uses: mikepenz/release-changelog-builder-action@v4
+        with:
+          configuration: .github/changelog-configuration.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             build/app/outputs/flutter-apk/e-calendar-*.apk
-          generate_release_notes: true
+          body: |
+            Check out the [past releases](https://github.com/${{ github.repository }}/releases) if you're upgrading from an older version.
+
+            ${{ steps.build_changelog.outputs.changelog }}
+
+            > [!TIP]
+            > **Android** — download `e-calendar-${{ steps.version.outputs.version }}.apk`.
+            > **Windows** — download `e-calendar-${{ steps.version.outputs.version }}-setup.exe` and run it. It upgrades an existing install in place — no need to uninstall or delete anything first.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -106,8 +123,8 @@ jobs:
 
   build-windows:
     # Runs after the Android job so the release it creates already exists —
-    # this job only adds the Windows zip onto it, avoiding two jobs racing
-    # to create the same GitHub Release at once.
+    # this job only adds the Windows installer onto it, avoiding two jobs
+    # racing to create the same GitHub Release at once.
     needs: build
     runs-on: windows-latest
 
@@ -141,15 +158,27 @@ jobs:
       - name: Build release Windows app
         run: flutter build windows --release
 
-      - name: Zip Windows build
+      - name: Install Inno Setup
+        # GitHub's windows-latest image is expected to already have this,
+        # but installing is cheap/idempotent either way — cheaper than a
+        # release failing on a runner image that doesn't.
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Build Windows installer
+        # Packages build\windows\x64\runner\Release\* (just built above)
+        # into a proper installer instead of shipping that folder as a zip —
+        # see windows\installer\eBongabongCalendar.iss for how upgrades work.
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME.TrimStart('v') -replace '\+.*',''
-          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "e-calendar-$version-windows.zip"
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            "/DMyAppVersion=$version" `
+            "windows\installer\eBongabongCalendar.iss"
 
-      - name: Add Windows build to GitHub Release
+      - name: Add Windows installer to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: e-calendar-*-windows.zip
+          files: installer_output\e-calendar-*-setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

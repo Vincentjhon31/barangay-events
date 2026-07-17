@@ -47,7 +47,7 @@ class GitHubReleaseUpdateService implements AppUpdateService {
     return AppReleaseInfo(
       version: latestVersion,
       releaseUrl: latestRelease.releaseUrl,
-      downloadUrl: latestRelease.apkDownloadUrl ?? latestRelease.releaseUrl,
+      downloadUrl: latestRelease.platformDownloadUrl ?? latestRelease.releaseUrl,
       releaseNotes: latestRelease.body,
       isNewerThanInstalled: _isNewerVersion(
         latestVersion,
@@ -81,13 +81,19 @@ class GitHubReleaseUpdateService implements AppUpdateService {
       final json = jsonDecode(body) as Map<String, dynamic>;
       final assets = (json['assets'] as List<dynamic>? ?? [])
           .whereType<Map<String, dynamic>>();
-      String? apkDownloadUrl;
+      String? platformDownloadUrl;
 
       for (final asset in assets) {
-        final name = asset['name'] as String? ?? '';
+        final name = (asset['name'] as String? ?? '').toLowerCase();
         final url = asset['browser_download_url'] as String?;
-        if (name.toLowerCase().endsWith('.apk') && url != null) {
-          apkDownloadUrl = url;
+        if (url == null) continue;
+        // Windows ships as an installer (e-calendar-<version>-setup.exe),
+        // Android as a plain .apk — see windows/installer/*.iss and the
+        // release workflow's "Rename APK" step respectively.
+        final isPlatformAsset =
+            Platform.isWindows ? name.endsWith('-setup.exe') : name.endsWith('.apk');
+        if (isPlatformAsset) {
+          platformDownloadUrl = url;
           break;
         }
       }
@@ -95,7 +101,7 @@ class GitHubReleaseUpdateService implements AppUpdateService {
       return _GitHubRelease(
         tagName: json['tag_name'] as String? ?? '',
         releaseUrl: json['html_url'] as String? ?? '',
-        apkDownloadUrl: apkDownloadUrl,
+        platformDownloadUrl: platformDownloadUrl,
         body: (json['body'] as String? ?? '').trim(),
       );
     } finally {
@@ -138,13 +144,13 @@ class _GitHubRelease {
   const _GitHubRelease({
     required this.tagName,
     required this.releaseUrl,
-    required this.apkDownloadUrl,
+    required this.platformDownloadUrl,
     required this.body,
   });
 
   final String tagName;
   final String releaseUrl;
-  final String? apkDownloadUrl;
+  final String? platformDownloadUrl;
   final String body;
 }
 
