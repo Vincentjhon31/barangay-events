@@ -125,11 +125,16 @@ abstract class AppAuthService {
   /// image, this app only offers picking from the fixed catalog.
   Future<void> updateAvatar(String assetPath);
 
-  /// Raw `theme_mode`/`ui_style` values from the signed-in user's profile
-  /// (mirrors `ThemeMode`/`UiStyle` enum `.name`s), or null if unavailable —
-  /// lets a chosen appearance follow the user across devices.
-  Future<({String themeMode, String uiStyle})?> fetchPreferences();
-  Future<void> savePreferences({required String themeMode, required String uiStyle});
+  /// Raw `theme_mode`/`ui_style`/`language` values from the signed-in
+  /// user's profile (mirrors `ThemeMode`/`UiStyle`/`Locale` `.name`s/codes),
+  /// or null if unavailable — lets a chosen appearance/language follow the
+  /// user across devices.
+  Future<({String themeMode, String uiStyle, String language})?> fetchPreferences();
+  Future<void> savePreferences({
+    required String themeMode,
+    required String uiStyle,
+    required String language,
+  });
 
   Future<void> signOut();
   Future<void> dispose();
@@ -299,35 +304,41 @@ class SupabaseAuthService implements AppAuthService {
   }
 
   @override
-  Future<({String themeMode, String uiStyle})?> fetchPreferences() async {
+  Future<({String themeMode, String uiStyle, String language})?> fetchPreferences() async {
     final user = _client.auth.currentUser;
     if (user == null) return null;
 
     try {
       final row = await _client
           .from('profiles')
-          .select('theme_mode, ui_style')
+          .select('theme_mode, ui_style, language')
           .eq('id', user.id)
           .maybeSingle();
       final mode = row?['theme_mode'] as String?;
       final style = row?['ui_style'] as String?;
-      if (mode == null || style == null) return null;
-      return (themeMode: mode, uiStyle: style);
+      final language = row?['language'] as String?;
+      if (mode == null || style == null || language == null) return null;
+      return (themeMode: mode, uiStyle: style, language: language);
     } catch (_) {
       return null;
     }
   }
 
   @override
-  Future<void> savePreferences({required String themeMode, required String uiStyle}) async {
+  Future<void> savePreferences({
+    required String themeMode,
+    required String uiStyle,
+    required String language,
+  }) async {
     final user = _client.auth.currentUser;
     if (user == null) return;
 
     // A targeted update (not upsert) so this never clobbers other profile
-    // fields when only appearance changed.
+    // fields when only appearance/language changed.
     await _client.from('profiles').update({
       'theme_mode': themeMode,
       'ui_style': uiStyle,
+      'language': language,
     }).eq('id', user.id);
   }
 
@@ -372,6 +383,7 @@ class MemoryAuthService implements AppAuthService {
   AppUserProfile? _currentUser;
   String? _themeMode;
   String? _uiStyle;
+  String? _language;
 
   @override
   Stream<bool> authStateChanges() async* {
@@ -454,17 +466,23 @@ class MemoryAuthService implements AppAuthService {
   }
 
   @override
-  Future<({String themeMode, String uiStyle})?> fetchPreferences() async {
+  Future<({String themeMode, String uiStyle, String language})?> fetchPreferences() async {
     final mode = _themeMode;
     final style = _uiStyle;
-    if (mode == null || style == null) return null;
-    return (themeMode: mode, uiStyle: style);
+    final language = _language;
+    if (mode == null || style == null || language == null) return null;
+    return (themeMode: mode, uiStyle: style, language: language);
   }
 
   @override
-  Future<void> savePreferences({required String themeMode, required String uiStyle}) async {
+  Future<void> savePreferences({
+    required String themeMode,
+    required String uiStyle,
+    required String language,
+  }) async {
     _themeMode = themeMode;
     _uiStyle = uiStyle;
+    _language = language;
   }
 
   @override

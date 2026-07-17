@@ -3,6 +3,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -15,6 +16,7 @@ import 'auth_service.dart';
 import 'day_detail_page.dart';
 import 'event_conflicts.dart';
 import 'event_store.dart';
+import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
 import 'profile_pages.dart';
 import 'push_notifications.dart';
@@ -41,6 +43,12 @@ Future<void> main() async {
   }
 
   final themeController = await ThemeController.load();
+
+  // DateFormat throws if a locale's symbol/day-name data hasn't been loaded
+  // yet — load both supported locales upfront rather than only whichever
+  // one happens to be active at first launch.
+  await initializeDateFormatting('en');
+  await initializeDateFormatting('fil');
 
   runApp(
     BarangayCalendarApp(
@@ -123,11 +131,20 @@ class _BarangayCalendarAppState extends State<BarangayCalendarApp> {
     return ListenableBuilder(
       listenable: widget.themeController,
       builder: (context, _) {
+        // Every plain DateFormat(pattern) call throughout the app (no
+        // explicit locale arg) picks this up automatically — so switching
+        // the language also localizes month/day names in the in-scope
+        // Calendar/Feed screens without threading a locale through every
+        // call site individually.
+        Intl.defaultLocale = widget.themeController.locale.toString();
         return MaterialApp(
           title: 'eBongabong Calendar',
           theme: _buildTheme(Brightness.light),
           darkTheme: _buildTheme(Brightness.dark),
           themeMode: widget.themeController.themeMode,
+          locale: widget.themeController.locale,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           builder: (context, child) => ResponsiveScaler(
             displayMode: widget.themeController.displayMode,
             child: AppStyleScope(
@@ -224,6 +241,7 @@ class _AuthenticatedShellState extends State<AuthenticatedShell> {
       unawaited(widget.themeController.applyRemote(
         themeMode: prefs.themeMode,
         uiStyle: prefs.uiStyle,
+        language: prefs.language,
       ));
     }));
   }
@@ -305,6 +323,7 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 
   Future<void> _submit() async {
+    final l10n = AppLocalizations.of(context)!;
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     final confirmPassword = _confirmPasswordController.text;
@@ -312,29 +331,28 @@ class _SignInScreenState extends State<SignInScreen> {
 
     if (email.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Email and password are required.')),
+        SnackBar(content: Text(l10n.authEmailPasswordRequired)),
       );
       return;
     }
 
     if (_isSignUpMode && displayName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Name is required.')),
+        SnackBar(content: Text(l10n.authNameRequired)),
       );
       return;
     }
 
     if (_isSignUpMode && password.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Password must be at least 6 characters.')),
+        SnackBar(content: Text(l10n.authPasswordTooShort)),
       );
       return;
     }
 
     if (_isSignUpMode && password != confirmPassword) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Passwords do not match.')),
+        SnackBar(content: Text(l10n.authPasswordsDontMatch)),
       );
       return;
     }
@@ -354,10 +372,7 @@ class _SignInScreenState extends State<SignInScreen> {
         }
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Account created. You may need to confirm your email before signing in.'),
-          ),
+          SnackBar(content: Text(l10n.authAccountCreated)),
         );
       } else {
         await widget.authService.signIn(email: email, password: password);
@@ -374,7 +389,7 @@ class _SignInScreenState extends State<SignInScreen> {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Authentication failed.')),
+        SnackBar(content: Text(l10n.authFailedGeneric)),
       );
     } finally {
       if (mounted) {
@@ -424,6 +439,7 @@ class _SignInScreenState extends State<SignInScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -462,7 +478,7 @@ class _SignInScreenState extends State<SignInScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Community events, at a glance.',
+                        l10n.appTagline,
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: colorScheme.onSurfaceVariant,
@@ -477,7 +493,7 @@ class _SignInScreenState extends State<SignInScreen> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             Text(
-                              _isSignUpMode ? 'Create an account' : 'Login',
+                              _isSignUpMode ? l10n.signUpTitle : l10n.loginTitle,
                               style: Theme.of(context)
                                   .textTheme
                                   .titleLarge
@@ -486,7 +502,7 @@ class _SignInScreenState extends State<SignInScreen> {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              'Use your account to access and publish barangay events.',
+                              l10n.authSubtitle,
                               style: Theme.of(context)
                                   .textTheme
                                   .bodySmall
@@ -499,21 +515,21 @@ class _SignInScreenState extends State<SignInScreen> {
                             if (_isSignUpMode) ...[
                               _buildGlassField(
                                 controller: _displayNameController,
-                                label: 'Name',
+                                label: l10n.nameLabel,
                                 icon: FontAwesomeIcons.user,
                               ),
                               const SizedBox(height: 14),
                             ],
                             _buildGlassField(
                               controller: _emailController,
-                              label: 'Email',
+                              label: l10n.emailLabel,
                               icon: FontAwesomeIcons.envelope,
                               keyboardType: TextInputType.emailAddress,
                             ),
                             const SizedBox(height: 14),
                             _buildGlassField(
                               controller: _passwordController,
-                              label: 'Password',
+                              label: l10n.passwordLabel,
                               icon: FontAwesomeIcons.lock,
                               obscureText: true,
                             ),
@@ -521,7 +537,7 @@ class _SignInScreenState extends State<SignInScreen> {
                               const SizedBox(height: 14),
                               _buildGlassField(
                                 controller: _confirmPasswordController,
-                                label: 'Confirm password',
+                                label: l10n.confirmPasswordLabel,
                                 icon: FontAwesomeIcons.lock,
                                 obscureText: true,
                               ),
@@ -537,10 +553,10 @@ class _SignInScreenState extends State<SignInScreen> {
                               onPressed: _isSubmitting ? null : _submit,
                               child: Text(
                                 _isSubmitting
-                                    ? 'Please wait...'
+                                    ? l10n.pleaseWait
                                     : (_isSignUpMode
-                                        ? 'Create account'
-                                        : 'Login'),
+                                        ? l10n.createAccountButton
+                                        : l10n.loginButton),
                                 style: const TextStyle(
                                     fontWeight: FontWeight.w700),
                               ),
@@ -555,8 +571,8 @@ class _SignInScreenState extends State<SignInScreen> {
                                     },
                               child: Text(
                                 _isSignUpMode
-                                    ? 'Already have an account? Login'
-                                    : 'Need an account? Create one',
+                                    ? l10n.haveAccountPrompt
+                                    : l10n.needAccountPrompt,
                               ),
                             ),
                           ],
@@ -603,6 +619,18 @@ class CalendarScreen extends StatefulWidget {
   State<CalendarScreen> createState() => _CalendarScreenState();
 }
 
+/// A single "new event posted" banner is either about one specific event
+/// (tapping opens it) or, when several arrived in the same realtime batch,
+/// a coalesced count (tapping just jumps to the Feed tab) — see
+/// _CalendarScreenState._detectNewlyPostedEvents.
+class _NewEventNotice {
+  const _NewEventNotice.single(this.event) : count = 1;
+  const _NewEventNotice.multiple(this.count) : event = null;
+
+  final BarangayEvent? event;
+  final int count;
+}
+
 class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
@@ -642,6 +670,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
   List<BarangayEvent> _events = const [];
   bool _eventsLoaded = false;
   late StreamSubscription<List<BarangayEvent>> _eventSubscription;
+
+  // "Someone just posted this" banner — separate from the Feed tab's own
+  // NEW-pill/unseen-dot system (which is about what's still unread), this
+  // is about what just happened live while the app is open. Queued rather
+  // than stacked so a burst of events shows one banner at a time.
+  final List<_NewEventNotice> _newEventQueue = [];
+  _NewEventNotice? _activeNewEventNotice;
+  Timer? _newEventNoticeTimer;
 
   bool get _hasUnseenFeedItems => _events.any(
       (event) => event.createdAt.millisecondsSinceEpoch > _feedLastSeenMillis);
@@ -743,11 +779,64 @@ class _CalendarScreenState extends State<CalendarScreen> {
   StreamSubscription<List<BarangayEvent>> _listenToEvents() {
     return widget.eventRepository.watchAllEvents().listen((events) {
       if (!mounted) return;
+      if (_eventsLoaded) _detectNewlyPostedEvents(previous: _events, incoming: events);
       setState(() {
         _events = events;
         _eventsLoaded = true;
       });
     });
+  }
+
+  /// Flags events worth a "new event posted" banner — genuinely new to this
+  /// client's view (not just "an old event I can now see," e.g. right after
+  /// joining a group with months of history), recently created (not an old
+  /// event resurfacing for some other reason), and not the current user's
+  /// own post (that already gets the "Added..." confirmation elsewhere).
+  void _detectNewlyPostedEvents({
+    required List<BarangayEvent> previous,
+    required List<BarangayEvent> incoming,
+  }) {
+    final previousIds = previous.map((event) => event.id).toSet();
+    final userId = _currentUserId;
+    final now = DateTime.now();
+    final freshlyPosted = incoming.where((event) {
+      if (previousIds.contains(event.id)) return false;
+      if (userId != null && event.createdById == userId) return false;
+      return now.difference(event.createdAt) < const Duration(minutes: 2);
+    }).toList();
+
+    if (freshlyPosted.isEmpty) return;
+
+    _enqueueNewEventNotice(freshlyPosted.length == 1
+        ? _NewEventNotice.single(freshlyPosted.first)
+        : _NewEventNotice.multiple(freshlyPosted.length));
+  }
+
+  void _enqueueNewEventNotice(_NewEventNotice notice) {
+    if (_activeNewEventNotice == null) {
+      setState(() => _activeNewEventNotice = notice);
+      _scheduleNewEventNoticeDismiss();
+    } else {
+      _newEventQueue.add(notice);
+    }
+  }
+
+  void _scheduleNewEventNoticeDismiss() {
+    _newEventNoticeTimer?.cancel();
+    _newEventNoticeTimer = Timer(const Duration(seconds: 5), _advanceNewEventNotice);
+  }
+
+  void _advanceNewEventNotice() {
+    if (!mounted) return;
+    setState(() {
+      _activeNewEventNotice = _newEventQueue.isEmpty ? null : _newEventQueue.removeAt(0);
+    });
+    if (_activeNewEventNotice != null) _scheduleNewEventNoticeDismiss();
+  }
+
+  void _dismissNewEventNotice() {
+    _newEventNoticeTimer?.cancel();
+    _advanceNewEventNotice();
   }
 
   Widget _buildLoadingPanel() {
@@ -811,6 +900,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   void dispose() {
     unawaited(_eventSubscription.cancel());
+    _newEventNoticeTimer?.cancel();
     _feedSearchController.dispose();
     _calendarSearchController.dispose();
     super.dispose();
@@ -897,6 +987,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
       extendBody: true,
@@ -914,7 +1005,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 backgroundColor: colorScheme.primary,
                 foregroundColor: colorScheme.onPrimary,
                 icon: FaIcon(FontAwesomeIcons.plus, size: 16, color: colorScheme.onPrimary),
-                label: Text('Add event', style: TextStyle(color: colorScheme.onPrimary)),
+                label: Text(l10n.addEventButton, style: TextStyle(color: colorScheme.onPrimary)),
               ),
             )
           : null,
@@ -927,6 +1018,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               children: [
                 if (_availableUpdate != null)
                   _buildUpdateBanner(_availableUpdate!),
+                _buildNewEventNoticeSlot(),
                 Expanded(
                   child: IndexedStack(
                     index: _selectedTab,
@@ -963,11 +1055,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
               top: false,
               child: LiquidTabBar(
                 items: [
-                  (icon: FontAwesomeIcons.calendarDays, label: 'Calendar'),
-                  (icon: FontAwesomeIcons.newspaper, label: 'Feed'),
+                  (icon: FontAwesomeIcons.calendarDays, label: l10n.tabCalendar),
+                  (icon: FontAwesomeIcons.newspaper, label: l10n.tabFeed),
                   if (_showGroupsTab)
-                    (icon: FontAwesomeIcons.peopleGroup, label: 'Groups'),
-                  (icon: FontAwesomeIcons.user, label: 'Profile'),
+                    (icon: FontAwesomeIcons.peopleGroup, label: l10n.tabGroups),
+                  (icon: FontAwesomeIcons.user, label: l10n.tabProfile),
                 ],
                 selectedIndex: _selectedTab,
                 onSelect: _handleTabSelected,
@@ -1100,19 +1192,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildCalendarSearchField() {
+    final l10n = AppLocalizations.of(context)!;
     return TextField(
       key: const Key('calendar-search-field'),
       controller: _calendarSearchController,
       onChanged: (value) => setState(() => _calendarSearchQuery = value),
       decoration: InputDecoration(
-        labelText: 'Search events',
-        hintText: 'Title, location, or who posted it',
+        labelText: l10n.calendarSearchLabel,
+        hintText: l10n.calendarSearchHint,
         prefixIcon: glassFieldIcon(FontAwesomeIcons.magnifyingGlass, size: 14),
         prefixIconConstraints: glassFieldIconConstraints,
         suffixIcon: _calendarSearchQuery.isEmpty
             ? null
             : IconButton(
-                tooltip: 'Clear search',
+                tooltip: l10n.clearSearch,
                 icon: const FaIcon(FontAwesomeIcons.xmark, size: 14),
                 onPressed: () {
                   _calendarSearchController.clear();
@@ -1163,6 +1256,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _buildViewToggle() {
     final colorScheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
     return SegmentedButton<_CalendarViewMode>(
       style: SegmentedButton.styleFrom(
         visualDensity: VisualDensity.compact,
@@ -1173,18 +1267,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
         side: BorderSide(color: colorScheme.onSurface.withValues(alpha: 0.12)),
       ),
       showSelectedIcon: false,
-      segments: const [
+      segments: [
         ButtonSegment<_CalendarViewMode>(
           value: _CalendarViewMode.month,
-          label: Text('Month'),
+          label: Text(l10n.calendarViewMonth),
         ),
         ButtonSegment<_CalendarViewMode>(
           value: _CalendarViewMode.week,
-          label: Text('Week'),
+          label: Text(l10n.calendarViewWeek),
         ),
         ButtonSegment<_CalendarViewMode>(
           value: _CalendarViewMode.list,
-          label: Text('List'),
+          label: Text(l10n.calendarViewList),
         ),
       ],
       selected: {_viewMode},
@@ -1603,12 +1697,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildUpcomingHeader() {
+    final l10n = AppLocalizations.of(context)!;
     final selected = _selectedDay;
     final isToday = selected == null || isSameDay(selected, DateTime.now());
     return Row(
       children: [
         Text(
-          isToday ? 'Upcoming' : 'Events for ${_formatDate(selected)}',
+          isToday ? l10n.upcomingHeader : l10n.eventsForDate(_formatDate(selected)),
           style: Theme.of(context)
               .textTheme
               .titleMedium
@@ -1633,6 +1728,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   List<Widget> _buildUpcomingEventCards() {
     if (!_eventsLoaded) return [_buildLoadingPanel()];
+    final l10n = AppLocalizations.of(context)!;
 
     final events = _getEventsForDay(_selectedDay ?? _focusedDay);
 
@@ -1648,7 +1744,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         return [
           GlassPanel(
             child: Text(
-              'No events for ${_formatDate(_selectedDay ?? _focusedDay)}',
+              l10n.noEventsForDate(_formatDate(_selectedDay ?? _focusedDay)),
               style: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
@@ -1659,7 +1755,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return [
         GlassPanel(
           child: Text(
-            "Nothing today — here's what's coming up:",
+            l10n.nothingTodayFallback,
             style:
                 TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
@@ -1715,6 +1811,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildFeedTab() {
+    final l10n = AppLocalizations.of(context)!;
     final feedEvents = _filteredFeedEvents();
     final hasActiveFilter =
         _feedTypeFilters.isNotEmpty || _feedSearchQuery.trim().isNotEmpty;
@@ -1734,8 +1831,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
         children: [
-          _buildPageHeader(
-              'Feed', 'New events from people you follow and the community.'),
+          _buildPageHeader(l10n.feedTitle, l10n.feedSubtitle),
           const SizedBox(height: 16),
           TextField(
             controller: _feedSearchController,
@@ -1744,15 +1840,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
               _feedPage = 0;
             }),
             decoration: InputDecoration(
-              labelText: 'Search the feed',
-              hintText: 'Title, location, or who posted it',
+              labelText: l10n.feedSearchLabel,
+              hintText: l10n.feedSearchHint,
               prefixIcon:
                   glassFieldIcon(FontAwesomeIcons.magnifyingGlass, size: 14),
               prefixIconConstraints: glassFieldIconConstraints,
               suffixIcon: _feedSearchQuery.isEmpty
                   ? null
                   : IconButton(
-                      tooltip: 'Clear search',
+                      tooltip: l10n.clearSearch,
                       icon: const FaIcon(FontAwesomeIcons.xmark, size: 14),
                       onPressed: () {
                         _feedSearchController.clear();
@@ -1772,10 +1868,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           else if (feedEvents.isEmpty)
             GlassPanel(
               child: Text(
-                hasActiveFilter
-                    ? 'No posts match your search or filter.'
-                    : 'Nothing here yet. Join groups from the Groups tab to see their '
-                        'events, or check back for public announcements.',
+                hasActiveFilter ? l10n.feedEmptyFiltered : l10n.feedEmpty,
                 style: TextStyle(color: colorScheme.onSurfaceVariant),
               ),
             )
@@ -1793,6 +1886,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _buildFeedPaginationBar(int currentPage, int totalPages) {
     final colorScheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
     return GlassPanel(
       borderRadius: 22,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -1800,7 +1894,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         children: [
           IconButton(
             key: const Key('feed-prev-page'),
-            tooltip: 'Previous page',
+            tooltip: l10n.previousPage,
             onPressed: currentPage > 0
                 ? () => setState(() => _feedPage = currentPage - 1)
                 : null,
@@ -1812,7 +1906,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
           Expanded(
             child: Text(
-              'Page ${currentPage + 1} of $totalPages',
+              l10n.pageOfTotal(currentPage + 1, totalPages),
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
@@ -1821,7 +1915,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
           IconButton(
             key: const Key('feed-next-page'),
-            tooltip: 'Next page',
+            tooltip: l10n.nextPage,
             onPressed: currentPage < totalPages - 1
                 ? () => setState(() => _feedPage = currentPage + 1)
                 : null,
@@ -2101,6 +2195,92 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 icon: const FaIcon(FontAwesomeIcons.xmark),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNewEventNoticeSlot() {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      transitionBuilder: (child, animation) => ClipRect(
+        child: SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, -0.25), end: Offset.zero)
+              .animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+          child: FadeTransition(opacity: animation, child: child),
+        ),
+      ),
+      child: _activeNewEventNotice == null
+          ? const SizedBox.shrink(key: ValueKey('no-new-event-notice'))
+          : KeyedSubtree(
+              key: ValueKey(_activeNewEventNotice),
+              child: _buildNewEventBanner(_activeNewEventNotice!),
+            ),
+    );
+  }
+
+  Widget _buildNewEventBanner(_NewEventNotice notice) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final event = notice.event;
+    final tint = event != null ? _getEventTint(event.title) : colorScheme.primary;
+    final icon = event != null ? _getEventIcon(event.title) : FontAwesomeIcons.calendarDays;
+    final title = event != null ? event.title : '${notice.count} new events posted';
+
+    return Material(
+      color: Colors.transparent,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () {
+              _dismissNewEventNotice();
+              if (event != null) {
+                unawaited(_showEventDetails(event));
+              } else {
+                _handleTabSelected(1);
+              }
+            },
+            child: GlassPanel(
+              borderRadius: 20,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  IconBadge(icon: icon, tint: tint, size: 40, iconSize: 16),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'New event posted',
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.3,
+                              ),
+                        ),
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Dismiss',
+                    onPressed: _dismissNewEventNotice,
+                    icon: const FaIcon(FontAwesomeIcons.xmark, size: 14),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -2870,22 +3050,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Future<void> _confirmDeleteEvent(BarangayEvent event) async {
+    final l10n = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete event'),
-        content: Text('Delete "${event.title}"? This cannot be undone.'),
+        title: Text(l10n.deleteEventTitle),
+        content: Text(l10n.deleteEventConfirm(event.title)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
+            child: Text(l10n.delete),
           ),
         ],
       ),

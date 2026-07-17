@@ -12,6 +12,7 @@ import 'create_group_page.dart';
 import 'event_store.dart';
 import 'group_members_page.dart';
 import 'join_group_page.dart';
+import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
 import 'responsive_scale.dart';
 import 'theme_controller.dart';
@@ -119,14 +120,15 @@ class _ProfileTabState extends State<ProfileTab> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    final l10n = AppLocalizations.of(context)!;
     final currentProfile = widget.authService.currentUser;
     final profile = _profile ?? currentProfile;
     final displayName = profile?.displayName?.trim().isNotEmpty == true
         ? profile!.displayName!
-        : 'Barangay Member';
+        : l10n.defaultMemberName;
     final email = profile?.email.isNotEmpty == true
         ? profile!.email
-        : 'No email available';
+        : l10n.noEmailAvailable;
     final department = profile?.department?.trim();
     final colorScheme = Theme.of(context).colorScheme;
     final accountRole = profile?.role ?? 'citizen';
@@ -248,7 +250,7 @@ class _ProfileTabState extends State<ProfileTab> {
         ],
         const SizedBox(height: 26),
         Text(
-          'Account',
+          l10n.accountSectionHeader,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
                 letterSpacing: 0.6,
@@ -262,8 +264,8 @@ class _ProfileTabState extends State<ProfileTab> {
             children: [
               QuickActionTile(
                 icon: FontAwesomeIcons.idCard,
-                title: 'Profile Information',
-                subtitle: 'Name, department, contact and address',
+                title: l10n.profileInformationTile,
+                subtitle: l10n.profileInformationCaption,
                 onTap: () => unawaited(_openProfileInformation()),
               ),
               Divider(
@@ -272,8 +274,8 @@ class _ProfileTabState extends State<ProfileTab> {
               ),
               QuickActionTile(
                 icon: FontAwesomeIcons.gear,
-                title: 'Settings',
-                subtitle: 'Appearance and app preferences',
+                title: l10n.settingsTile,
+                subtitle: l10n.settingsTileCaption,
                 onTap: _openSettings,
               ),
               Divider(
@@ -282,8 +284,8 @@ class _ProfileTabState extends State<ProfileTab> {
               ),
               QuickActionTile(
                 icon: FontAwesomeIcons.circleInfo,
-                title: 'About',
-                subtitle: 'Version, updates, and what\'s new',
+                title: l10n.aboutTile,
+                subtitle: l10n.aboutTileCaption,
                 onTap: _openAbout,
               ),
             ],
@@ -309,7 +311,7 @@ class _ProfileTabState extends State<ProfileTab> {
                 const SizedBox(width: 14),
                 Expanded(
                   child: Text(
-                    'Sign out',
+                    l10n.signOut,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w700,
                           color: colorScheme.error,
@@ -867,6 +869,7 @@ class _GroupsTabState extends State<GroupsTab> {
 
   Widget _buildRequestRow(GroupJoinRequest request) {
     final colorScheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
     final busy = _respondingIds.contains(request.id);
 
     return Padding(
@@ -893,7 +896,7 @@ class _GroupsTabState extends State<GroupsTab> {
                       ?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 Text(
-                  'wants to join "${request.groupName}"',
+                  l10n.wantsToJoinGroup(request.groupName),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -907,7 +910,7 @@ class _GroupsTabState extends State<GroupsTab> {
                             ? null
                             : () => unawaited(
                                 _respondToRequest(request, accept: false)),
-                        child: const Text('Decline'),
+                        child: Text(l10n.declineButton),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -917,7 +920,7 @@ class _GroupsTabState extends State<GroupsTab> {
                             ? null
                             : () => unawaited(
                                 _respondToRequest(request, accept: true)),
-                        child: const Text('Accept'),
+                        child: Text(l10n.acceptButton),
                       ),
                     ),
                   ],
@@ -932,6 +935,7 @@ class _GroupsTabState extends State<GroupsTab> {
 
   Widget _buildMyGroupRow(BarangayGroup group) {
     final colorScheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
     final busy = _busyIds.contains(group.id);
 
     return InkWell(
@@ -982,7 +986,7 @@ class _GroupsTabState extends State<GroupsTab> {
                     ],
                   ),
                   Text(
-                    '${group.memberCount} member${group.memberCount == 1 ? '' : 's'} • code ${group.code}',
+                    l10n.memberCountWithCode(group.memberCount, group.code),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
@@ -991,13 +995,13 @@ class _GroupsTabState extends State<GroupsTab> {
               ),
             ),
             IconButton(
-              tooltip: 'Copy group code',
+              tooltip: l10n.copyGroupCode,
               onPressed: () => unawaited(_copyCode(group)),
               icon: const FaIcon(FontAwesomeIcons.copy, size: 15),
             ),
             OutlinedButton(
               onPressed: busy ? null : () => unawaited(_leave(group)),
-              child: const Text('Leave'),
+              child: Text(l10n.leaveButton),
             ),
           ],
         ),
@@ -1007,6 +1011,7 @@ class _GroupsTabState extends State<GroupsTab> {
 
   Widget _buildSearchResultRow(BarangayGroup group) {
     final colorScheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
     final busy = _busyIds.contains(group.id);
     final member = _isMember(group.id);
 
@@ -1033,7 +1038,7 @@ class _GroupsTabState extends State<GroupsTab> {
                       ?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 Text(
-                  '${group.memberCount} member${group.memberCount == 1 ? '' : 's'}',
+                  l10n.memberCount(group.memberCount),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -1043,11 +1048,11 @@ class _GroupsTabState extends State<GroupsTab> {
           ),
           const SizedBox(width: 8),
           if (member)
-            const OutlinedButton(onPressed: null, child: Text('Joined'))
+            OutlinedButton(onPressed: null, child: Text(l10n.joinedButton))
           else
             FilledButton(
               onPressed: busy ? null : () => unawaited(_join(group)),
-              child: const Text('Join'),
+              child: Text(l10n.joinButton),
             ),
         ],
       ),
@@ -1056,6 +1061,7 @@ class _GroupsTabState extends State<GroupsTab> {
 
   Widget _buildSearchPanel() {
     final colorScheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
     return GlassPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1063,7 +1069,7 @@ class _GroupsTabState extends State<GroupsTab> {
           _buildPanelHeader(
             FontAwesomeIcons.magnifyingGlass,
             const Color(0xFF1F9D65),
-            'Search groups',
+            l10n.searchGroups,
           ),
           const SizedBox(height: 12),
           TextField(
@@ -1072,15 +1078,15 @@ class _GroupsTabState extends State<GroupsTab> {
             textInputAction: TextInputAction.search,
             onSubmitted: (_) => unawaited(_search()),
             decoration: InputDecoration(
-              labelText: 'Search by name',
-              hintText: 'e.g. Mayor',
+              labelText: l10n.searchByName,
+              hintText: l10n.searchHintExample,
               prefixIcon:
                   glassFieldIcon(FontAwesomeIcons.magnifyingGlass, size: 14),
               prefixIconConstraints: glassFieldIconConstraints,
               suffixIcon: TextButton(
                 key: const Key('groups-search-button'),
                 onPressed: _searching ? null : () => unawaited(_search()),
-                child: Text(_searching ? '...' : 'Search'),
+                child: Text(_searching ? '...' : l10n.searchButton),
               ),
             ),
           ),
@@ -1089,14 +1095,14 @@ class _GroupsTabState extends State<GroupsTab> {
             if (_searchResults.isEmpty)
               _buildEmptyState(
                 FontAwesomeIcons.magnifyingGlass,
-                'No groups found. Try another name, or ask for the code.',
+                l10n.noGroupsFound,
               )
             else
               for (final group in _searchResults) _buildSearchResultRow(group),
           ] else ...[
             const SizedBox(height: 8),
             Text(
-              'Private groups won\'t show up here — you\'ll need their code.',
+              l10n.privateGroupsHint,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -1150,6 +1156,7 @@ class _GroupsTabState extends State<GroupsTab> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
 
     return RefreshIndicator(
       onRefresh: _loadAll,
@@ -1164,7 +1171,7 @@ class _GroupsTabState extends State<GroupsTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Groups',
+                      l10n.groupsTitle,
                       style:
                           Theme.of(context).textTheme.headlineSmall?.copyWith(
                                 fontWeight: FontWeight.w800,
@@ -1172,7 +1179,7 @@ class _GroupsTabState extends State<GroupsTab> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Like group chats, but for events everyone should see.',
+                      l10n.groupsSubtitle,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
@@ -1181,7 +1188,7 @@ class _GroupsTabState extends State<GroupsTab> {
                 ),
               ),
               IconButton(
-                tooltip: _searchExpanded ? 'Close search' : 'Search groups',
+                tooltip: _searchExpanded ? l10n.closeSearch : l10n.searchGroups,
                 onPressed: () => setState(() {
                   _searchExpanded = !_searchExpanded;
                   if (!_searchExpanded) {
@@ -1214,10 +1221,10 @@ class _GroupsTabState extends State<GroupsTab> {
                   tint: widget.canCreateGroups
                       ? colorScheme.primary
                       : colorScheme.onSurfaceVariant,
-                  label: 'Create',
+                  label: l10n.groupsCreateTile,
                   caption: widget.canCreateGroups
-                      ? 'Start a new group'
-                      : 'LGU members only',
+                      ? l10n.groupsCreateCaption
+                      : l10n.groupsCreateLguOnly,
                   onTap: () => unawaited(_openCreateGroup()),
                 ),
               ),
@@ -1226,8 +1233,8 @@ class _GroupsTabState extends State<GroupsTab> {
                 child: _buildModuleTile(
                   icon: FontAwesomeIcons.key,
                   tint: const Color(0xFFFFA726),
-                  label: 'Join a code',
-                  caption: 'Use an invite code',
+                  label: l10n.groupsJoinTile,
+                  caption: l10n.groupsJoinCaption,
                   onTap: () => unawaited(_openJoinByCode()),
                 ),
               ),
@@ -1241,7 +1248,7 @@ class _GroupsTabState extends State<GroupsTab> {
                 _buildPanelHeader(
                   FontAwesomeIcons.peopleGroup,
                   colorScheme.primary,
-                  'My Groups (${_myGroups.length})',
+                  l10n.myGroupsHeader(_myGroups.length),
                 ),
                 const SizedBox(height: 8),
                 if (_loadingGroups)
@@ -1258,8 +1265,7 @@ class _GroupsTabState extends State<GroupsTab> {
                 else if (_myGroups.isEmpty)
                   _buildEmptyState(
                     FontAwesomeIcons.peopleGroup,
-                    'You are not in any group yet. Use "Add a group" below to '
-                    'create one, search, or enter a code.',
+                    l10n.myGroupsEmpty,
                   )
                 else
                   for (final group in _myGroups) _buildMyGroupRow(group),
@@ -1275,7 +1281,7 @@ class _GroupsTabState extends State<GroupsTab> {
                   _buildPanelHeader(
                     FontAwesomeIcons.userClock,
                     const Color(0xFFE53935),
-                    'Join requests (${_pendingRequests.length})',
+                    l10n.joinRequestsHeader(_pendingRequests.length),
                   ),
                   const SizedBox(height: 8),
                   for (final request in _pendingRequests)
@@ -1299,13 +1305,14 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
 
     return GlassSubPage(
-      title: 'Settings',
-      subtitle: 'Personalize how the app looks.',
+      title: l10n.settingsTitle,
+      subtitle: l10n.settingsSubtitle,
       children: [
         Text(
-          'Appearance',
+          l10n.settingsAppearance,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
                 letterSpacing: 0.6,
@@ -1321,21 +1328,21 @@ class SettingsPage extends StatelessWidget {
               children: [
                 _ThemeOptionTile(
                   icon: FontAwesomeIcons.circleHalfStroke,
-                  label: 'System default',
+                  label: l10n.settingsSystemDefault,
                   selected: mode == ThemeMode.system,
                   onTap: () => themeController.setThemeMode(ThemeMode.system),
                 ),
                 const SizedBox(height: 10),
                 _ThemeOptionTile(
                   icon: FontAwesomeIcons.sun,
-                  label: 'Light',
+                  label: l10n.settingsLight,
                   selected: mode == ThemeMode.light,
                   onTap: () => themeController.setThemeMode(ThemeMode.light),
                 ),
                 const SizedBox(height: 10),
                 _ThemeOptionTile(
                   icon: FontAwesomeIcons.moon,
-                  label: 'Dark',
+                  label: l10n.settingsDark,
                   selected: mode == ThemeMode.dark,
                   onTap: () => themeController.setThemeMode(ThemeMode.dark),
                 ),
@@ -1345,7 +1352,7 @@ class SettingsPage extends StatelessWidget {
         ),
         const SizedBox(height: 22),
         Text(
-          'App style',
+          l10n.settingsAppStyle,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
                 letterSpacing: 0.6,
@@ -1361,16 +1368,16 @@ class SettingsPage extends StatelessWidget {
               children: [
                 _ThemeOptionTile(
                   icon: FontAwesomeIcons.wandMagicSparkles,
-                  label: 'Liquid Glass',
-                  subtitle: 'Translucent panels and glowing colors',
+                  label: l10n.settingsLiquidGlass,
+                  subtitle: l10n.settingsLiquidGlassSubtitle,
                   selected: style == UiStyle.liquid,
                   onTap: () => themeController.setUiStyle(UiStyle.liquid),
                 ),
                 const SizedBox(height: 10),
                 _ThemeOptionTile(
                   icon: FontAwesomeIcons.bolt,
-                  label: 'Solid',
-                  subtitle: 'Plain colors — faster on most phones',
+                  label: l10n.settingsSolid,
+                  subtitle: l10n.settingsSolidSubtitle,
                   selected: style == UiStyle.solid,
                   onTap: () => themeController.setUiStyle(UiStyle.solid),
                 ),
@@ -1380,7 +1387,7 @@ class SettingsPage extends StatelessWidget {
         ),
         const SizedBox(height: 22),
         Text(
-          'Display size',
+          l10n.settingsDisplaySize,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
                 letterSpacing: 0.6,
@@ -1389,8 +1396,7 @@ class SettingsPage extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          'Auto fits the screen automatically — pick a fixed size instead if '
-          'this device (e.g. a kiosk display) needs it locked.',
+          l10n.settingsDisplaySizeHint,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -1400,11 +1406,11 @@ class SettingsPage extends StatelessWidget {
           listenable: themeController,
           builder: (context, _) {
             final displayMode = themeController.displayMode;
-            const options = <(DisplayMode, FaIconData, String)>[
-              (DisplayMode.auto, FontAwesomeIcons.wandMagicSparkles, 'Fits the screen automatically'),
-              (DisplayMode.mobile, FontAwesomeIcons.mobileScreen, 'Compact, no scaling'),
-              (DisplayMode.tablet, FontAwesomeIcons.tabletScreenButton, 'Medium — about 1.5x'),
-              (DisplayMode.windows, FontAwesomeIcons.desktop, 'Large — about 2x, for kiosk displays'),
+            final options = <(DisplayMode, FaIconData, String)>[
+              (DisplayMode.auto, FontAwesomeIcons.wandMagicSparkles, l10n.settingsDisplayAuto),
+              (DisplayMode.mobile, FontAwesomeIcons.mobileScreen, l10n.settingsDisplayMobile),
+              (DisplayMode.tablet, FontAwesomeIcons.tabletScreenButton, l10n.settingsDisplayTablet),
+              (DisplayMode.windows, FontAwesomeIcons.desktop, l10n.settingsDisplayWindows),
             ];
             return Column(
               children: [
@@ -1418,6 +1424,46 @@ class SettingsPage extends StatelessWidget {
                   ),
                   if (mode != options.last.$1) const SizedBox(height: 10),
                 ],
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 22),
+        Text(
+          l10n.settingsLanguage,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                letterSpacing: 0.6,
+                fontWeight: FontWeight.w700,
+              ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          l10n.settingsLanguageHint,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 10),
+        ListenableBuilder(
+          listenable: themeController,
+          builder: (context, _) {
+            final language = themeController.locale.languageCode;
+            return Column(
+              children: [
+                _ThemeOptionTile(
+                  icon: FontAwesomeIcons.language,
+                  label: l10n.settingsLanguageEnglish,
+                  selected: language == 'en',
+                  onTap: () => themeController.setLanguage('en'),
+                ),
+                const SizedBox(height: 10),
+                _ThemeOptionTile(
+                  icon: FontAwesomeIcons.language,
+                  label: l10n.settingsLanguageFilipino,
+                  selected: language == 'fil',
+                  onTap: () => themeController.setLanguage('fil'),
+                ),
               ],
             );
           },

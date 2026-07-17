@@ -10,6 +10,15 @@ import 'responsive_scale.dart' show DisplayMode;
 const String _themeModePrefKey = 'app_theme_mode';
 const String _uiStylePrefKey = 'app_ui_style';
 const String _displayModePrefKey = 'app_display_mode';
+const String _languagePrefKey = 'app_language';
+
+/// Supported language codes — kept as a plain string (not an enum) since
+/// this maps directly onto both the `profiles.language` column and
+/// Flutter's own `Locale` code, with no extra translation layer needed.
+const List<String> supportedLanguageCodes = ['en', 'fil'];
+
+String _sanitizeLanguage(String? code) =>
+    supportedLanguageCodes.contains(code) ? code! : 'en';
 
 ThemeMode? _themeModeFromName(String? name) {
   for (final value in ThemeMode.values) {
@@ -35,9 +44,11 @@ class ThemeController extends ChangeNotifier {
     ThemeMode initial = ThemeMode.dark,
     UiStyle initialStyle = UiStyle.liquid,
     DisplayMode initialDisplayMode = DisplayMode.auto,
+    String initialLanguage = 'en',
   })  : _themeMode = initial,
         _uiStyle = initialStyle,
-        _displayMode = initialDisplayMode;
+        _displayMode = initialDisplayMode,
+        _language = _sanitizeLanguage(initialLanguage);
 
   ThemeMode _themeMode;
   ThemeMode get themeMode => _themeMode;
@@ -45,11 +56,17 @@ class ThemeController extends ChangeNotifier {
   UiStyle _uiStyle;
   UiStyle get uiStyle => _uiStyle;
 
-  /// Device-specific, unlike [themeMode]/[uiStyle] — a phone and a kiosk
-  /// signed into the same account should each keep their own display size,
-  /// so this is never synced to the user's profile.
+  /// Device-specific, unlike [themeMode]/[uiStyle]/[locale] — a phone and a
+  /// kiosk signed into the same account should each keep their own display
+  /// size, so this is never synced to the user's profile.
   DisplayMode _displayMode;
   DisplayMode get displayMode => _displayMode;
+
+  /// 'en' or 'fil' — see [supportedLanguageCodes]. Synced to the profile
+  /// like [themeMode]/[uiStyle] (unlike [displayMode]): the same person's
+  /// language choice should follow them to any device.
+  String _language;
+  Locale get locale => Locale(_language);
 
   AppAuthService? _authService;
 
@@ -67,9 +84,10 @@ class ThemeController extends ChangeNotifier {
   /// Applies a preference fetched from the user's profile (e.g. right after
   /// signing in on a new device) without writing it straight back to that
   /// same profile.
-  Future<void> applyRemote({String? themeMode, String? uiStyle}) async {
+  Future<void> applyRemote({String? themeMode, String? uiStyle, String? language}) async {
     final mode = _themeModeFromName(themeMode);
     final style = _uiStyleFromName(uiStyle);
+    final lang = (language != null && supportedLanguageCodes.contains(language)) ? language : null;
 
     var changed = false;
     if (mode != null && mode != _themeMode) {
@@ -80,12 +98,17 @@ class ThemeController extends ChangeNotifier {
       _uiStyle = style;
       changed = true;
     }
+    if (lang != null && lang != _language) {
+      _language = lang;
+      changed = true;
+    }
     if (!changed) return;
     notifyListeners();
 
     final prefs = await SharedPreferences.getInstance();
     if (mode != null) await prefs.setString(_themeModePrefKey, mode.name);
     if (style != null) await prefs.setString(_uiStylePrefKey, style.name);
+    if (lang != null) await prefs.setString(_languagePrefKey, lang);
   }
 
   static Future<ThemeController> load() async {
@@ -105,10 +128,12 @@ class ThemeController extends ChangeNotifier {
       (value) => value.name == storedDisplayMode,
       orElse: () => DisplayMode.auto,
     );
+    final storedLanguage = prefs.getString(_languagePrefKey);
     return ThemeController(
       initial: mode,
       initialStyle: style,
       initialDisplayMode: displayMode,
+      initialLanguage: _sanitizeLanguage(storedLanguage),
     );
   }
 
@@ -119,7 +144,11 @@ class ThemeController extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_themeModePrefKey, mode.name);
-    unawaited(_authService?.savePreferences(themeMode: mode.name, uiStyle: _uiStyle.name));
+    unawaited(_authService?.savePreferences(
+      themeMode: mode.name,
+      uiStyle: _uiStyle.name,
+      language: _language,
+    ));
   }
 
   Future<void> setUiStyle(UiStyle style) async {
@@ -129,7 +158,27 @@ class ThemeController extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_uiStylePrefKey, style.name);
-    unawaited(_authService?.savePreferences(themeMode: _themeMode.name, uiStyle: style.name));
+    unawaited(_authService?.savePreferences(
+      themeMode: _themeMode.name,
+      uiStyle: style.name,
+      language: _language,
+    ));
+  }
+
+  /// Synced to the profile, unlike [setDisplayMode] — see [_language]'s doc.
+  Future<void> setLanguage(String language) async {
+    final sanitized = _sanitizeLanguage(language);
+    if (sanitized == _language) return;
+    _language = sanitized;
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_languagePrefKey, sanitized);
+    unawaited(_authService?.savePreferences(
+      themeMode: _themeMode.name,
+      uiStyle: _uiStyle.name,
+      language: sanitized,
+    ));
   }
 
   /// Local-only (see [_displayMode]'s doc) — no profile sync call, unlike

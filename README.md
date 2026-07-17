@@ -106,3 +106,13 @@ A new tagged release also pushes a "New version available" notification (topic `
    ```
 
 How it works: `.github/workflows/release.yml` calls this function right after publishing a GitHub Release, passing the version tag; the function checks `Authorization: Bearer <RELEASE_NOTIFY_SECRET>` itself (since there's no Supabase webhook auto-auth here) and sends one push to the `app-updates` topic. If `RELEASE_NOTIFY_SECRET` isn't set yet, that workflow step is skipped without failing the release.
+
+## LGU Admin Portal
+
+The superadmin's "Add account" card (docs/lgu-admin/, signed in as superadmin) creates an LGU member or another superadmin account directly — no self-registration/approval step. One-time setup:
+
+```powershell
+supabase functions deploy admin-create-account --use-api
+```
+
+No secrets to configure — it only needs `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`, both auto-injected into every Edge Function's environment already. Unlike `send-app-update-notification`, deploy this one **with** the default JWT verification on (no `--no-verify-jwt`) — it's called by a real signed-in browser session, and the function's entire security boundary depends on Supabase rejecting anything without a valid user JWT before the function code runs.

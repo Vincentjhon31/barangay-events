@@ -1,0 +1,151 @@
+{
+  "@@locale": "en",
+
+  "appTagline": "Community events, at a glance.",
+  "loginTitle": "Login",
+  "signUpTitle": "Create an account",
+  "authSubtitle": "Use your account to access and publish barangay events.",
+  "nameLabel": "Name",
+  "emailLabel": "Email",
+  "passwordLabel": "Password",
+  "confirmPasswordLabel": "Confirm password",
+  "pleaseWait": "Please wait...",
+  "createAccountButton": "Create account",
+  "loginButton": "Login",
+  "haveAccountPrompt": "Already have an account? Login",
+  "needAccountPrompt": "Need an account? Create one",
+  "authEmailPasswordRequired": "Email and password are required.",
+  "authNameRequired": "Name is required.",
+  "authPasswordTooShort": "Password must be at least 6 characters.",
+  "authPasswordsDontMatch": "Passwords do not match.",
+  "authAccountCreated": "Account created. You may need to confirm your email before signing in.",
+  "authFailedGeneric": "Authentication failed.",
+
+  "tabCalendar": "Calendar",
+  "tabFeed": "Feed",
+  "tabGroups": "Groups",
+  "tabProfile": "Profile",
+
+  "cancel": "Cancel",
+  "delete": "Delete",
+  "save": "Save",
+  "edit": "Edit",
+
+  "settingsTitle": "Settings",
+  "settingsSubtitle": "Personalize how the app looks.",
+  "settingsAppearance": "Appearance",
+  "settingsSystemDefault": "System default",
+  "settingsLight": "Light",
+  "settingsDark": "Dark",
+  "settingsAppStyle": "App style",
+  "settingsLiquidGlass": "Liquid Glass",
+  "settingsLiquidGlassSubtitle": "Translucent panels and glowing colors",
+  "settingsSolid": "Solid",
+  "settingsSolidSubtitle": "Plain colors — faster on most phones",
+  "settingsDisplaySize": "Display size",
+  "settingsDisplaySizeHint": "Auto fits the screen automatically — pick a fixed size instead if this device (e.g. a kiosk display) needs it locked.",
+  "settingsDisplayAuto": "Fits the screen automatically",
+  "settingsDisplayMobile": "Compact, no scaling",
+  "settingsDisplayTablet": "Medium — about 1.5x",
+  "settingsDisplayWindows": "Large — about 2x, for kiosk displays",
+  "settingsLanguage": "Language",
+  "settingsLanguageHint": "Switch the app's language. Takes effect immediately.",
+  "settingsLanguageEnglish": "English",
+  "settingsLanguageFilipino": "Filipino",
+
+  "calendarViewMonth": "Month",
+  "calendarViewWeek": "Week",
+  "calendarViewList": "List",
+  "addEventButton": "Add event",
+  "upcomingHeader": "Upcoming",
+  "eventsForDate": "Events for {date}",
+  "@eventsForDate": {
+    "placeholders": { "date": { "type": "String" } }
+  },
+  "noEventsForDate": "No events for {date}",
+  "@noEventsForDate": {
+    "placeholders": { "date": { "type": "String" } }
+  },
+  "nothingTodayFallback": "Nothing today — here's what's coming up:",
+  "calendarSearchLabel": "Search events",
+  "calendarSearchHint": "Title, location, or who posted it",
+  "deleteEventTitle": "Delete event",
+  "deleteEventConfirm": "Delete \"{title}\"? This cannot be undone.",
+  "@deleteEventConfirm": {
+    "placeholders": { "title": { "type": "String" } }
+  },
+
+  "feedTitle": "Feed",
+  "feedSubtitle": "New events from people you follow and the community.",
+  "feedSearchLabel": "Search the feed",
+  "feedSearchHint": "Title, location, or who posted it",
+  "clearSearch": "Clear search",
+  "feedEmptyFiltered": "No posts match your search or filter.",
+  "feedEmpty": "Nothing here yet. Join groups from the Groups tab to see their events, or check back for public announcements.",
+  "previousPage": "Previous page",
+  "nextPage": "Next page",
+  "pageOfTotal": "Page {current} of {total}",
+  "@pageOfTotal": {
+    "placeholders": {
+      "current": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+
+  "groupsTitle": "Groups",
+  "groupsSubtitle": "Like group chats, but for events everyone should see.",
+  "searchGroups": "Search groups",
+  "closeSearch": "Close search",
+  "groupsCreateTile": "Create",
+  "groupsCreateCaption": "Start a new group",
+  "groupsCreateLguOnly": "LGU members only",
+  "groupsJoinTile": "Join a code",
+  "groupsJoinCaption": "Use an invite code",
+  "myGroupsHeader": "My Groups ({count})",
+  "@myGroupsHeader": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "myGroupsEmpty": "You are not in any group yet. Use \"Add a group\" below to create one, search, or enter a code.",
+  "joinRequestsHeader": "Join requests ({count})",
+  "@joinRequestsHeader": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "accountSectionHeader": "Account",
+  "profileInformationTile": "Profile Information",
+  "profileInformationCaption": "Name, department, contact and address",
+  "settingsTile": "Settings",
+  "settingsTileCaption": "Appearance and app preferences",
+  "aboutTile": "About",
+  "aboutTileCaption": "Version, updates, and what's new",
+  "signOut": "Sign out",
+  "defaultMemberName": "Barangay Member",
+  "noEmailAvailable": "No email available",
+
+  "searchByName": "Search by name",
+  "searchHintExample": "e.g. Mayor",
+  "searchButton": "Search",
+  "noGroupsFound": "No groups found. Try another name, or ask for the code.",
+  "privateGroupsHint": "Private groups won't show up here — you'll need their code.",
+  "declineButton": "Decline",
+  "acceptButton": "Accept",
+  "wantsToJoinGroup": "wants to join \"{groupName}\"",
+  "@wantsToJoinGroup": {
+    "placeholders": { "groupName": { "type": "String" } }
+  },
+  "copyGroupCode": "Copy group code",
+  "leaveButton": "Leave",
+  "memberCountWithCode": "{count, plural, one{# member} other{# members}} • code {code}",
+  "@memberCountWithCode": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "code": { "type": "String" }
+    }
+  },
+  "memberCount": "{count, plural, one{# member} other{# members}}",
+  "@memberCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "joinedButton": "Joined",
+  "joinButton": "Join"
+}

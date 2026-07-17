@@ -713,10 +713,14 @@ end $$;
 
 -- ============================================================
 -- User roles + permissions (July 2026).
--- citizen (default, self-registers in the app) | lgu_member (registers
--- via the separate GitHub Pages admin portal, docs/lgu-admin/, and needs
--- superadmin approval) | superadmin (one account, approves LGU
--- applications and is the only role that can post Public events).
+-- citizen (default, self-registers in the app) | lgu_member (registers via
+-- the separate GitHub Pages admin portal, docs/lgu-admin/, and needs
+-- superadmin approval — or is created directly by a superadmin, see below)
+-- | superadmin (approves LGU applications and is the only role that can
+-- post Public events; originally a single account, but a superadmin can
+-- now create additional superadmin/lgu_member accounts directly from the
+-- dashboard's "Add account" card — see
+-- supabase/functions/admin-create-account).
 -- Citizens can only ever create Personal events and cannot create groups.
 -- LGU members can create groups and post Group events, but not Public.
 -- Safe to re-run on an existing database.
@@ -901,3 +905,22 @@ create policy "Creator or group admin can edit events"
       )
     )
   );
+
+-- ============================================================
+-- Language preference (July 2026).
+-- Synced like theme_mode/ui_style (targeted UPDATE from the app, not a
+-- security-definer RPC — this isn't security-sensitive like role/
+-- lgu_request_status, so it doesn't need guard_profile_role_columns'
+-- protection). 'en' (English) or 'fil' (Filipino) — see ThemeController's
+-- locale handling in lib/theme_controller.dart.
+-- Safe to re-run on an existing database.
+-- ============================================================
+
+alter table public.profiles add column if not exists language text not null default 'en';
+
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'profiles_language_check') then
+    alter table public.profiles add constraint profiles_language_check
+      check (language in ('en', 'fil'));
+  end if;
+end $$;

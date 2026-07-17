@@ -15,6 +15,7 @@ import 'package:eCalendar/day_detail_page.dart';
 import 'package:eCalendar/event_store.dart';
 import 'package:eCalendar/auth_service.dart';
 import 'package:eCalendar/liquid_glass_components.dart';
+import 'package:eCalendar/profile_pages.dart';
 import 'package:eCalendar/responsive_scale.dart';
 import 'package:eCalendar/theme_controller.dart';
 
@@ -1676,6 +1677,151 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       expect(find.text('Fiesta Planning'), findsOneWidget);
+    });
+  });
+
+  group('new event notice banner', () {
+    testWidgets('shows a banner when someone else posts a new event',
+        (WidgetTester tester) async {
+      final repo = MemoryEventRepository.seeded();
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repo,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final now = DateTime.now();
+      await repo.addEvent(BarangayEvent(
+        id: 'other-user-event',
+        title: 'Blood Donation Drive',
+        location: 'Barangay Hall',
+        startTime: now.add(const Duration(days: 2)),
+        endTime: now.add(const Duration(days: 2, hours: 2)),
+        description: '',
+        hasAttachment: false,
+        createdAt: now,
+        createdById: 'someone-else',
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.text('New event posted'), findsOneWidget);
+      expect(find.text('Blood Donation Drive'), findsOneWidget);
+    });
+
+    testWidgets("does not show a banner for the current user's own new event",
+        (WidgetTester tester) async {
+      final repo = MemoryEventRepository.seeded();
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repo,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final now = DateTime.now();
+      await repo.addEvent(BarangayEvent(
+        id: 'my-own-event',
+        title: 'My Own Meeting',
+        location: 'Somewhere',
+        startTime: now.add(const Duration(days: 1)),
+        endTime: now.add(const Duration(days: 1, hours: 1)),
+        description: '',
+        hasAttachment: false,
+        createdAt: now,
+        createdById: 'mock-user-id',
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.text('New event posted'), findsNothing);
+    });
+
+    testWidgets(
+        'does not show a banner for an old event newly visible (e.g. after joining a group)',
+        (WidgetTester tester) async {
+      final repo = MemoryEventRepository.seeded();
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repo,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final now = DateTime.now();
+      await repo.addEvent(BarangayEvent(
+        id: 'old-event-now-visible',
+        title: 'Old Fiesta Meeting',
+        location: 'Somewhere',
+        startTime: now.add(const Duration(days: 5)),
+        endTime: now.add(const Duration(days: 5, hours: 1)),
+        description: '',
+        hasAttachment: false,
+        createdAt: now.subtract(const Duration(days: 10)),
+        createdById: 'someone-else',
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.text('New event posted'), findsNothing);
+    });
+  });
+
+  group('language preference', () {
+    testWidgets('switching to Filipino in Settings re-renders the in-scope UI',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // English by default.
+      expect(find.text('Calendar'), findsWidgets);
+
+      await tester.tap(find.text('Profile'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Settings'));
+      await tester.pumpAndSettle();
+
+      // The lazy ListView hasn't built the (currently off-screen) Language
+      // section yet — scrollUntilVisible incrementally scrolls until it
+      // does, unlike ensureVisible, which needs the element to already
+      // exist in the tree.
+      await tester.scrollUntilVisible(
+        find.text('Language'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Language'), findsOneWidget);
+      await tester.tap(find.text('Filipino'));
+      await tester.pumpAndSettle();
+
+      // The whole app rebuilds immediately — Settings' own title (scrolled
+      // out of the lazy ListView's built range by the scroll above) switches
+      // right away.
+      await tester.scrollUntilVisible(
+        find.text('Mga Setting'),
+        -300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Mga Setting'), findsWidgets);
+
+      // Pop back to the main shell (the tab bar sits underneath this pushed
+      // page, offstage — find.text skips offstage widgets by default) and
+      // confirm it switched too.
+      Navigator.of(tester.element(find.byType(SettingsPage))).pop();
+      await tester.pumpAndSettle();
+      expect(find.text('Kalendaryo'), findsWidgets);
+      expect(find.text('Calendar'), findsNothing);
     });
   });
 }
