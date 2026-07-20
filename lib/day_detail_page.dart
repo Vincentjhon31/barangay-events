@@ -8,6 +8,7 @@ import 'add_event_page.dart';
 import 'auth_service.dart' show AppUserProfile;
 import 'event_conflicts.dart';
 import 'event_store.dart';
+import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
 
 /// Full-page view of a single day's events, reached by tapping a day on the
@@ -111,12 +112,13 @@ class _DayDetailPageState extends State<DayDetailPage> {
     // watchAllEvents() subscription above already picks up the newly saved
     // event. Just the confirmation message is our job here.
     if (result != null && mounted) {
+      final l10n = AppLocalizations.of(context)!;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             result.groupName != null
-                ? 'Added "${result.title}" to ${result.groupName}.'
-                : 'Added "${result.title}" to the calendar.',
+                ? l10n.addedEventToGroup(result.title, result.groupName!)
+                : l10n.addedEventToCalendar(result.title),
           ),
         ),
       );
@@ -125,6 +127,7 @@ class _DayDetailPageState extends State<DayDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
     final events = _dayEvents;
 
@@ -144,7 +147,7 @@ class _DayDetailPageState extends State<DayDetailPage> {
         backgroundColor: colorScheme.primary,
         foregroundColor: colorScheme.onPrimary,
         icon: FaIcon(FontAwesomeIcons.plus, size: 16, color: colorScheme.onPrimary),
-        label: Text('Add event', style: TextStyle(color: colorScheme.onPrimary)),
+        label: Text(l10n.addEventButton, style: TextStyle(color: colorScheme.onPrimary)),
       ),
       bottomOverlay: _hasMoreBelow ? _buildMoreBelowHint(colorScheme) : null,
       children: [
@@ -162,7 +165,7 @@ class _DayDetailPageState extends State<DayDetailPage> {
         else if (events.isEmpty)
           GlassPanel(
             child: Text(
-              'No events for ${DateFormat('MMMM d').format(widget.date)}.',
+              l10n.noEventsForDate(DateFormat('MMMM d').format(widget.date)),
               style: TextStyle(color: colorScheme.onSurfaceVariant),
             ),
           )

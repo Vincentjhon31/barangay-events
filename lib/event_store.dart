@@ -277,6 +277,7 @@ class BarangayGroup {
     this.createdBy,
     this.isPrivate = false,
     this.myRole,
+    this.isVerified = false,
   });
 
   final String id;
@@ -292,20 +293,28 @@ class BarangayGroup {
   /// caller isn't a member (e.g. a search result they haven't joined).
   final String? myRole;
 
+  /// Superadmin-set "official" badge — purely informational (no
+  /// permission changes), so citizens can tell a real department's group
+  /// apart from a same-named impostor. See admin_set_group_verified.
+  final bool isVerified;
+
   bool get isAdmin => myRole == 'admin';
 
   BarangayGroup copyWith({
     int? memberCount,
     String? myRole,
+    String? createdBy,
+    bool? isVerified,
   }) {
     return BarangayGroup(
       id: id,
       name: name,
       code: code,
       memberCount: memberCount ?? this.memberCount,
-      createdBy: createdBy,
+      createdBy: createdBy ?? this.createdBy,
       isPrivate: isPrivate,
       myRole: myRole ?? this.myRole,
+      isVerified: isVerified ?? this.isVerified,
     );
   }
 }
@@ -449,6 +458,16 @@ abstract class EventRepository {
   /// Removes [userId] from [groupId]. Any admin may remove a regular
   /// member; only the group's creator may remove a fellow admin.
   Future<void> removeMember(String groupId, String userId);
+
+  /// Marks/unmarks [groupId] as verified/official (superadmin-only
+  /// server-side) — see [BarangayGroup.isVerified].
+  Future<void> setGroupVerified(String groupId, bool verified);
+
+  /// Hands [groupId]'s creator-only privileges to [newOwnerUserId], who
+  /// must already be a member — promoted to admin as part of the
+  /// handoff. Callable by the group's current creator, or a superadmin
+  /// as a fallback for an abandoned group.
+  Future<void> transferGroupOwnership(String groupId, String newOwnerUserId);
 
   Future<void> dispose();
 }
@@ -595,9 +614,11 @@ class MemoryEventRepository implements EventRepository {
   }
 
   @override
+  // An empty [query] intentionally matches every group name (`"".contains`
+  // is true for any string) so a blank search browses all public groups,
+  // instead of the old "type something first" requirement.
   Future<List<BarangayGroup>> searchGroups(String query) async {
     final needle = query.trim().toLowerCase();
-    if (needle.isEmpty) return const [];
     return _allGroups
         .where((group) =>
             group.name.toLowerCase().contains(needle) &&
@@ -764,6 +785,34 @@ class MemoryEventRepository implements EventRepository {
   }
 
   @override
+  Future<void> setGroupVerified(String groupId, bool verified) async {
+    final index = _allGroups.indexWhere((group) => group.id == groupId);
+    if (index == -1) return;
+    _allGroups[index] = _allGroups[index].copyWith(isVerified: verified);
+  }
+
+  @override
+  Future<void> transferGroupOwnership(String groupId, String newOwnerUserId) async {
+    final index = _allGroups.indexWhere((group) => group.id == groupId);
+    if (index == -1) throw Exception('Group not found');
+    final group = _allGroups[index];
+    if (group.createdBy == newOwnerUserId) {
+      throw Exception('That member is already the owner');
+    }
+    final members = _members[groupId] ?? const [];
+    if (!members.any((member) => member.userId == newOwnerUserId)) {
+      throw Exception('The new owner must already be a member of this group');
+    }
+
+    _allGroups[index] = group.copyWith(createdBy: newOwnerUserId);
+    final memberIndex = members.indexWhere((member) => member.userId == newOwnerUserId);
+    if (memberIndex != -1) {
+      _members[groupId]![memberIndex] = members[memberIndex].copyWith(role: 'admin');
+    }
+    if (newOwnerUserId == _mockUserId) _myRoleByGroupId[groupId] = 'admin';
+  }
+
+  @override
   Future<void> dispose() async {
     await _updates.close();
   }
@@ -835,6 +884,7 @@ class SupabaseEventRepository implements EventRepository {
       memberCount: memberCount,
       createdBy: row['created_by'] as String?,
       isPrivate: row['is_private'] as bool? ?? false,
+      isVerified: row['is_verified'] as bool? ?? false,
     );
   }
 
@@ -855,7 +905,7 @@ class SupabaseEventRepository implements EventRepository {
 
     final rows = await _client
         .from('groups')
-        .select('id, name, code, created_by, is_private, group_members(count)')
+        .select('id, name, code, created_by, is_private, is_verified, group_members(count)')
         .inFilter('id', roleByGroupId.keys.toList())
         .order('name', ascending: true);
     return rows
@@ -877,16 +927,18 @@ class SupabaseEventRepository implements EventRepository {
   }
 
   @override
+  // An empty [query] deliberately still runs the ilike (`%%` matches every
+  // name) rather than short-circuiting, so a blank search browses all
+  // public groups instead of requiring the caller to type something first.
   Future<List<BarangayGroup>> searchGroups(String query) async {
     final trimmed = query.trim();
-    if (trimmed.isEmpty) return const [];
 
     // Private groups the caller isn't in simply don't come back here — the
     // "View public groups, or your own/joined private ones" RLS policy
     // enforces that server-side, so no client-side filtering is needed.
     final rows = await _client
         .from('groups')
-        .select('id, name, code, created_by, is_private, group_members(count)')
+        .select('id, name, code, created_by, is_private, is_verified, group_members(count)')
         .ilike('name', '%$trimmed%')
         .order('name', ascending: true)
         .limit(20);
@@ -1053,6 +1105,22 @@ class SupabaseEventRepository implements EventRepository {
         .delete()
         .eq('group_id', groupId)
         .eq('user_id', userId);
+  }
+
+  @override
+  Future<void> setGroupVerified(String groupId, bool verified) async {
+    await _client.rpc('admin_set_group_verified', params: {
+      'p_group_id': groupId,
+      'p_verified': verified,
+    });
+  }
+
+  @override
+  Future<void> transferGroupOwnership(String groupId, String newOwnerUserId) async {
+    await _client.rpc('transfer_group_ownership', params: {
+      'p_group_id': groupId,
+      'p_new_owner_id': newOwnerUserId,
+    });
   }
 
   @override

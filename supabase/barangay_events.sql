@@ -924,3 +924,150 @@ do $$ begin
       check (language in ('en', 'fil'));
   end if;
 end $$;
+
+-- ============================================================
+-- LGU-admin dashboard: full user list + role management (July 2026).
+-- Broader than list_pending_lgu_applications/respond_to_lgu_application
+-- (which only cover the apply -> approve/reject flow) — this lets the
+-- superadmin browse every account and change ANY user's role directly.
+-- Safe to re-run on an existing database.
+-- ============================================================
+
+-- Superadmin-only: every user, for the dashboard's "All Users" table.
+create or replace function public.list_all_users()
+returns table(
+  user_id uuid, email text, display_name text, department text,
+  phone_number text, role text, lgu_request_status text, created_at timestamptz
+)
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles where id = auth.uid() and role = 'superadmin') then
+    raise exception 'Only a superadmin can list all users';
+  end if;
+  return query
+    select p.id, p.email, p.display_name, p.department, p.phone_number,
+           p.role, p.lgu_request_status, p.created_at
+    from profiles p
+    order by p.created_at desc;
+end $$;
+
+-- Superadmin-only: the groups a given user belongs to — fetched on demand
+-- when the dashboard's "View" details row is expanded for that user, not
+-- upfront for everyone in list_all_users().
+create or replace function public.list_user_groups(p_user_id uuid)
+returns table(group_id uuid, group_name text, member_role text, joined_at timestamptz)
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles where id = auth.uid() and role = 'superadmin') then
+    raise exception 'Only a superadmin can view another user''s groups';
+  end if;
+  return query
+    select g.id, g.name, gm.role, gm.joined_at
+    from group_members gm
+    join groups g on g.id = gm.group_id
+    where gm.user_id = p_user_id
+    order by gm.joined_at asc;
+end $$;
+
+-- Superadmin-only: set any user's role directly (citizen/lgu_member/
+-- superadmin), independent of the apply/approve LGU flow. Two safeguards:
+-- can't change your own role (locks you out of the dashboard with no way
+-- back short of direct DB access) and can't demote the last remaining
+-- superadmin (would leave zero accounts able to approve/manage anything).
+create or replace function public.admin_set_user_role(p_user_id uuid, p_role text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  target_current_role text;
+begin
+  if not exists (select 1 from profiles where id = auth.uid() and role = 'superadmin') then
+    raise exception 'Only a superadmin can change roles';
+  end if;
+  if p_role not in ('citizen', 'lgu_member', 'superadmin') then
+    raise exception 'Invalid role: %', p_role;
+  end if;
+  if p_user_id = auth.uid() then
+    raise exception 'You cannot change your own role';
+  end if;
+
+  select role into target_current_role from profiles where id = p_user_id;
+  if target_current_role is null then
+    raise exception 'User not found';
+  end if;
+
+  if target_current_role = 'superadmin' and p_role <> 'superadmin'
+     and (select count(*) from profiles where role = 'superadmin') <= 1 then
+    raise exception 'Cannot remove the last remaining superadmin';
+  end if;
+
+  perform set_config('app.bypass_role_guard', 'on', true);
+  update profiles
+    set role = p_role,
+        lgu_request_status = case
+          when p_role = 'lgu_member' then 'approved'
+          when p_role = 'citizen' then null
+          else lgu_request_status
+        end
+    where id = p_user_id;
+end $$;
+
+-- ============================================================
+-- Group verification badge + ownership transfer (July 2026).
+-- Any lgu_member can name a public group anything, including something
+-- official-sounding ("Barangay Health Office") — is_verified is a purely
+-- informational badge (no permission changes) so citizens can tell a real
+-- department's group apart from a same-named impostor. Ownership transfer
+-- exists so a group isn't permanently stuck with an absentee owner after
+-- staff turnover (only created_by can currently delete the group or
+-- remove a fellow admin).
+-- Safe to re-run on an existing database.
+-- ============================================================
+
+alter table public.groups add column if not exists is_verified boolean not null default false;
+
+-- Superadmin-only: mark/unmark a group as verified/official.
+create or replace function public.admin_set_group_verified(p_group_id uuid, p_verified boolean)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles where id = auth.uid() and role = 'superadmin') then
+    raise exception 'Only a superadmin can verify a group';
+  end if;
+  update groups set is_verified = p_verified where id = p_group_id;
+end $$;
+
+-- Hands a group's creator-only privileges to another of its members.
+-- Callable by the group's CURRENT creator, or a superadmin as a fallback
+-- for a group whose creator already left/was demoted and can't do this
+-- themselves. The new owner must already be a member — they're promoted
+-- to admin as part of the handoff, since owning a group without being
+-- able to manage it wouldn't make sense.
+create or replace function public.transfer_group_ownership(p_group_id uuid, p_new_owner_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  current_owner uuid;
+  caller_is_superadmin boolean;
+begin
+  select created_by into current_owner from groups where id = p_group_id;
+  if current_owner is null then
+    raise exception 'Group not found';
+  end if;
+
+  select exists(select 1 from profiles where id = auth.uid() and role = 'superadmin')
+    into caller_is_superadmin;
+
+  if auth.uid() <> current_owner and not caller_is_superadmin then
+    raise exception 'Only the group''s current owner (or a superadmin) can transfer ownership';
+  end if;
+
+  if p_new_owner_id = current_owner then
+    raise exception 'That member is already the owner';
+  end if;
+
+  if not exists (
+    select 1 from group_members where group_id = p_group_id and user_id = p_new_owner_id
+  ) then
+    raise exception 'The new owner must already be a member of this group';
+  end if;
+
+  update groups set created_by = p_new_owner_id where id = p_group_id;
+  update group_members set role = 'admin' where group_id = p_group_id and user_id = p_new_owner_id;
+end $$;

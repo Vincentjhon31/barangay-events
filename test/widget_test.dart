@@ -17,6 +17,7 @@ import 'package:eCalendar/auth_service.dart';
 import 'package:eCalendar/liquid_glass_components.dart';
 import 'package:eCalendar/profile_pages.dart';
 import 'package:eCalendar/responsive_scale.dart';
+import 'package:eCalendar/security_page.dart';
 import 'package:eCalendar/theme_controller.dart';
 
 /// Taps today's cell on the Month grid, which navigates to that day's
@@ -1822,6 +1823,68 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Kalendaryo'), findsWidgets);
       expect(find.text('Calendar'), findsNothing);
+    });
+  });
+
+  group('security page', () {
+    Future<void> openSecurityPage(WidgetTester tester) async {
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Profile'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('profile-security-tile')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('shows the current email pre-filled in the new-email field',
+        (WidgetTester tester) async {
+      await openSecurityPage(tester);
+
+      expect(find.byType(SecurityPage), findsOneWidget);
+      final emailField = tester.widget<TextField>(
+        find.byKey(const Key('security-new-email-field')),
+      );
+      expect(emailField.controller?.text, 'user@example.com');
+    });
+
+    testWidgets('password fields start obscured and the eye icon reveals them',
+        (WidgetTester tester) async {
+      await openSecurityPage(tester);
+
+      TextField passwordField() => tester.widget<TextField>(
+            find.byKey(const Key('security-new-password-field')),
+          );
+
+      expect(passwordField().obscureText, isTrue);
+
+      await tester.tap(find.byKey(const Key('security-toggle-new-password-visibility')));
+      await tester.pumpAndSettle();
+
+      expect(passwordField().obscureText, isFalse);
+    });
+
+    testWidgets('rejects mismatched new/confirm passwords',
+        (WidgetTester tester) async {
+      await openSecurityPage(tester);
+
+      await tester.enterText(
+        find.byKey(const Key('security-new-password-field')),
+        'newpassword1',
+      );
+      await tester.enterText(
+        find.byKey(const Key('security-confirm-password-field')),
+        'newpassword2',
+      );
+      await tester.tap(find.byKey(const Key('security-update-password-button')));
+      await tester.pump();
+
+      expect(find.text('Passwords do not match.'), findsOneWidget);
     });
   });
 }

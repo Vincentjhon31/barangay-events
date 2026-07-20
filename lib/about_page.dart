@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_update_service.dart';
+import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
 
 /// About page: installed version, a manual "check for updates" action, and
@@ -59,7 +60,7 @@ class _AboutPageState extends State<AboutPage> {
       setState(() => _latestRelease = release);
     } catch (_) {
       if (!mounted) return;
-      setState(() => _error = 'Could not check for updates right now.');
+      setState(() => _error = AppLocalizations.of(context)!.checkUpdateError);
     } finally {
       if (mounted) setState(() => _checking = false);
     }
@@ -69,7 +70,7 @@ class _AboutPageState extends State<AboutPage> {
     final launched = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     if (!launched && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open the update link.')),
+        SnackBar(content: Text(AppLocalizations.of(context)!.openUpdateLinkError)),
       );
     }
   }
@@ -99,16 +100,17 @@ class _AboutPageState extends State<AboutPage> {
   }
 
   Widget _buildShareAppPanel() {
+    final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
 
     return GlassPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _sectionHeader(FontAwesomeIcons.shareNodes, const Color(0xFF2B7FFF), 'Share app'),
+          _sectionHeader(FontAwesomeIcons.shareNodes, const Color(0xFF2B7FFF), l10n.shareAppSection),
           const SizedBox(height: 12),
           Text(
-            'Scan the QR code or share the link so others can install eBongabong Calendar.',
+            l10n.shareAppHint,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
@@ -132,7 +134,7 @@ class _AboutPageState extends State<AboutPage> {
             ),
             onPressed: () => unawaited(_shareApp()),
             icon: const FaIcon(FontAwesomeIcons.shareNodes, size: 14),
-            label: const Text('Share download link'),
+            label: Text(l10n.shareDownloadLinkButton),
           ),
         ],
       ),
@@ -140,6 +142,7 @@ class _AboutPageState extends State<AboutPage> {
   }
 
   Widget _buildUpdatesPanel() {
+    final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
     final release = _latestRelease;
 
@@ -147,11 +150,11 @@ class _AboutPageState extends State<AboutPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _sectionHeader(FontAwesomeIcons.arrowsRotate, const Color(0xFF1F9D65), 'Updates'),
+          _sectionHeader(FontAwesomeIcons.arrowsRotate, const Color(0xFF1F9D65), l10n.updatesSection),
           const SizedBox(height: 12),
           if (widget.updateService == null)
             Text(
-              "Update checking isn't available on this build.",
+              l10n.updateCheckingUnavailable,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -172,7 +175,7 @@ class _AboutPageState extends State<AboutPage> {
               Text(_error!, style: TextStyle(color: colorScheme.error))
             else if (release != null && release.isNewerThanInstalled) ...[
               Text(
-                'Version ${release.version} is available.',
+                l10n.versionAvailable(release.version),
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 10),
@@ -183,7 +186,7 @@ class _AboutPageState extends State<AboutPage> {
                 ),
                 onPressed: () => unawaited(_openDownload(release.downloadUrl)),
                 icon: const FaIcon(FontAwesomeIcons.download, size: 14),
-                label: const Text('Update now'),
+                label: Text(l10n.updateNowButton),
               ),
               const SizedBox(height: 12),
             ] else if (release != null) ...[
@@ -191,7 +194,7 @@ class _AboutPageState extends State<AboutPage> {
                 children: [
                   FaIcon(FontAwesomeIcons.circleCheck, size: 16, color: colorScheme.primary),
                   const SizedBox(width: 8),
-                  Text("You're up to date.", style: Theme.of(context).textTheme.bodyMedium),
+                  Text(l10n.upToDateMessage, style: Theme.of(context).textTheme.bodyMedium),
                 ],
               ),
               const SizedBox(height: 12),
@@ -199,7 +202,7 @@ class _AboutPageState extends State<AboutPage> {
             OutlinedButton.icon(
               onPressed: _checking ? null : () => unawaited(_checkForUpdates()),
               icon: const FaIcon(FontAwesomeIcons.arrowsRotate, size: 13),
-              label: const Text('Check for updates'),
+              label: Text(l10n.checkForUpdatesButton),
             ),
           ],
         ],
@@ -209,12 +212,13 @@ class _AboutPageState extends State<AboutPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
     final release = _latestRelease;
 
     return GlassSubPage(
-      title: 'About',
-      subtitle: "Version info and what's new.",
+      title: l10n.aboutTile,
+      subtitle: l10n.aboutSubtitle,
       children: [
         GlassPanel(
           child: Row(
@@ -238,7 +242,7 @@ class _AboutPageState extends State<AboutPage> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      _installedVersion == null ? 'Loading version…' : 'Version $_installedVersion',
+                      _installedVersion == null ? l10n.loadingVersion : l10n.versionLabel(_installedVersion!),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
@@ -262,7 +266,7 @@ class _AboutPageState extends State<AboutPage> {
                 _sectionHeader(
                   FontAwesomeIcons.listCheck,
                   const Color(0xFF7C4DFF),
-                  "What's new in ${release.version}",
+                  l10n.whatsNewInVersion(release.version),
                 ),
                 const SizedBox(height: 12),
                 Text(

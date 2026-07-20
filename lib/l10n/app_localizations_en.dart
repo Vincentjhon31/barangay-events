@@ -346,8 +346,8 @@ class AppLocalizationsEn extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '# members',
-      one: '# member',
+      other: '$count members',
+      one: '$count member',
     );
     return '$_temp0 • code $code';
   }
@@ -357,8 +357,8 @@ class AppLocalizationsEn extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '# members',
-      one: '# member',
+      other: '$count members',
+      one: '$count member',
     );
     return '$_temp0';
   }
@@ -368,4 +368,627 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get joinButton => 'Join';
+
+  @override
+  String get eventTypeAll => 'All';
+
+  @override
+  String get eventTypePublic => 'Public';
+
+  @override
+  String get eventTypeGroup => 'Group';
+
+  @override
+  String get eventTypePersonal => 'Personal';
+
+  @override
+  String get eventDetailsTitle => 'Event Details';
+
+  @override
+  String get shareEvent => 'Share event';
+
+  @override
+  String get detailTime => 'Time';
+
+  @override
+  String get detailLocation => 'Location';
+
+  @override
+  String get detailPostedBy => 'Posted by';
+
+  @override
+  String postedByPrefix(String name) {
+    return 'By $name';
+  }
+
+  @override
+  String get detailDescription => 'Description';
+
+  @override
+  String get detailAttachment => 'Attachment';
+
+  @override
+  String get attachmentAvailable => 'Attachment available';
+
+  @override
+  String get comingSoon => 'Coming soon';
+
+  @override
+  String get editEventMenuItem => 'Edit event';
+
+  @override
+  String get deleteEventMenuItem => 'Delete event';
+
+  @override
+  String get groupEventFallbackName => 'Group event';
+
+  @override
+  String get loadingMembers => 'Loading members…';
+
+  @override
+  String get fileTypePdf => 'PDF Document';
+
+  @override
+  String get fileTypeImage => 'Image';
+
+  @override
+  String get fileTypeVideo => 'Video';
+
+  @override
+  String get fileTypeWord => 'Word Document';
+
+  @override
+  String get fileTypeSpreadsheet => 'Spreadsheet';
+
+  @override
+  String addedEventToGroup(String title, String groupName) {
+    return 'Added \"$title\" to $groupName.';
+  }
+
+  @override
+  String addedEventToCalendar(String title) {
+    return 'Added \"$title\" to the calendar.';
+  }
+
+  @override
+  String get editEventTitle => 'Edit Event';
+
+  @override
+  String get addEventTitle => 'Add Event';
+
+  @override
+  String get editEventSubtitle => 'Update the details for this event.';
+
+  @override
+  String get addEventSubtitle => 'Share something happening in the barangay.';
+
+  @override
+  String get typeHelperGroup =>
+      'Only members of the group you pick can see this.';
+
+  @override
+  String get typeHelperPersonal => 'Only you can see this.';
+
+  @override
+  String get typeHelperPublic => 'Everyone in the app can see this.';
+
+  @override
+  String get typeHelperRestrictedSuffix =>
+      'Only verified LGU members can post Group events, and only the admin can post Public events.';
+
+  @override
+  String get personalEventLabel => 'Personal event';
+
+  @override
+  String get noGroupsYetError =>
+      'You have no groups yet — create one in the Groups tab first.';
+
+  @override
+  String get postToGroupLabel => 'Post to group';
+
+  @override
+  String get eventTitleLabel => 'Event title';
+
+  @override
+  String get eventTitleHint => 'e.g. Barangay Assembly';
+
+  @override
+  String get locationHint => 'e.g. Barangay Hall';
+
+  @override
+  String get additionalDetailsLabel => 'Additional Details (optional)';
+
+  @override
+  String get additionalDetailsHint => 'Add a short note for residents';
+
+  @override
+  String get multiDayEventLabel => 'Multi-day event';
+
+  @override
+  String get multiDayEventHint =>
+      'Spans more than one day, e.g. a 3-day fiesta.';
+
+  @override
+  String get startDateLabel => 'Start date';
+
+  @override
+  String get endDateLabel => 'End date';
+
+  @override
+  String get dateLabel => 'Date';
+
+  @override
+  String get defaultStartTimeLabel => 'Default start time';
+
+  @override
+  String get startTimeLabel => 'Start time';
+
+  @override
+  String get defaultEndTimeLabel => 'Default end time';
+
+  @override
+  String get endTimeLabel => 'End time';
+
+  @override
+  String get changeButton => 'Change';
+
+  @override
+  String get overlapsWithOne => 'Overlaps with an existing event:';
+
+  @override
+  String overlapsWithMany(int count) {
+    return 'Overlaps with $count existing events:';
+  }
+
+  @override
+  String get adjustOverlapHint =>
+      'Adjust the time or date range to clear the overlap.';
+
+  @override
+  String get noFreeSlotHint => 'No free slot left that day — try another date.';
+
+  @override
+  String freeSlotSuggestion(String start, String end) {
+    return 'Free slot: $start – $end · Tap to use';
+  }
+
+  @override
+  String get overlapDialogTitleOne => 'This overlaps with an existing event';
+
+  @override
+  String overlapDialogTitleMany(int count) {
+    return 'This overlaps with $count existing events';
+  }
+
+  @override
+  String get overlapDialogBody =>
+      'You can still save it, but people may see two events scheduled at the same time:';
+
+  @override
+  String get proceedAnyway => 'Proceed anyway';
+
+  @override
+  String get savingButton => 'Saving...';
+
+  @override
+  String get saveChangesButton => 'Save changes';
+
+  @override
+  String get saveEventButton => 'Save event';
+
+  @override
+  String get titleLocationRequired => 'Title and location are required.';
+
+  @override
+  String get pastDateError => 'Events can\'t be added on a past date.';
+
+  @override
+  String get endAfterStartMultiDay => 'End must be after start.';
+
+  @override
+  String get endAfterStartSingleDay => 'End time must be after start time.';
+
+  @override
+  String get pickGroupError =>
+      'Pick a group for this event — create or join one in the Groups tab.';
+
+  @override
+  String saveEventError(String error) {
+    return 'Could not save the event: $error';
+  }
+
+  @override
+  String get perDayScheduleTitle => 'Per-day schedule';
+
+  @override
+  String get perDayScheduleHint =>
+      'Every day uses the default time above unless you customize it — e.g. a full day on day 1, just a few hours on day 2.';
+
+  @override
+  String defaultTimeRangeSuffix(String start, String end) {
+    return '$start – $end (default)';
+  }
+
+  @override
+  String timeRange(String start, String end) {
+    return '$start – $end';
+  }
+
+  @override
+  String get resetButton => 'Reset';
+
+  @override
+  String get allDayButton => 'All day';
+
+  @override
+  String get customizeButton => 'Customize';
+
+  @override
+  String get securityTile => 'Security';
+
+  @override
+  String get securityTileCaption => 'Change your email and password';
+
+  @override
+  String get securityTitle => 'Security';
+
+  @override
+  String get securitySubtitle => 'Manage your sign-in email and password.';
+
+  @override
+  String get securityEmailSectionTitle => 'Email';
+
+  @override
+  String securityCurrentEmail(String email) {
+    return 'Current: $email';
+  }
+
+  @override
+  String get newEmailLabel => 'New email';
+
+  @override
+  String get updateEmailButton => 'Update email';
+
+  @override
+  String get updatingButton => 'Updating...';
+
+  @override
+  String get invalidEmailError => 'Enter a valid email address.';
+
+  @override
+  String get sameEmailError => 'That\'s already your current email.';
+
+  @override
+  String get emailUpdateSuccess =>
+      'Check your new email address for a confirmation link — the change takes effect once you click it.';
+
+  @override
+  String updateEmailError(String error) {
+    return 'Could not update email: $error';
+  }
+
+  @override
+  String get securityPasswordSectionTitle => 'Password';
+
+  @override
+  String get newPasswordLabel => 'New password';
+
+  @override
+  String get confirmNewPasswordLabel => 'Confirm new password';
+
+  @override
+  String get showPasswordTooltip => 'Show password';
+
+  @override
+  String get hidePasswordTooltip => 'Hide password';
+
+  @override
+  String get updatePasswordButton => 'Update password';
+
+  @override
+  String get passwordTooShortError => 'Password must be at least 6 characters.';
+
+  @override
+  String get passwordMismatchError => 'Passwords do not match.';
+
+  @override
+  String get passwordUpdateSuccess => 'Password updated.';
+
+  @override
+  String updatePasswordError(String error) {
+    return 'Could not update password: $error';
+  }
+
+  @override
+  String get createGroupTitle => 'Create a group';
+
+  @override
+  String get createGroupSubtitle =>
+      'Set up a space to share events with a specific circle of people.';
+
+  @override
+  String get howGroupsWorkTitle => 'How groups work';
+
+  @override
+  String get howGroupsWorkBody =>
+      'A group is like a group chat for a specific circle — your purok, an office, a league. Everyone who joins sees every \"Group\" event posted here, and only members see them. Once you create it, you get a 6-character code to share so others can join — and you can manage who\'s in it from the group\'s member list afterward.';
+
+  @override
+  String get groupNameLabel => 'Group name';
+
+  @override
+  String get groupNameHint => 'e.g. Purok 3 Updates';
+
+  @override
+  String get privateGroupLabel => 'Private group';
+
+  @override
+  String get privateGroupHint =>
+      'Hidden from search — people need your code, and you approve who joins. Good for smaller or more sensitive groups.';
+
+  @override
+  String get creatingButton => 'Creating...';
+
+  @override
+  String get createGroupButton => 'Create group';
+
+  @override
+  String get enterGroupNameError => 'Enter a group name first.';
+
+  @override
+  String get createGroupError =>
+      'Could not create the group. Please try again.';
+
+  @override
+  String get joinWithCodeTitle => 'Join with a code';
+
+  @override
+  String get joinWithCodeSubtitle =>
+      'Have an invite code? Use it to join that group.';
+
+  @override
+  String get howJoiningWorksTitle => 'How joining works';
+
+  @override
+  String get howJoiningWorksBody =>
+      'Ask whoever created the group for their 6-character code — it\'s shown right on the group\'s member page. Entering it here works for private groups too: instead of joining instantly, it sends a request the group\'s admin approves.';
+
+  @override
+  String get groupCodeLabel => 'Group code';
+
+  @override
+  String get groupCodeHint => 'e.g. QXK2P9';
+
+  @override
+  String get joiningButton => 'Joining...';
+
+  @override
+  String get joinGroupButton => 'Join group';
+
+  @override
+  String get enterCodeError => 'Enter a group code first.';
+
+  @override
+  String get joinGroupError => 'Could not join. Check the code and try again.';
+
+  @override
+  String get couldNotLoadMembersError =>
+      'Could not load members. Please try again.';
+
+  @override
+  String promotedToAdminMessage(String name) {
+    return '$name is now an admin.';
+  }
+
+  @override
+  String get couldNotPromoteError =>
+      'Could not promote this member. Please try again.';
+
+  @override
+  String removeMemberTitle(String name) {
+    return 'Remove $name?';
+  }
+
+  @override
+  String get removeMemberBody =>
+      'They will lose access to this group\'s events until they rejoin with the code.';
+
+  @override
+  String get removeButton => 'Remove';
+
+  @override
+  String removedMemberMessage(String name) {
+    return 'Removed $name.';
+  }
+
+  @override
+  String get couldNotRemoveError =>
+      'Could not remove this member. Please try again.';
+
+  @override
+  String get verifiedGroupMarked => 'Marked as an official group.';
+
+  @override
+  String get verifiedGroupUnmarked => 'Removed the official mark.';
+
+  @override
+  String get couldNotUpdateGroupError =>
+      'Could not update this group. Please try again.';
+
+  @override
+  String get noOtherMembersError =>
+      'No other members to transfer ownership to.';
+
+  @override
+  String get transferOwnershipToTitle => 'Transfer ownership to...';
+
+  @override
+  String makeOwnerTitle(String name) {
+    return 'Make $name the owner?';
+  }
+
+  @override
+  String get makeOwnerBody =>
+      'They will be able to delete this group and remove fellow admins — privileges only the owner has. This cannot be undone by you afterward.';
+
+  @override
+  String get transferButton => 'Transfer';
+
+  @override
+  String ownershipTransferredMessage(String name) {
+    return '$name is now the owner.';
+  }
+
+  @override
+  String get couldNotTransferError =>
+      'Could not transfer ownership. Please try again.';
+
+  @override
+  String get copyCodeTooltip => 'Copy code';
+
+  @override
+  String codeCopiedMessage(String code) {
+    return 'Code $code copied.';
+  }
+
+  @override
+  String get verifiedOfficialGroup => 'Verified official group';
+
+  @override
+  String get notVerified => 'Not verified';
+
+  @override
+  String get removeMarkButton => 'Remove mark';
+
+  @override
+  String get markAsOfficialButton => 'Mark as official';
+
+  @override
+  String get staffTurnoverHint =>
+      'Staff turnover? Hand this group\'s owner-only privileges to another member.';
+
+  @override
+  String get transferOwnershipButton => 'Transfer ownership';
+
+  @override
+  String get invitePeopleTitle => 'Invite people';
+
+  @override
+  String invitePeopleBody(String action) {
+    return 'There\'s no user directory to add people from directly — share this code instead. Anyone who enters it $action.';
+  }
+
+  @override
+  String get joinsInstantlyAction => 'joins instantly';
+
+  @override
+  String get sendsJoinRequestAction => 'sends a request you approve';
+
+  @override
+  String get searchMembersLabel => 'Search members';
+
+  @override
+  String get searchMembersHint => 'Type a name';
+
+  @override
+  String get membersHeader => 'Members';
+
+  @override
+  String get noMembersYet => 'No members yet.';
+
+  @override
+  String noMembersMatch(String query) {
+    return 'No members match \"$query\".';
+  }
+
+  @override
+  String get adminBadge => 'Admin';
+
+  @override
+  String joinedDatePrefix(String date) {
+    return 'Joined $date';
+  }
+
+  @override
+  String get promoteToAdminMenuItem => 'Promote to admin';
+
+  @override
+  String get removeFromGroupMenuItem => 'Remove from group';
+
+  @override
+  String memberYouSuffix(String name) {
+    return '$name (You)';
+  }
+
+  @override
+  String get aboutSubtitle => 'Version info and what\'s new.';
+
+  @override
+  String get shareAppSection => 'Share app';
+
+  @override
+  String get shareAppHint =>
+      'Scan the QR code or share the link so others can install eBongabong Calendar.';
+
+  @override
+  String get shareDownloadLinkButton => 'Share download link';
+
+  @override
+  String get updatesSection => 'Updates';
+
+  @override
+  String get updateCheckingUnavailable =>
+      'Update checking isn\'t available on this build.';
+
+  @override
+  String versionAvailable(String version) {
+    return 'Version $version is available.';
+  }
+
+  @override
+  String get updateNowButton => 'Update now';
+
+  @override
+  String get upToDateMessage => 'You\'re up to date.';
+
+  @override
+  String get checkForUpdatesButton => 'Check for updates';
+
+  @override
+  String get checkUpdateError => 'Could not check for updates right now.';
+
+  @override
+  String get openUpdateLinkError => 'Could not open the update link.';
+
+  @override
+  String get loadingVersion => 'Loading version…';
+
+  @override
+  String versionLabel(String version) {
+    return 'Version $version';
+  }
+
+  @override
+  String whatsNewInVersion(String version) {
+    return 'What\'s new in $version';
+  }
+
+  @override
+  String get profilePictureTitle => 'Profile Picture';
+
+  @override
+  String get profilePictureSubtitle => 'Pick one — it saves right away.';
+
+  @override
+  String get couldNotSaveAvatarError =>
+      'Could not save your profile picture. Please try again.';
+
+  @override
+  String get avatarCategoryAnime => 'Anime';
+
+  @override
+  String get avatarCategoryAnimal => 'Animal';
+
+  @override
+  String get avatarCategoryPerson => 'Person';
 }

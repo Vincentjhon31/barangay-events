@@ -1,12 +1,21 @@
-// Supabase Edge Function: sends a push notification whenever a new row is
-// inserted into public.barangay_events. Triggered by a Database Webhook
-// (Database > Webhooks in the Supabase dashboard) — see the setup steps in
-// README.md's "Push Notifications" section.
+// Supabase Edge Function: sends a push notification whenever a row is
+// inserted into, updated in, or deleted from public.barangay_events.
+// Triggered by a Database Webhook (Database > Webhooks in the Supabase
+// dashboard) — see the setup steps in README.md's "Push Notifications"
+// section. The webhook must be configured to fire on Insert, Update, AND
+// Delete (not just Insert) for the update/delete pushes below to ever
+// reach this function.
 //
 // Visibility mirrors the app's own event RLS rules exactly:
 //   - event_type = 'public'  -> FCM topic "public-events" (everyone)
 //   - event_type = 'shared'  -> FCM topic "group-<group_id>" (that group's members)
 //   - event_type = 'personal' or a 'shared' row with no group_id -> no push
+//
+// UPDATE and DELETE pushes exist so people who already saw an event don't
+// silently miss a reschedule/relocation/cancellation — the exact case a
+// notification system is for. They're deliberately terser than the
+// INSERT message (no "posted by" line) since a reschedule ping doesn't
+// need to re-introduce the event the way its original post did.
 //
 // Needs one secret, set once via (PowerShell):
 //   $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Get-Content -Raw "path\to\service-account.json")))
@@ -34,7 +43,12 @@ interface BarangayEventRow {
 interface WebhookPayload {
   type: "INSERT" | "UPDATE" | "DELETE";
   table: string;
-  record: BarangayEventRow;
+  // Supabase's webhook payload only populates `record` for INSERT/UPDATE
+  // and `old_record` for UPDATE/DELETE — a DELETE has no `record` at all,
+  // so the deleted row's data (title, group, etc.) has to come from
+  // `old_record` instead.
+  record: BarangayEventRow | null;
+  old_record: BarangayEventRow | null;
 }
 
 const serviceAccountJsonB64 = Deno.env.get("FCM_SERVICE_ACCOUNT_JSON_B64");
@@ -61,7 +75,23 @@ function resolveTopic(event: BarangayEventRow): string | null {
   return null;
 }
 
-function buildMessage(event: BarangayEventRow): { title: string; body: string } {
+function buildMessage(
+  event: BarangayEventRow,
+  changeType: "INSERT" | "UPDATE" | "DELETE",
+): { title: string; body: string } {
+  if (changeType === "UPDATE") {
+    return {
+      title: event.event_type === "shared" ? (event.group_name ?? "Group update") : "Event updated",
+      body: `"${event.title}" was updated — check the app for the latest details.`,
+    };
+  }
+  if (changeType === "DELETE") {
+    return {
+      title: event.event_type === "shared" ? (event.group_name ?? "Group update") : "Event cancelled",
+      body: `"${event.title}" was cancelled/removed.`,
+    };
+  }
+
   if (event.event_type === "shared") {
     return {
       title: event.group_name ?? "Group update",
@@ -101,23 +131,29 @@ Deno.serve(async (req) => {
     return new Response("Invalid JSON body", { status: 400 });
   }
 
-  if (payload.type !== "INSERT" || payload.table !== "barangay_events") {
-    return new Response("Ignored: not a barangay_events insert", { status: 200 });
+  if (payload.table !== "barangay_events") {
+    return new Response("Ignored: not a barangay_events change", { status: 200 });
   }
 
-  const event = payload.record;
+  // DELETE rows have no `record` — the deleted data only ever lives in
+  // `old_record`. INSERT/UPDATE always have `record`.
+  const event = payload.record ?? payload.old_record;
+  if (!event) {
+    return new Response("Ignored: no row data in payload", { status: 200 });
+  }
+
   const topic = resolveTopic(event);
   if (!topic) {
     return new Response("Ignored: personal event, no push needed", { status: 200 });
   }
 
-  const { title, body } = buildMessage(event);
+  const { title, body } = buildMessage(event, payload.type);
 
   try {
     await getMessaging(firebaseApp).send({
       topic,
       notification: { title, body },
-      data: { eventId: event.id },
+      data: { eventId: event.id, changeType: payload.type },
     });
   } catch (error) {
     console.error("FCM send failed:", error);

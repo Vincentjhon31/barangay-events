@@ -5,6 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'auth_service.dart';
 import 'avatar_catalog.dart';
+import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
 
 /// Profile-picture selection — a fixed catalog of bundled images grouped by
@@ -55,19 +56,28 @@ class _AvatarPickerPageState extends State<AvatarPickerPage> {
       if (!mounted) return;
       setState(() => _saving = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not save your profile picture. Please try again.')),
+        SnackBar(content: Text(AppLocalizations.of(context)!.couldNotSaveAvatarError)),
       );
     }
   }
 
+  String _categoryLabel(AppLocalizations l10n, AvatarCategory category) {
+    return switch (category) {
+      AvatarCategory.anime => l10n.avatarCategoryAnime,
+      AvatarCategory.animal => l10n.avatarCategoryAnimal,
+      AvatarCategory.person => l10n.avatarCategoryPerson,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
     final currentAvatar = widget.initialProfile?.avatarUrl;
 
     return GlassSubPage(
-      title: 'Profile Picture',
-      subtitle: 'Pick one — it saves right away.',
+      title: l10n.profilePictureTitle,
+      subtitle: l10n.profilePictureSubtitle,
       children: [
         GlassPanel(
           child: SegmentedButton<AvatarCategory>(
@@ -84,7 +94,7 @@ class _AvatarPickerPageState extends State<AvatarPickerPage> {
               for (final category in AvatarCategory.values)
                 ButtonSegment<AvatarCategory>(
                   value: category,
-                  label: Text(category.label),
+                  label: Text(_categoryLabel(l10n, category)),
                 ),
             ],
             selected: {_category},

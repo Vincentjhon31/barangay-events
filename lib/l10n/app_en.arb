@@ -135,17 +135,296 @@
   },
   "copyGroupCode": "Copy group code",
   "leaveButton": "Leave",
-  "memberCountWithCode": "{count, plural, one{# member} other{# members}} • code {code}",
+  "memberCountWithCode": "{count, plural, one{{count} member} other{{count} members}} • code {code}",
   "@memberCountWithCode": {
     "placeholders": {
       "count": { "type": "int" },
       "code": { "type": "String" }
     }
   },
-  "memberCount": "{count, plural, one{# member} other{# members}}",
+  "memberCount": "{count, plural, one{{count} member} other{{count} members}}",
   "@memberCount": {
     "placeholders": { "count": { "type": "int" } }
   },
   "joinedButton": "Joined",
-  "joinButton": "Join"
+  "joinButton": "Join",
+
+  "eventTypeAll": "All",
+  "eventTypePublic": "Public",
+  "eventTypeGroup": "Group",
+  "eventTypePersonal": "Personal",
+
+  "eventDetailsTitle": "Event Details",
+  "shareEvent": "Share event",
+  "detailTime": "Time",
+  "detailLocation": "Location",
+  "detailPostedBy": "Posted by",
+  "postedByPrefix": "By {name}",
+  "@postedByPrefix": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "detailDescription": "Description",
+  "detailAttachment": "Attachment",
+  "attachmentAvailable": "Attachment available",
+  "comingSoon": "Coming soon",
+  "editEventMenuItem": "Edit event",
+  "deleteEventMenuItem": "Delete event",
+  "groupEventFallbackName": "Group event",
+  "loadingMembers": "Loading members…",
+  "fileTypePdf": "PDF Document",
+  "fileTypeImage": "Image",
+  "fileTypeVideo": "Video",
+  "fileTypeWord": "Word Document",
+  "fileTypeSpreadsheet": "Spreadsheet",
+
+  "addedEventToGroup": "Added \"{title}\" to {groupName}.",
+  "@addedEventToGroup": {
+    "placeholders": {
+      "title": { "type": "String" },
+      "groupName": { "type": "String" }
+    }
+  },
+  "addedEventToCalendar": "Added \"{title}\" to the calendar.",
+  "@addedEventToCalendar": {
+    "placeholders": { "title": { "type": "String" } }
+  },
+
+  "editEventTitle": "Edit Event",
+  "addEventTitle": "Add Event",
+  "editEventSubtitle": "Update the details for this event.",
+  "addEventSubtitle": "Share something happening in the barangay.",
+  "typeHelperGroup": "Only members of the group you pick can see this.",
+  "typeHelperPersonal": "Only you can see this.",
+  "typeHelperPublic": "Everyone in the app can see this.",
+  "typeHelperRestrictedSuffix": "Only verified LGU members can post Group events, and only the admin can post Public events.",
+  "personalEventLabel": "Personal event",
+  "noGroupsYetError": "You have no groups yet — create one in the Groups tab first.",
+  "postToGroupLabel": "Post to group",
+  "eventTitleLabel": "Event title",
+  "eventTitleHint": "e.g. Barangay Assembly",
+  "locationHint": "e.g. Barangay Hall",
+  "additionalDetailsLabel": "Additional Details (optional)",
+  "additionalDetailsHint": "Add a short note for residents",
+  "multiDayEventLabel": "Multi-day event",
+  "multiDayEventHint": "Spans more than one day, e.g. a 3-day fiesta.",
+  "startDateLabel": "Start date",
+  "endDateLabel": "End date",
+  "dateLabel": "Date",
+  "defaultStartTimeLabel": "Default start time",
+  "startTimeLabel": "Start time",
+  "defaultEndTimeLabel": "Default end time",
+  "endTimeLabel": "End time",
+  "changeButton": "Change",
+  "overlapsWithOne": "Overlaps with an existing event:",
+  "overlapsWithMany": "Overlaps with {count} existing events:",
+  "@overlapsWithMany": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "adjustOverlapHint": "Adjust the time or date range to clear the overlap.",
+  "noFreeSlotHint": "No free slot left that day — try another date.",
+  "freeSlotSuggestion": "Free slot: {start} – {end} · Tap to use",
+  "@freeSlotSuggestion": {
+    "placeholders": {
+      "start": { "type": "String" },
+      "end": { "type": "String" }
+    }
+  },
+  "overlapDialogTitleOne": "This overlaps with an existing event",
+  "overlapDialogTitleMany": "This overlaps with {count} existing events",
+  "@overlapDialogTitleMany": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "overlapDialogBody": "You can still save it, but people may see two events scheduled at the same time:",
+  "proceedAnyway": "Proceed anyway",
+  "savingButton": "Saving...",
+  "saveChangesButton": "Save changes",
+  "saveEventButton": "Save event",
+  "titleLocationRequired": "Title and location are required.",
+  "pastDateError": "Events can't be added on a past date.",
+  "endAfterStartMultiDay": "End must be after start.",
+  "endAfterStartSingleDay": "End time must be after start time.",
+  "pickGroupError": "Pick a group for this event — create or join one in the Groups tab.",
+  "saveEventError": "Could not save the event: {error}",
+  "@saveEventError": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "perDayScheduleTitle": "Per-day schedule",
+  "perDayScheduleHint": "Every day uses the default time above unless you customize it — e.g. a full day on day 1, just a few hours on day 2.",
+  "defaultTimeRangeSuffix": "{start} – {end} (default)",
+  "@defaultTimeRangeSuffix": {
+    "placeholders": {
+      "start": { "type": "String" },
+      "end": { "type": "String" }
+    }
+  },
+  "timeRange": "{start} – {end}",
+  "@timeRange": {
+    "placeholders": {
+      "start": { "type": "String" },
+      "end": { "type": "String" }
+    }
+  },
+  "resetButton": "Reset",
+  "allDayButton": "All day",
+  "customizeButton": "Customize",
+
+  "securityTile": "Security",
+  "securityTileCaption": "Change your email and password",
+  "securityTitle": "Security",
+  "securitySubtitle": "Manage your sign-in email and password.",
+  "securityEmailSectionTitle": "Email",
+  "securityCurrentEmail": "Current: {email}",
+  "@securityCurrentEmail": {
+    "placeholders": { "email": { "type": "String" } }
+  },
+  "newEmailLabel": "New email",
+  "updateEmailButton": "Update email",
+  "updatingButton": "Updating...",
+  "invalidEmailError": "Enter a valid email address.",
+  "sameEmailError": "That's already your current email.",
+  "emailUpdateSuccess": "Check your new email address for a confirmation link — the change takes effect once you click it.",
+  "updateEmailError": "Could not update email: {error}",
+  "@updateEmailError": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "securityPasswordSectionTitle": "Password",
+  "newPasswordLabel": "New password",
+  "confirmNewPasswordLabel": "Confirm new password",
+  "showPasswordTooltip": "Show password",
+  "hidePasswordTooltip": "Hide password",
+  "updatePasswordButton": "Update password",
+  "passwordTooShortError": "Password must be at least 6 characters.",
+  "passwordMismatchError": "Passwords do not match.",
+  "passwordUpdateSuccess": "Password updated.",
+  "updatePasswordError": "Could not update password: {error}",
+  "@updatePasswordError": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "createGroupTitle": "Create a group",
+  "createGroupSubtitle": "Set up a space to share events with a specific circle of people.",
+  "howGroupsWorkTitle": "How groups work",
+  "howGroupsWorkBody": "A group is like a group chat for a specific circle — your purok, an office, a league. Everyone who joins sees every \"Group\" event posted here, and only members see them. Once you create it, you get a 6-character code to share so others can join — and you can manage who's in it from the group's member list afterward.",
+  "groupNameLabel": "Group name",
+  "groupNameHint": "e.g. Purok 3 Updates",
+  "privateGroupLabel": "Private group",
+  "privateGroupHint": "Hidden from search — people need your code, and you approve who joins. Good for smaller or more sensitive groups.",
+  "creatingButton": "Creating...",
+  "createGroupButton": "Create group",
+  "enterGroupNameError": "Enter a group name first.",
+  "createGroupError": "Could not create the group. Please try again.",
+
+  "joinWithCodeTitle": "Join with a code",
+  "joinWithCodeSubtitle": "Have an invite code? Use it to join that group.",
+  "howJoiningWorksTitle": "How joining works",
+  "howJoiningWorksBody": "Ask whoever created the group for their 6-character code — it's shown right on the group's member page. Entering it here works for private groups too: instead of joining instantly, it sends a request the group's admin approves.",
+  "groupCodeLabel": "Group code",
+  "groupCodeHint": "e.g. QXK2P9",
+  "joiningButton": "Joining...",
+  "joinGroupButton": "Join group",
+  "enterCodeError": "Enter a group code first.",
+  "joinGroupError": "Could not join. Check the code and try again.",
+
+  "couldNotLoadMembersError": "Could not load members. Please try again.",
+  "promotedToAdminMessage": "{name} is now an admin.",
+  "@promotedToAdminMessage": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "couldNotPromoteError": "Could not promote this member. Please try again.",
+  "removeMemberTitle": "Remove {name}?",
+  "@removeMemberTitle": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "removeMemberBody": "They will lose access to this group's events until they rejoin with the code.",
+  "removeButton": "Remove",
+  "removedMemberMessage": "Removed {name}.",
+  "@removedMemberMessage": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "couldNotRemoveError": "Could not remove this member. Please try again.",
+  "verifiedGroupMarked": "Marked as an official group.",
+  "verifiedGroupUnmarked": "Removed the official mark.",
+  "couldNotUpdateGroupError": "Could not update this group. Please try again.",
+  "noOtherMembersError": "No other members to transfer ownership to.",
+  "transferOwnershipToTitle": "Transfer ownership to...",
+  "makeOwnerTitle": "Make {name} the owner?",
+  "@makeOwnerTitle": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "makeOwnerBody": "They will be able to delete this group and remove fellow admins — privileges only the owner has. This cannot be undone by you afterward.",
+  "transferButton": "Transfer",
+  "ownershipTransferredMessage": "{name} is now the owner.",
+  "@ownershipTransferredMessage": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "couldNotTransferError": "Could not transfer ownership. Please try again.",
+  "copyCodeTooltip": "Copy code",
+  "codeCopiedMessage": "Code {code} copied.",
+  "@codeCopiedMessage": {
+    "placeholders": { "code": { "type": "String" } }
+  },
+  "verifiedOfficialGroup": "Verified official group",
+  "notVerified": "Not verified",
+  "removeMarkButton": "Remove mark",
+  "markAsOfficialButton": "Mark as official",
+  "staffTurnoverHint": "Staff turnover? Hand this group's owner-only privileges to another member.",
+  "transferOwnershipButton": "Transfer ownership",
+  "invitePeopleTitle": "Invite people",
+  "invitePeopleBody": "There's no user directory to add people from directly — share this code instead. Anyone who enters it {action}.",
+  "@invitePeopleBody": {
+    "placeholders": { "action": { "type": "String" } }
+  },
+  "joinsInstantlyAction": "joins instantly",
+  "sendsJoinRequestAction": "sends a request you approve",
+  "searchMembersLabel": "Search members",
+  "searchMembersHint": "Type a name",
+  "membersHeader": "Members",
+  "noMembersYet": "No members yet.",
+  "noMembersMatch": "No members match \"{query}\".",
+  "@noMembersMatch": {
+    "placeholders": { "query": { "type": "String" } }
+  },
+  "adminBadge": "Admin",
+  "joinedDatePrefix": "Joined {date}",
+  "@joinedDatePrefix": {
+    "placeholders": { "date": { "type": "String" } }
+  },
+  "promoteToAdminMenuItem": "Promote to admin",
+  "removeFromGroupMenuItem": "Remove from group",
+  "memberYouSuffix": "{name} (You)",
+  "@memberYouSuffix": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "aboutSubtitle": "Version info and what's new.",
+  "shareAppSection": "Share app",
+  "shareAppHint": "Scan the QR code or share the link so others can install eBongabong Calendar.",
+  "shareDownloadLinkButton": "Share download link",
+  "updatesSection": "Updates",
+  "updateCheckingUnavailable": "Update checking isn't available on this build.",
+  "versionAvailable": "Version {version} is available.",
+  "@versionAvailable": {
+    "placeholders": { "version": { "type": "String" } }
+  },
+  "updateNowButton": "Update now",
+  "upToDateMessage": "You're up to date.",
+  "checkForUpdatesButton": "Check for updates",
+  "checkUpdateError": "Could not check for updates right now.",
+  "openUpdateLinkError": "Could not open the update link.",
+  "loadingVersion": "Loading version…",
+  "versionLabel": "Version {version}",
+  "@versionLabel": {
+    "placeholders": { "version": { "type": "String" } }
+  },
+  "whatsNewInVersion": "What's new in {version}",
+  "@whatsNewInVersion": {
+    "placeholders": { "version": { "type": "String" } }
+  },
+
+  "profilePictureTitle": "Profile Picture",
+  "profilePictureSubtitle": "Pick one — it saves right away.",
+  "couldNotSaveAvatarError": "Could not save your profile picture. Please try again.",
+  "avatarCategoryAnime": "Anime",
+  "avatarCategoryAnimal": "Animal",
+  "avatarCategoryPerson": "Person"
 }

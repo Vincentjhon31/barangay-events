@@ -15,6 +15,7 @@ import 'join_group_page.dart';
 import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
 import 'responsive_scale.dart';
+import 'security_page.dart';
 import 'theme_controller.dart';
 
 /// The Profile tab: a hub that shows the user's identity and links out to
@@ -80,6 +81,14 @@ class _ProfileTabState extends State<ProfileTab> {
       setState(() => _profile = updated);
       widget.onProfileSaved?.call();
     }
+  }
+
+  void _openSecurity() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SecurityPage(authService: widget.authService),
+      ),
+    );
   }
 
   void _openSettings() {
@@ -267,6 +276,17 @@ class _ProfileTabState extends State<ProfileTab> {
                 title: l10n.profileInformationTile,
                 subtitle: l10n.profileInformationCaption,
                 onTap: () => unawaited(_openProfileInformation()),
+              ),
+              Divider(
+                height: 8,
+                color: colorScheme.onSurface.withValues(alpha: 0.08),
+              ),
+              QuickActionTile(
+                key: const Key('profile-security-tile'),
+                icon: FontAwesomeIcons.shieldHalved,
+                title: l10n.securityTile,
+                subtitle: l10n.securityTileCaption,
+                onTap: _openSecurity,
               ),
               Divider(
                 height: 8,
@@ -573,6 +593,7 @@ class GroupsTab extends StatefulWidget {
     required this.eventRepository,
     required this.currentUserId,
     required this.canCreateGroups,
+    this.isSuperadmin = false,
     this.onGroupsChanged,
   });
 
@@ -586,6 +607,11 @@ class GroupsTab extends StatefulWidget {
   /// privilege — citizens can still join existing groups by search or
   /// code, just not create new ones.
   final bool canCreateGroups;
+
+  /// Lets [GroupMembersPage] surface the verified/official badge toggle,
+  /// and lets ownership transfer fall back to a superadmin for a group
+  /// whose creator already left/was demoted.
+  final bool isSuperadmin;
   final VoidCallback? onGroupsChanged;
 
   @override
@@ -744,6 +770,7 @@ class _GroupsTabState extends State<GroupsTab> {
           group: group,
           eventRepository: widget.eventRepository,
           currentUserId: widget.currentUserId,
+          isSuperadmin: widget.isSuperadmin,
         ),
       ),
     );
@@ -757,9 +784,11 @@ class _GroupsTabState extends State<GroupsTab> {
     widget.onGroupsChanged?.call();
   }
 
+  // A blank [_searchController] deliberately still runs the search — the
+  // repository treats an empty query as "browse all public groups" rather
+  // than requiring a name to be typed first.
   Future<void> _search() async {
     final query = _searchController.text.trim();
-    if (query.isEmpty) return;
 
     setState(() => _searching = true);
     try {
@@ -1189,14 +1218,20 @@ class _GroupsTabState extends State<GroupsTab> {
               ),
               IconButton(
                 tooltip: _searchExpanded ? l10n.closeSearch : l10n.searchGroups,
-                onPressed: () => setState(() {
-                  _searchExpanded = !_searchExpanded;
-                  if (!_searchExpanded) {
-                    _searched = false;
-                    _searchResults = const [];
-                    _searchController.clear();
-                  }
-                }),
+                onPressed: () {
+                  final opening = !_searchExpanded;
+                  setState(() {
+                    _searchExpanded = opening;
+                    if (!opening) {
+                      _searched = false;
+                      _searchResults = const [];
+                      _searchController.clear();
+                    }
+                  });
+                  // Browse all public groups immediately on open, rather
+                  // than requiring a name to be typed first.
+                  if (opening) unawaited(_search());
+                },
                 icon: FaIcon(
                   _searchExpanded
                       ? FontAwesomeIcons.xmark

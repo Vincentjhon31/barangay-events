@@ -119,6 +119,16 @@ abstract class AppAuthService {
   });
   Future<void> updateDisplayName(String displayName);
 
+  /// Changes the signed-in user's sign-in email. Supabase emails a
+  /// confirmation link to the *new* address — the change only takes effect
+  /// once that's clicked, so [currentUser]'s email may briefly lag behind
+  /// what was just submitted here.
+  Future<void> updateEmail(String newEmail);
+
+  /// Changes the signed-in user's password immediately — unlike
+  /// [updateEmail], there's no confirmation step.
+  Future<void> updatePassword(String newPassword);
+
   /// Sets the signed-in user's profile picture to one of the bundled
   /// options in `lib/avatar_catalog.dart` (an asset path, e.g.
   /// `assets/avatars/animal/animal_01.png`) — never an uploaded/captured
@@ -273,6 +283,16 @@ class SupabaseAuthService implements AppAuthService {
         displayName: displayName,
       ),
     );
+  }
+
+  @override
+  Future<void> updateEmail(String newEmail) async {
+    await _client.auth.updateUser(UserAttributes(email: newEmail));
+  }
+
+  @override
+  Future<void> updatePassword(String newPassword) async {
+    await _client.auth.updateUser(UserAttributes(password: newPassword));
   }
 
   @override
@@ -442,6 +462,31 @@ class MemoryAuthService implements AppAuthService {
       lguRequestStatus: current.lguRequestStatus,
     );
     _controller.add(true);
+  }
+
+  @override
+  Future<void> updateEmail(String newEmail) async {
+    final current = _currentUser;
+    if (current == null) return;
+    _currentUser = AppUserProfile(
+      id: current.id,
+      email: newEmail,
+      displayName: current.displayName,
+      department: current.department,
+      phoneNumber: current.phoneNumber,
+      streetAddress: current.streetAddress,
+      barangay: current.barangay,
+      city: current.city,
+      bio: current.bio,
+      avatarUrl: current.avatarUrl,
+      role: current.role,
+      lguRequestStatus: current.lguRequestStatus,
+    );
+  }
+
+  @override
+  Future<void> updatePassword(String newPassword) async {
+    // No real backend in this test double — accepted as a no-op.
   }
 
   @override

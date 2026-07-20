@@ -7,16 +7,80 @@
   <style>
     :root {
       color-scheme: dark;
+      --bg-1: #05070C;
+      --bg-2: #0A0D14;
+      --text: #EAF2FF;
+      --text-muted: #9FB1CC;
+      --accent: #2B7FFF;
+      --link: #6EA8FF;
+      --border-soft: rgba(255, 255, 255, 0.08);
+      --card-bg: rgba(255, 255, 255, 0.05);
+      --card-border: rgba(255, 255, 255, 0.10);
+      --card-shadow: rgba(0, 0, 0, 0.25);
+      --input-bg: rgba(255, 255, 255, 0.04);
+      --input-border: rgba(255, 255, 255, 0.16);
+      --row-border: rgba(255, 255, 255, 0.06);
+      --row-hover: rgba(255, 255, 255, 0.03);
+      --detail-bg: rgba(255, 255, 255, 0.02);
+      --chip-bg: rgba(43, 127, 255, 0.14);
+      --chip-border: rgba(43, 127, 255, 0.3);
+      --danger-bg: rgba(229, 57, 53, 0.15);
+      --danger-fg: #FF9E9A;
+      --success-bg: rgba(31, 157, 101, 0.18);
+      --success-fg: #7CE0AE;
+      --info-bg: rgba(43, 127, 255, 0.15);
+      --info-fg: #9EC4FF;
+      --pending-bg: rgba(255, 167, 38, 0.18);
+      --pending-fg: #FFC066;
+      --icon-btn-bg: rgba(255, 255, 255, 0.05);
+      --icon-btn-border: rgba(255, 255, 255, 0.14);
+    }
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg-1: #F3F6FC;
+      --bg-2: #E7ECF5;
+      --text: #101828;
+      --text-muted: #5C6B85;
+      --accent: #2B7FFF;
+      --link: #1D63D6;
+      --border-soft: rgba(16, 24, 40, 0.08);
+      --card-bg: rgba(16, 24, 40, 0.03);
+      --card-border: rgba(16, 24, 40, 0.10);
+      --card-shadow: rgba(16, 24, 40, 0.10);
+      --input-bg: #FFFFFF;
+      --input-border: rgba(16, 24, 40, 0.16);
+      --row-border: rgba(16, 24, 40, 0.08);
+      --row-hover: rgba(16, 24, 40, 0.03);
+      --detail-bg: rgba(16, 24, 40, 0.025);
+      --chip-bg: rgba(43, 127, 255, 0.10);
+      --chip-border: rgba(43, 127, 255, 0.35);
+      --danger-bg: rgba(229, 57, 53, 0.12);
+      --danger-fg: #C62828;
+      --success-bg: rgba(31, 157, 101, 0.14);
+      --success-fg: #1B7A44;
+      --info-bg: rgba(43, 127, 255, 0.12);
+      --info-fg: #1D63D6;
+      --pending-bg: rgba(255, 167, 38, 0.16);
+      --pending-fg: #B5690A;
+      --icon-btn-bg: rgba(16, 24, 40, 0.04);
+      --icon-btn-border: rgba(16, 24, 40, 0.12);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
+      overflow-x: hidden;
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      background: linear-gradient(180deg, #05070C, #0A0D14);
-      color: #EAF2FF;
+      background: linear-gradient(180deg, var(--bg-1), var(--bg-2));
+      color: var(--text);
+      transition: background-color 0.2s ease, color 0.2s ease;
     }
     .page { max-width: 1080px; margin: 0 auto; padding: 28px 20px 60px; }
+    @media (max-width: 480px) {
+      .page { padding: 18px 14px 40px; }
+      .card { padding: 16px; }
+      .topbar-brand h1 { font-size: 14.5px; }
+    }
 
     /* ---- Top bar ---- */
     .topbar {
@@ -27,7 +91,7 @@
       row-gap: 14px;
       padding-bottom: 20px;
       margin-bottom: 28px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      border-bottom: 1px solid var(--border-soft);
     }
     .topbar-brand { display: flex; align-items: center; gap: 12px; }
     .topbar-brand img {
@@ -35,28 +99,45 @@
       box-shadow: 0 4px 14px rgba(43, 127, 255, 0.35);
     }
     .topbar-brand h1 { font-size: 16px; margin: 0; line-height: 1.3; }
-    .topbar-brand .tag { font-size: 12px; color: #9FB1CC; }
-    .topbar-account { display: flex; align-items: center; gap: 14px; }
-    .topbar-account .who { text-align: right; }
-    .topbar-account .email { font-size: 13px; font-weight: 700; }
-    .topbar-account .role { font-size: 11.5px; color: #9FB1CC; margin-top: 1px; }
+    .topbar-brand .tag { font-size: 12px; color: var(--text-muted); }
+    .topbar-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; row-gap: 10px; }
+    .icon-btn {
+      width: 36px; height: 36px;
+      flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 0; margin: 0;
+      border-radius: 50%;
+      background: var(--icon-btn-bg);
+      border: 1px solid var(--icon-btn-border);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .icon-btn:hover { background: var(--row-hover); }
+    .icon-btn svg { width: 18px; height: 18px; }
+    .topbar-account { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .topbar-account .who { text-align: right; min-width: 0; }
+    .topbar-account .email {
+      font-size: 13px; font-weight: 700;
+      overflow-wrap: anywhere; word-break: break-word;
+    }
+    .topbar-account .role { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
     .topbar-account button { width: auto; margin: 0; padding: 8px 14px; font-size: 13px; }
 
     /* ---- Shared bits ---- */
     .narrow { max-width: 440px; margin: 0 auto; }
-    .hero-copy { color: #9FB1CC; font-size: 14px; margin: 0 0 24px; line-height: 1.6; text-align: center; }
+    .hero-copy { color: var(--text-muted); font-size: 14px; margin: 0 0 24px; line-height: 1.6; text-align: center; }
     .card {
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.10);
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
       border-radius: 16px;
       padding: 22px;
       margin-bottom: 16px;
       backdrop-filter: blur(18px);
       -webkit-backdrop-filter: blur(18px);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+      box-shadow: 0 8px 32px var(--card-shadow);
     }
     .card h2 { font-size: 16px; margin: 0 0 4px; }
-    .card .hint { color: #9FB1CC; font-size: 13px; margin: 0 0 16px; line-height: 1.45; }
+    .card .hint { color: var(--text-muted); font-size: 13px; margin: 0 0 16px; line-height: 1.45; }
     .btn-spinner {
       display: inline-block;
       width: 14px; height: 14px;
@@ -68,17 +149,17 @@
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    label { display: block; font-size: 13px; color: #9FB1CC; margin: 14px 0 6px; }
+    label { display: block; font-size: 13px; color: var(--text-muted); margin: 14px 0 6px; }
     input, select {
       width: 100%;
       padding: 10px 12px;
       border-radius: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.16);
-      background: rgba(255, 255, 255, 0.04);
-      color: #EAF2FF;
+      border: 1px solid var(--input-border);
+      background: var(--input-bg);
+      color: var(--text);
       font-size: 14px;
     }
-    input:focus, select:focus { outline: 2px solid #2B7FFF; }
+    input:focus, select:focus { outline: 2px solid var(--accent); }
     button {
       appearance: none;
       border: none;
@@ -90,38 +171,116 @@
       width: 100%;
       margin-top: 16px;
     }
-    button.primary { background: #2B7FFF; color: white; }
+    button.primary { background: var(--accent); color: white; }
     button.primary:disabled { opacity: 0.5; cursor: default; }
-    button.ghost { background: transparent; color: #9FB1CC; border: 1px solid rgba(255,255,255,0.16); }
+    button.ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--input-border); }
     button.small { width: auto; margin: 0 0 0 8px; padding: 8px 12px; font-size: 13px; }
     .row { display: flex; gap: 8px; margin-top: 10px; }
     .row button { margin-top: 0; }
     .tabs { display: flex; gap: 8px; margin-bottom: 18px; }
     .tabs button {
-      margin: 0; flex: 1; background: rgba(255,255,255,0.05); color: #9FB1CC;
-      border: 1px solid rgba(255,255,255,0.10);
+      margin: 0; flex: 1; background: var(--card-bg); color: var(--text-muted);
+      border: 1px solid var(--card-border);
     }
-    .tabs button.active { background: #2B7FFF; color: white; border-color: #2B7FFF; }
+    .tabs button.active { background: var(--accent); color: white; border-color: var(--accent); }
     .msg { font-size: 13px; border-radius: 10px; padding: 10px 12px; margin-top: 14px; line-height: 1.4; }
-    .msg.error { background: rgba(229, 57, 53, 0.15); color: #FF9E9A; }
-    .msg.success { background: rgba(31, 157, 101, 0.18); color: #7CE0AE; }
-    .msg.info { background: rgba(43, 127, 255, 0.15); color: #9EC4FF; }
+    .msg.error { background: var(--danger-bg); color: var(--danger-fg); }
+    .msg.success { background: var(--success-bg); color: var(--success-fg); }
+    .msg.info { background: var(--info-bg); color: var(--info-fg); }
     .pill { display: inline-block; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
-    .pill.pending { background: rgba(255, 167, 38, 0.18); color: #FFC066; }
-    .pill.approved { background: rgba(31, 157, 101, 0.18); color: #7CE0AE; }
-    .pill.rejected { background: rgba(229, 57, 53, 0.15); color: #FF9E9A; }
+    .pill.pending { background: var(--pending-bg); color: var(--pending-fg); }
+    .pill.approved { background: var(--success-bg); color: var(--success-fg); }
+    .pill.rejected { background: var(--danger-bg); color: var(--danger-fg); }
     .hidden { display: none !important; }
-    a { color: #6EA8FF; }
+    a { color: var(--link); }
 
     /* ---- Superadmin dashboard ---- */
+    .dashboard-layout { display: flex; gap: 24px; align-items: flex-start; }
+    .sidebar {
+      width: 220px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      position: sticky;
+      top: 20px;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      margin: 0;
+      padding: 11px 14px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 13.5px;
+      text-align: left;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .nav-item:hover { background: var(--row-hover); color: var(--text); }
+    .nav-item.active {
+      background: var(--card-bg);
+      border-color: var(--card-border);
+      color: var(--text);
+    }
+    .nav-badge {
+      margin-left: auto;
+      background: var(--accent);
+      color: white;
+      font-size: 11px;
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 1px 7px;
+      min-width: 18px;
+      text-align: center;
+    }
+    .dashboard-main { flex: 1; min-width: 0; }
+    .mobile-nav-toggle {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      margin: 0 0 16px;
+      padding: 12px 14px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      color: var(--text);
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .mobile-nav-toggle svg { width: 18px; height: 18px; flex-shrink: 0; }
+    @media (max-width: 720px) {
+      .mobile-nav-toggle { display: flex; }
+      .dashboard-layout { flex-direction: column; }
+      .sidebar {
+        display: none;
+        width: 100%;
+        flex-direction: column;
+        position: static;
+        margin-bottom: 16px;
+        padding: 8px;
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 12px;
+      }
+      .sidebar.open { display: flex; }
+    }
     .stats { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
     .stat-tile {
       position: relative;
       flex: 1;
       min-width: 180px;
       padding: 14px 18px 14px 22px;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.10);
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
       border-radius: 16px;
       backdrop-filter: blur(18px);
       -webkit-backdrop-filter: blur(18px);
@@ -131,10 +290,10 @@
       position: absolute;
       left: 0; top: 14px; bottom: 14px; width: 4px;
       border-radius: 4px;
-      background: #2B7FFF;
+      background: var(--accent);
     }
     .stat-tile .num { font-size: 26px; font-weight: 800; line-height: 1.2; }
-    .stat-tile .label { font-size: 12.5px; color: #9FB1CC; margin-top: 2px; }
+    .stat-tile .label { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
     .table-wrap { overflow-x: auto; margin: 0 -6px; }
     table.applicants { width: 100%; border-collapse: collapse; font-size: 13.5px; }
     table.applicants th {
@@ -143,21 +302,55 @@
       text-transform: uppercase;
       letter-spacing: 0.05em;
       font-weight: 700;
-      color: #9FB1CC;
+      color: var(--text-muted);
       padding: 0 12px 10px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+      border-bottom: 1px solid var(--card-border);
       white-space: nowrap;
     }
     table.applicants td {
       padding: 12px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid var(--row-border);
       vertical-align: middle;
     }
-    table.applicants tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
+    table.applicants tbody tr:hover { background: var(--row-hover); }
     table.applicants td.name { font-weight: 700; }
-    table.applicants td.meta { color: #9FB1CC; }
+    table.applicants td.meta { color: var(--text-muted); }
     table.applicants td.actions { white-space: nowrap; text-align: right; }
-    table.applicants td.hint { color: #9FB1CC; text-align: center; padding: 22px 12px; }
+    table.applicants td.hint { color: var(--text-muted); text-align: center; padding: 22px 12px; }
+    table.applicants select.role-select {
+      width: auto; margin: 0; padding: 6px 8px; font-size: 12.5px;
+    }
+    .filter-row { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+    .filter-row input { flex: 2; min-width: 160px; margin: 0; }
+    .filter-row select { flex: 1; min-width: 150px; margin: 0; }
+    tr.detail-row td {
+      background: var(--detail-bg);
+      padding: 16px 14px;
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px 20px;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+    .detail-grid .k {
+      color: var(--text-muted); font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.04em; margin-bottom: 2px;
+    }
+    .detail-groups .k {
+      color: var(--text-muted); font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.04em; margin-bottom: 6px;
+    }
+    .group-chip {
+      display: inline-block;
+      background: var(--chip-bg);
+      border: 1px solid var(--chip-border);
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      margin: 2px 6px 2px 0;
+    }
   </style>
 </head>
 <body>
@@ -170,12 +363,15 @@
           <div class="tag">LGU Admin Portal</div>
         </div>
       </div>
-      <div class="topbar-account hidden" id="topbar-account">
-        <div class="who">
-          <div class="email" id="topbar-email"></div>
-          <div class="role" id="topbar-role"></div>
+      <div class="topbar-right">
+        <button class="icon-btn" id="theme-toggle-btn" type="button"></button>
+        <div class="topbar-account hidden" id="topbar-account">
+          <div class="who">
+            <div class="email" id="topbar-email"></div>
+            <div class="role" id="topbar-role"></div>
+          </div>
+          <button class="ghost" id="topbar-signout-btn" type="button">Sign out</button>
         </div>
-        <button class="ghost" id="topbar-signout-btn" type="button">Sign out</button>
       </div>
     </header>
 
@@ -230,59 +426,128 @@
 
     <!-- Signed-in as superadmin: approval dashboard -->
     <div id="admin-section" class="hidden">
-      <div class="stats">
-        <div class="stat-tile">
-          <div class="num" id="stat-pending">0</div>
-          <div class="label">Pending applications</div>
-        </div>
-      </div>
-      <div class="card">
-        <h2>Pending LGU applications</h2>
-        <p class="hint">Approve to grant group + event-posting access, or reject.</p>
-        <div class="table-wrap">
-          <table class="applicants">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Department</th>
-                <th>Email</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="applicant-list">
-              <tr><td class="hint" colspan="4">Loading…</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div id="admin-msg"></div>
-      </div>
+      <button class="mobile-nav-toggle" id="mobile-nav-toggle" type="button" aria-expanded="false" aria-controls="sidebar"></button>
+      <div class="dashboard-layout">
+        <nav class="sidebar" id="sidebar">
+          <button class="nav-item active" type="button" data-panel="overview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg>
+            Overview
+          </button>
+          <button class="nav-item" type="button" data-panel="pending">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"></rect><path d="M9 3.5h6v3H9z"></path><path d="m9.5 13 2 2 4-4.5"></path></svg>
+            Pending Applications
+            <span class="nav-badge" id="nav-badge-pending">0</span>
+          </button>
+          <button class="nav-item" type="button" data-panel="users">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 5 18.5V20"></path><circle cx="9.5" cy="7.5" r="3.5"></circle><path d="M19 20v-1.5a3 3 0 0 0-2-2.83"></path><path d="M15.5 4.13a3.5 3.5 0 0 1 0 6.74"></path></svg>
+            All Users
+          </button>
+          <button class="nav-item" type="button" data-panel="add-account">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 20v-1.5A3.5 3.5 0 0 0 9.5 15h-3A3.5 3.5 0 0 0 3 18.5V20"></path><circle cx="8" cy="7.5" r="3.5"></circle><path d="M19 8v6M22 11h-6"></path></svg>
+            Add Account
+          </button>
+        </nav>
 
-      <div class="card">
-        <h2>Add account</h2>
-        <p class="hint">
-          Create an LGU member or another superadmin directly — active
-          immediately, no application/approval step. Tell the new person
-          the password you set here yourself.
-        </p>
-        <form id="add-account-form">
-          <label for="new-account-name">Full name</label>
-          <input id="new-account-name" type="text" required autocomplete="off">
-          <label for="new-account-email">Email</label>
-          <input id="new-account-email" type="email" required autocomplete="off">
-          <label for="new-account-password">Password</label>
-          <input id="new-account-password" type="password" required minlength="6" autocomplete="new-password">
-          <label for="new-account-role">Role</label>
-          <select id="new-account-role">
-            <option value="lgu_member">LGU member</option>
-            <option value="superadmin">Superadmin</option>
-          </select>
-          <div id="new-account-department-field">
-            <label for="new-account-department">Office / Department</label>
-            <input id="new-account-department" type="text" placeholder="e.g. Barangay Health Office">
-          </div>
-          <button class="primary" type="submit">Create account</button>
-        </form>
-        <div id="add-account-msg"></div>
+        <div class="dashboard-main">
+          <section class="panel" data-panel-content="overview">
+            <div class="stats">
+              <div class="stat-tile">
+                <div class="num" id="stat-pending">0</div>
+                <div class="label">Pending applications</div>
+              </div>
+              <div class="stat-tile">
+                <div class="num" id="stat-total-users">0</div>
+                <div class="label">Total users</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel hidden" data-panel-content="pending">
+            <div class="card">
+              <h2>Pending LGU applications</h2>
+              <p class="hint">Approve to grant group + event-posting access, or reject.</p>
+              <div class="table-wrap">
+                <table class="applicants">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Department</th>
+                      <th>Email</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="applicant-list">
+                    <tr><td class="hint" colspan="4">Loading…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div id="admin-msg"></div>
+            </div>
+          </section>
+
+          <section class="panel hidden" data-panel-content="users">
+            <div class="card">
+              <h2>All Users</h2>
+              <p class="hint">Browse every account and change roles directly — click a role to change it, or "View" for details.</p>
+              <div class="filter-row">
+                <input id="users-search" type="text" placeholder="Search by name or email">
+                <select id="users-role-filter">
+                  <option value="">All roles</option>
+                  <option value="citizen">Citizen</option>
+                  <option value="lgu_member">LGU member</option>
+                  <option value="superadmin">Superadmin</option>
+                </select>
+              </div>
+              <div class="table-wrap">
+                <table class="applicants">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Role</th>
+                      <th>Created</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="users-list">
+                    <tr><td class="hint" colspan="5">Loading…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div id="users-msg"></div>
+            </div>
+          </section>
+
+          <section class="panel hidden" data-panel-content="add-account">
+            <div class="card">
+              <h2>Add account</h2>
+              <p class="hint">
+                Create an LGU member or another superadmin directly — active
+                immediately, no application/approval step. Tell the new person
+                the password you set here yourself.
+              </p>
+              <form id="add-account-form">
+                <label for="new-account-name">Full name</label>
+                <input id="new-account-name" type="text" required autocomplete="off">
+                <label for="new-account-email">Email</label>
+                <input id="new-account-email" type="email" required autocomplete="off">
+                <label for="new-account-password">Password</label>
+                <input id="new-account-password" type="password" required minlength="6" autocomplete="new-password">
+                <label for="new-account-role">Role</label>
+                <select id="new-account-role">
+                  <option value="lgu_member">LGU member</option>
+                  <option value="superadmin">Superadmin</option>
+                </select>
+                <div id="new-account-department-field">
+                  <label for="new-account-department">Office / Department</label>
+                  <input id="new-account-department" type="text" placeholder="e.g. Barangay Health Office">
+                </div>
+                <button class="primary" type="submit">Create account</button>
+              </form>
+              <div id="add-account-msg"></div>
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   </div>
@@ -303,9 +568,45 @@
     var authMsg = document.getElementById('auth-msg');
     var adminMsg = document.getElementById('admin-msg');
     var addAccountMsg = document.getElementById('add-account-msg');
+    var usersMsg = document.getElementById('users-msg');
+    var usersSearch = document.getElementById('users-search');
+    var usersRoleFilter = document.getElementById('users-role-filter');
     var topbarAccount = document.getElementById('topbar-account');
     var topbarEmail = document.getElementById('topbar-email');
     var topbarRole = document.getElementById('topbar-role');
+
+    // ---- Light / dark mode toggle ----
+    var THEME_STORAGE_KEY = 'ebongabong-admin-theme';
+    var themeToggleBtn = document.getElementById('theme-toggle-btn');
+    var sunIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle>' +
+      '<path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2' +
+      'M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg>';
+    var moonIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 ' +
+      '0 0 9.79 9.79z"></path></svg>';
+
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      var label = theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode';
+      themeToggleBtn.innerHTML = theme === 'light' ? sunIcon : moonIcon;
+      themeToggleBtn.title = label;
+      themeToggleBtn.setAttribute('aria-label', label);
+    }
+
+    themeToggleBtn.addEventListener('click', function () {
+      var current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+      var next = current === 'light' ? 'dark' : 'light';
+      applyTheme(next);
+      try { localStorage.setItem(THEME_STORAGE_KEY, next); } catch (e) {}
+    });
+
+    (function initTheme() {
+      var stored = null;
+      try { stored = localStorage.getItem(THEME_STORAGE_KEY); } catch (e) {}
+      var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+      applyTheme(stored || (prefersLight ? 'light' : 'dark'));
+    })();
 
     function showMessage(el, text, kind) {
       el.innerHTML = text ? '<div class="msg ' + kind + '">' + text + '</div>' : '';
@@ -459,10 +760,45 @@
       supabaseClient.auth.signOut();
     });
 
+    // ---- Sidebar navigation (superadmin dashboard) ----
+    // On mobile the sidebar collapses behind a hamburger button; on desktop
+    // (>720px, see the .sidebar CSS) it's always visible so the toggle is hidden.
+    var sidebarEl = document.getElementById('sidebar');
+    var mobileNavToggle = document.getElementById('mobile-nav-toggle');
+    var hamburgerIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>';
+    var closeIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"></path></svg>';
+
+    function setMobileNavOpen(open) {
+      sidebarEl.classList.toggle('open', open);
+      mobileNavToggle.innerHTML = (open ? closeIcon : hamburgerIcon) + '<span>' + (open ? 'Close menu' : 'Menu') + '</span>';
+      mobileNavToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    mobileNavToggle.addEventListener('click', function () {
+      setMobileNavOpen(!sidebarEl.classList.contains('open'));
+    });
+
+    setMobileNavOpen(false);
+
+    var navItems = document.querySelectorAll('.nav-item');
+    var panels = document.querySelectorAll('.panel');
+    navItems.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var target = btn.getAttribute('data-panel');
+        navItems.forEach(function (b) { b.classList.toggle('active', b === btn); });
+        panels.forEach(function (p) { p.classList.toggle('hidden', p.getAttribute('data-panel-content') !== target); });
+        setMobileNavOpen(false);
+      });
+    });
+
     // ---- Superadmin dashboard ----
     function renderApplicants(rows) {
       var list = document.getElementById('applicant-list');
-      document.getElementById('stat-pending').textContent = rows ? rows.length : 0;
+      var count = rows ? rows.length : 0;
+      document.getElementById('stat-pending').textContent = count;
+      document.getElementById('nav-badge-pending').textContent = count;
 
       if (!rows || rows.length === 0) {
         list.innerHTML = '<tr><td class="hint" colspan="4">No pending applications right now.</td></tr>';
@@ -507,6 +843,148 @@
         renderApplicants(res.data);
       });
     }
+
+    // ---- All Users (browse every account, change roles directly) ----
+    var allUsers = [];
+    var expandedUserId = null;
+
+    function formatDate(iso) {
+      if (!iso) return '—';
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return '—';
+      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    function filteredUsers() {
+      var query = usersSearch.value.trim().toLowerCase();
+      var roleFilter = usersRoleFilter.value;
+      return allUsers.filter(function (u) {
+        if (roleFilter && u.role !== roleFilter) return false;
+        if (!query) return true;
+        var haystack = ((u.display_name || '') + ' ' + u.email).toLowerCase();
+        return haystack.indexOf(query) !== -1;
+      });
+    }
+
+    // Renders a user's "View" detail row: email/created/contact always
+    // shown immediately; groups are fetched on demand (not upfront for
+    // everyone in list_all_users()) since most rows never get expanded.
+    function buildDetailRow(u) {
+      var tr = document.createElement('tr');
+      tr.className = 'detail-row';
+      var td = document.createElement('td');
+      td.colSpan = 5;
+      td.innerHTML =
+        '<div class="detail-grid">' +
+          '<div><div class="k">Email</div>' + u.email + '</div>' +
+          '<div><div class="k">Created</div>' + formatDate(u.created_at) + '</div>' +
+          '<div><div class="k">Contact number</div>' + (u.phone_number || '—') + '</div>' +
+        '</div>' +
+        '<div class="detail-groups"><div class="k">Groups</div><span class="hint">Loading…</span></div>';
+      tr.appendChild(td);
+
+      supabaseClient.rpc('list_user_groups', { p_user_id: u.user_id }).then(function (res) {
+        var groupsEl = td.querySelector('.detail-groups');
+        if (res.error) {
+          groupsEl.innerHTML = '<div class="k">Groups</div><span class="hint">Could not load groups.</span>';
+          return;
+        }
+        var groups = res.data || [];
+        if (groups.length === 0) {
+          groupsEl.innerHTML = '<div class="k">Groups</div><span class="hint">Not in any groups.</span>';
+          return;
+        }
+        groupsEl.innerHTML = '<div class="k">Groups</div>' + groups.map(function (g) {
+          return '<span class="group-chip">' + g.group_name +
+            ' (' + (g.member_role === 'admin' ? 'admin' : 'member') + ')</span>';
+        }).join('');
+      });
+
+      return tr;
+    }
+
+    function renderUsers() {
+      var list = document.getElementById('users-list');
+      var rows = filteredUsers();
+
+      if (rows.length === 0) {
+        list.innerHTML = '<tr><td class="hint" colspan="5">No users match.</td></tr>';
+        return;
+      }
+
+      list.innerHTML = '';
+      rows.forEach(function (u) {
+        var tr = document.createElement('tr');
+        var name = u.display_name || 'Unnamed';
+        tr.innerHTML =
+          '<td class="name">' + name + '</td>' +
+          '<td class="meta">' + u.email + '</td>' +
+          '<td>' +
+            '<select class="role-select" data-user-id="' + u.user_id + '" data-previous="' + u.role + '">' +
+              '<option value="citizen"' + (u.role === 'citizen' ? ' selected' : '') + '>Citizen</option>' +
+              '<option value="lgu_member"' + (u.role === 'lgu_member' ? ' selected' : '') + '>LGU member</option>' +
+              '<option value="superadmin"' + (u.role === 'superadmin' ? ' selected' : '') + '>Superadmin</option>' +
+            '</select>' +
+          '</td>' +
+          '<td class="meta">' + formatDate(u.created_at) + '</td>' +
+          '<td class="actions"><button class="ghost small" data-view="' + u.user_id + '">View</button></td>';
+        list.appendChild(tr);
+
+        if (expandedUserId === u.user_id) {
+          list.appendChild(buildDetailRow(u));
+        }
+      });
+
+      list.querySelectorAll('select.role-select').forEach(function (sel) {
+        sel.addEventListener('change', function () {
+          changeRole(sel, sel.getAttribute('data-user-id'), sel.value);
+        });
+      });
+      list.querySelectorAll('[data-view]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var id = btn.getAttribute('data-view');
+          expandedUserId = expandedUserId === id ? null : id;
+          renderUsers();
+        });
+      });
+    }
+
+    function changeRole(selectEl, userId, newRole) {
+      var previousValue = selectEl.getAttribute('data-previous') || '';
+
+      if (newRole === 'superadmin') {
+        var confirmed = window.confirm('Promote this user to SUPERADMIN? This grants full access.');
+        if (!confirmed) {
+          selectEl.value = previousValue;
+          return;
+        }
+      }
+
+      showMessage(usersMsg, '', '');
+      selectEl.disabled = true;
+      supabaseClient.rpc('admin_set_user_role', { p_user_id: userId, p_role: newRole })
+        .then(function (res) {
+          if (res.error) throw res.error;
+          return loadAllUsers();
+        })
+        .catch(function (err) {
+          showMessage(usersMsg, friendlyError(err), 'error');
+          selectEl.value = previousValue;
+          selectEl.disabled = false;
+        });
+    }
+
+    function loadAllUsers() {
+      return supabaseClient.rpc('list_all_users').then(function (res) {
+        if (res.error) throw res.error;
+        allUsers = res.data || [];
+        document.getElementById('stat-total-users').textContent = allUsers.length;
+        renderUsers();
+      });
+    }
+
+    usersSearch.addEventListener('input', renderUsers);
+    usersRoleFilter.addEventListener('change', renderUsers);
 
     // ---- Add account (superadmin creates an LGU member or another
     // superadmin directly, instead of them self-registering + waiting for
@@ -606,7 +1084,7 @@
             if (role === 'superadmin') {
               statusCard.classList.add('hidden');
               adminSection.classList.remove('hidden');
-              return loadPendingApplications();
+              return Promise.all([loadPendingApplications(), loadAllUsers()]);
             }
 
             adminSection.classList.add('hidden');

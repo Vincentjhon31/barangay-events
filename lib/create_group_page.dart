@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'event_store.dart';
+import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
 
 /// Full page for creating a group — pops with the created [BarangayGroup],
@@ -29,10 +30,11 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
   }
 
   Future<void> _create() async {
+    final l10n = AppLocalizations.of(context)!;
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a group name first.')),
+        SnackBar(content: Text(l10n.enterGroupNameError)),
       );
       return;
     }
@@ -45,7 +47,7 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not create the group. Please try again.')),
+        SnackBar(content: Text(l10n.createGroupError)),
       );
     } finally {
       if (mounted) setState(() => _creating = false);
@@ -54,11 +56,12 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
 
     return GlassSubPage(
-      title: 'Create a group',
-      subtitle: 'Set up a space to share events with a specific circle of people.',
+      title: l10n.createGroupTitle,
+      subtitle: l10n.createGroupSubtitle,
       children: [
         GlassPanel(
           child: Column(
@@ -75,7 +78,7 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'How groups work',
+                      l10n.howGroupsWorkTitle,
                       style: Theme.of(context)
                           .textTheme
                           .titleSmall
@@ -86,11 +89,7 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                'A group is like a group chat for a specific circle — your purok, an '
-                'office, a league. Everyone who joins sees every "Group" event posted '
-                'here, and only members see them. Once you create it, you get a '
-                '6-character code to share so others can join — and you can manage '
-                'who\'s in it from the group\'s member list afterward.',
+                l10n.howGroupsWorkBody,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -106,8 +105,8 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
               TextField(
                 controller: _nameController,
                 decoration: InputDecoration(
-                  labelText: 'Group name',
-                  hintText: 'e.g. Purok 3 Updates',
+                  labelText: l10n.groupNameLabel,
+                  hintText: l10n.groupNameHint,
                   prefixIcon: glassFieldIcon(FontAwesomeIcons.penToSquare, size: 14),
                   prefixIconConstraints: glassFieldIconConstraints,
                 ),
@@ -121,15 +120,14 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Private group',
+                          l10n.privateGroupLabel,
                           style: Theme.of(context)
                               .textTheme
                               .titleSmall
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                         Text(
-                          'Hidden from search — people need your code, and you approve '
-                          'who joins. Good for smaller or more sensitive groups.',
+                          l10n.privateGroupHint,
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                               ),
@@ -151,7 +149,7 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                 ),
                 onPressed: _creating ? null : () => unawaited(_create()),
                 icon: const FaIcon(FontAwesomeIcons.plus, size: 14),
-                label: Text(_creating ? 'Creating...' : 'Create group'),
+                label: Text(_creating ? l10n.creatingButton : l10n.createGroupButton),
               ),
             ],
           ),

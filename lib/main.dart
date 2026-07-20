@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -1030,6 +1031,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           eventRepository: widget.eventRepository,
                           currentUserId: _currentUserId,
                           canCreateGroups: _canCreateGroups,
+                          isSuperadmin: _isSuperadmin,
                           onGroupsChanged: _resubscribeEvents,
                         ),
                       if (widget.authService != null)
@@ -1541,17 +1543,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
   /// like "Personal" exist in both trees simultaneously.
   Widget _buildTypeFilterChips(Set<String> filters,
       {required String keyPrefix}) {
+    final l10n = AppLocalizations.of(context)!;
     final options = <({String? value, String label, FaIconData icon})>[
-      (value: null, label: 'All', icon: FontAwesomeIcons.layerGroup),
-      (value: EventType.public, label: 'Public', icon: FontAwesomeIcons.globe),
+      (value: null, label: l10n.eventTypeAll, icon: FontAwesomeIcons.layerGroup),
+      (value: EventType.public, label: l10n.eventTypePublic, icon: FontAwesomeIcons.globe),
       (
         value: EventType.shared,
-        label: 'Group',
+        label: l10n.eventTypeGroup,
         icon: FontAwesomeIcons.userGroup
       ),
       (
         value: EventType.personal,
-        label: 'Personal',
+        label: l10n.eventTypePersonal,
         icon: FontAwesomeIcons.lock
       ),
     ];
@@ -2456,7 +2459,24 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  /// Shares an event as plain text via the platform share sheet (Messenger,
+  /// SMS, email, etc.) — separate from [_showEventDetails], since every
+  /// event that's visible to the viewer should be shareable regardless of
+  /// their edit/delete permissions on it.
+  Future<void> _shareEvent(BarangayEvent event) async {
+    final lines = [
+      event.title,
+      '${_dateRangeLabel(event)} • ${_formatTime(event.startTime)} - ${_formatTime(event.endTime)}',
+      event.location,
+      if (event.description.isNotEmpty) event.description,
+    ];
+    await SharePlus.instance.share(
+      ShareParams(text: lines.join('\n'), subject: event.title),
+    );
+  }
+
   Future<void> _showEventDetails(BarangayEvent event) async {
+    final l10n = AppLocalizations.of(context)!;
     final startTime = event.startTime;
     final endTime = event.endTime;
     final formattedDate = _dateRangeLabel(event);
@@ -2471,20 +2491,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _DetailInfoRow(
         icon: FontAwesomeIcons.clock,
         tint: eventTint,
-        label: 'Time',
+        label: l10n.detailTime,
         value: '$startTimeStr - $endTimeStr',
       ),
       _DetailInfoRow(
         icon: FontAwesomeIcons.locationDot,
         tint: eventTint,
-        label: 'Location',
+        label: l10n.detailLocation,
         value: event.location,
       ),
       if (event.creatorLabel != null)
         _DetailInfoRow(
           icon: FontAwesomeIcons.userPen,
           tint: eventTint,
-          label: 'Posted by',
+          label: l10n.detailPostedBy,
           value: event.creatorLabel!,
         ),
       if (event.eventType == EventType.shared)
@@ -2518,7 +2538,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 elevation: 0,
                 backgroundColor: Theme.of(context).colorScheme.surface,
                 title: Text(
-                  'Event Details',
+                  l10n.eventDetailsTitle,
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 centerTitle: true,
@@ -2526,6 +2546,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   icon: const FaIcon(FontAwesomeIcons.xmark),
                   onPressed: () => Navigator.pop(context),
                 ),
+                actions: [
+                  IconButton(
+                    tooltip: l10n.shareEvent,
+                    icon: const FaIcon(FontAwesomeIcons.shareNodes, size: 18),
+                    onPressed: () => unawaited(_shareEvent(event)),
+                  ),
+                ],
               ),
               // Event details content
               SliverToBoxAdapter(
@@ -2605,7 +2632,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       // free-form text rather than a label/value pair.
                       if (event.description.isNotEmpty) ...[
                         Text(
-                          'Description',
+                          l10n.detailDescription,
                           style:
                               Theme.of(context).textTheme.labelMedium?.copyWith(
                                     color: Theme.of(context)
@@ -2646,7 +2673,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'Attachment',
+                                      l10n.detailAttachment,
                                       style: Theme.of(context)
                                           .textTheme
                                           .labelSmall
@@ -2680,7 +2707,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                   FontAwesomeIcons.download,
                                   size: 14,
                                 ),
-                                label: const Text('Coming soon'),
+                                label: Text(l10n.comingSoon),
                               ),
                             ],
                           ),
@@ -2707,7 +2734,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                     unawaited(_openEditEvent(event));
                                   },
                                   icon: const FaIcon(FontAwesomeIcons.penToSquare, size: 16),
-                                  label: const Text('Edit'),
+                                  label: Text(l10n.edit),
                                 ),
                               ),
                             if (_canEditEvent(event) && _canDeleteEvent(event))
@@ -2732,7 +2759,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                   },
                                   icon: const FaIcon(FontAwesomeIcons.trashCan,
                                       size: 16),
-                                  label: const Text('Delete event'),
+                                  label: Text(l10n.deleteEventMenuItem),
                                 ),
                               ),
                           ],
@@ -2750,19 +2777,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   String _getFileTypeName(String mimeType) {
-    if (mimeType.contains('pdf')) return 'PDF Document';
-    if (mimeType.contains('image')) return 'Image';
-    if (mimeType.contains('video')) return 'Video';
+    final l10n = AppLocalizations.of(context)!;
+    if (mimeType.contains('pdf')) return l10n.fileTypePdf;
+    if (mimeType.contains('image')) return l10n.fileTypeImage;
+    if (mimeType.contains('video')) return l10n.fileTypeVideo;
     if (mimeType.contains('word') || mimeType.contains('document')) {
-      return 'Word Document';
+      return l10n.fileTypeWord;
     }
     if (mimeType.contains('sheet') || mimeType.contains('spreadsheet')) {
-      return 'Spreadsheet';
+      return l10n.fileTypeSpreadsheet;
     }
-    return 'Attachment';
+    return l10n.detailAttachment;
   }
 
   Widget _buildEventCard(BarangayEvent event) {
+    final l10n = AppLocalizations.of(context)!;
     final startTime = event.startTime;
     final endTime = event.endTime;
     final tint = _getEventTint(event.title);
@@ -2861,7 +2890,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         const SizedBox(width: 5),
                         Expanded(
                           child: Text(
-                            'By ${event.creatorLabel}',
+                            l10n.postedByPrefix(event.creatorLabel!),
                             style:
                                 Theme.of(context).textTheme.bodySmall?.copyWith(
                                       color: Theme.of(context)
@@ -2895,7 +2924,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
-                            'Attachment available',
+                            l10n.attachmentAvailable,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -2921,12 +2950,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 },
                 itemBuilder: (context) => [
                   if (_canEditEvent(event))
-                    const PopupMenuItem(value: 'edit', child: Text('Edit event')),
+                    PopupMenuItem(value: 'edit', child: Text(l10n.editEventMenuItem)),
                   if (_canDeleteEvent(event))
                     PopupMenuItem(
                       value: 'delete',
                       child: Text(
-                        'Delete event',
+                        l10n.deleteEventMenuItem,
                         style:
                             TextStyle(color: Theme.of(context).colorScheme.error),
                       ),
@@ -2956,13 +2985,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   String _eventTypeLabel(String type) {
+    final l10n = AppLocalizations.of(context)!;
     switch (type) {
       case EventType.shared:
-        return 'Group';
+        return l10n.eventTypeGroup;
       case EventType.personal:
-        return 'Personal';
+        return l10n.eventTypePersonal;
       default:
-        return 'Public';
+        return l10n.eventTypePublic;
     }
   }
 
@@ -3020,6 +3050,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   bool get _canCreateGroups =>
       (_userProfile ?? widget.authService?.currentUser)?.canCreateGroups ??
       false;
+
+  bool get _isSuperadmin =>
+      (_userProfile ?? widget.authService?.currentUser)?.isSuperadmin ?? false;
 
   /// Citizens don't get a Groups tab at all — group creation/events are an
   /// LGU-level feature (see [[project-event-sharing-model]]), so there's
@@ -3278,18 +3311,18 @@ class _GroupInfoSectionState extends State<_GroupInfoSection> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final groupName = widget.event.groupName?.trim().isNotEmpty == true
         ? widget.event.groupName!
-        : 'Group event';
+        : l10n.groupEventFallbackName;
     final count = _memberCount;
 
     return _DetailInfoRow(
       icon: FontAwesomeIcons.userGroup,
       tint: widget.tint,
-      label: 'Group',
+      label: l10n.eventTypeGroup,
       value: groupName,
-      subtitle:
-          count == null ? 'Loading members…' : '$count member${count == 1 ? '' : 's'}',
+      subtitle: count == null ? l10n.loadingMembers : l10n.memberCount(count),
     );
   }
 }

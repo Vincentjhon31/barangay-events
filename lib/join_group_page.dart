@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'event_store.dart';
+import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
 
 /// Full page for joining a group by its 6-character code — pops with the
@@ -28,10 +29,11 @@ class _JoinGroupPageState extends State<JoinGroupPage> {
   }
 
   Future<void> _join() async {
+    final l10n = AppLocalizations.of(context)!;
     final code = _codeController.text.trim();
     if (code.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a group code first.')),
+        SnackBar(content: Text(l10n.enterCodeError)),
       );
       return;
     }
@@ -44,7 +46,7 @@ class _JoinGroupPageState extends State<JoinGroupPage> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not join. Check the code and try again.')),
+        SnackBar(content: Text(l10n.joinGroupError)),
       );
     } finally {
       if (mounted) setState(() => _joining = false);
@@ -53,11 +55,12 @@ class _JoinGroupPageState extends State<JoinGroupPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
 
     return GlassSubPage(
-      title: 'Join with a code',
-      subtitle: 'Have an invite code? Use it to join that group.',
+      title: l10n.joinWithCodeTitle,
+      subtitle: l10n.joinWithCodeSubtitle,
       children: [
         GlassPanel(
           child: Column(
@@ -74,7 +77,7 @@ class _JoinGroupPageState extends State<JoinGroupPage> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'How joining works',
+                      l10n.howJoiningWorksTitle,
                       style: Theme.of(context)
                           .textTheme
                           .titleSmall
@@ -85,10 +88,7 @@ class _JoinGroupPageState extends State<JoinGroupPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Ask whoever created the group for their 6-character code — it\'s '
-                'shown right on the group\'s member page. Entering it here works for '
-                'private groups too: instead of joining instantly, it sends a request '
-                'the group\'s admin approves.',
+                l10n.howJoiningWorksBody,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -105,8 +105,8 @@ class _JoinGroupPageState extends State<JoinGroupPage> {
                 controller: _codeController,
                 textCapitalization: TextCapitalization.characters,
                 decoration: InputDecoration(
-                  labelText: 'Group code',
-                  hintText: 'e.g. QXK2P9',
+                  labelText: l10n.groupCodeLabel,
+                  hintText: l10n.groupCodeHint,
                   prefixIcon: glassFieldIcon(FontAwesomeIcons.key, size: 14),
                   prefixIconConstraints: glassFieldIconConstraints,
                 ),
@@ -119,7 +119,7 @@ class _JoinGroupPageState extends State<JoinGroupPage> {
                 ),
                 onPressed: _joining ? null : () => unawaited(_join()),
                 icon: const FaIcon(FontAwesomeIcons.userGroup, size: 14),
-                label: Text(_joining ? 'Joining...' : 'Join group'),
+                label: Text(_joining ? l10n.joiningButton : l10n.joinGroupButton),
               ),
             ],
           ),

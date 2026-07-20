@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import 'auth_service.dart' show AppUserProfile;
 import 'event_store.dart';
+import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
 
 /// What `AddEventPage` pops with after a successful save, so the calendar
@@ -288,14 +289,14 @@ class _AddEventPageState extends State<AddEventPage> {
   }
 
   String _typeHelperText() {
+    final l10n = AppLocalizations.of(context)!;
     final base = switch (_eventType) {
-      EventType.shared => 'Only members of the group you pick can see this.',
-      EventType.personal => 'Only you can see this.',
-      _ => 'Everyone in the app can see this.',
+      EventType.shared => l10n.typeHelperGroup,
+      EventType.personal => l10n.typeHelperPersonal,
+      _ => l10n.typeHelperPublic,
     };
     if (_allowedEventTypes.length > 1) return base;
-    return '$base Only verified LGU members can post Group events, and only '
-        'the admin can post Public events.';
+    return '$base ${l10n.typeHelperRestrictedSuffix}';
   }
 
   /// Shown at save time when [_computeConflicts] still isn't empty — lets
@@ -306,6 +307,7 @@ class _AddEventPageState extends State<AddEventPage> {
   Future<bool?> _confirmOverlapDialog(
     List<({BarangayEvent event, DateTime day})> conflicts,
   ) {
+    final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
     return showDialog<bool>(
       context: context,
@@ -313,16 +315,15 @@ class _AddEventPageState extends State<AddEventPage> {
         icon: FaIcon(FontAwesomeIcons.triangleExclamation, color: colorScheme.error),
         title: Text(
           conflicts.length == 1
-              ? 'This overlaps with an existing event'
-              : 'This overlaps with ${conflicts.length} existing events',
+              ? l10n.overlapDialogTitleOne
+              : l10n.overlapDialogTitleMany(conflicts.length),
         ),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('You can still save it, but people may see two events '
-                  'scheduled at the same time:'),
+              Text(l10n.overlapDialogBody),
               const SizedBox(height: 12),
               for (final entry in conflicts)
                 Padding(
@@ -342,12 +343,12 @@ class _AddEventPageState extends State<AddEventPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: colorScheme.error),
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Proceed anyway'),
+            child: Text(l10n.proceedAnyway),
           ),
         ],
       ),
@@ -355,13 +356,14 @@ class _AddEventPageState extends State<AddEventPage> {
   }
 
   Future<void> _save() async {
+    final l10n = AppLocalizations.of(context)!;
     final title = _titleController.text.trim();
     final location = _locationController.text.trim();
     final description = _descriptionController.text.trim();
 
     if (title.isEmpty || location.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Title and location are required.')),
+        SnackBar(content: Text(l10n.titleLocationRequired)),
       );
       return;
     }
@@ -372,22 +374,22 @@ class _AddEventPageState extends State<AddEventPage> {
     // editing exists for — it shouldn't be blocked by this check.
     if (!_isEditing && _startDate.isBefore(_today)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Events can't be added on a past date.")),
+        SnackBar(content: Text(l10n.pastDateError)),
       );
       return;
     }
 
     if (!_endDateTime.isAfter(_startDateTime)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_isMultiDay ? 'End must be after start.' : 'End time must be after start time.')),
+        SnackBar(content: Text(_isMultiDay ? l10n.endAfterStartMultiDay : l10n.endAfterStartSingleDay)),
       );
       return;
     }
 
     if (_eventType == EventType.shared && _selectedGroup == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pick a group for this event — create or join one in the Groups tab.'),
+        SnackBar(
+          content: Text(l10n.pickGroupError),
         ),
       );
       return;
@@ -465,7 +467,7 @@ class _AddEventPageState extends State<AddEventPage> {
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Could not save the event: $error'),
+          content: Text(l10n.saveEventError(error.toString())),
           duration: const Duration(seconds: 6),
         ),
       );
@@ -486,6 +488,7 @@ class _AddEventPageState extends State<AddEventPage> {
     required String value,
     required VoidCallback onTap,
   }) {
+    final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -510,13 +513,14 @@ class _AddEventPageState extends State<AddEventPage> {
               ],
             ),
           ),
-          TextButton(onPressed: onTap, child: const Text('Change')),
+          TextButton(onPressed: onTap, child: Text(l10n.changeButton)),
         ],
       ),
     );
   }
 
   Widget _buildConflictWarning() {
+    final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -537,8 +541,8 @@ class _AddEventPageState extends State<AddEventPage> {
                 Expanded(
                   child: Text(
                     _conflicts.length == 1
-                        ? 'Overlaps with an existing event:'
-                        : 'Overlaps with ${_conflicts.length} existing events:',
+                        ? l10n.overlapsWithOne
+                        : l10n.overlapsWithMany(_conflicts.length),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           fontWeight: FontWeight.w700,
                           color: colorScheme.error,
@@ -563,7 +567,7 @@ class _AddEventPageState extends State<AddEventPage> {
               Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(
-                  'Adjust the time or date range to clear the overlap.',
+                  l10n.adjustOverlapHint,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -586,8 +590,10 @@ class _AddEventPageState extends State<AddEventPage> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Free slot: ${formatTimeOfDay12Hour(_suggestedSlot!.start)} – '
-                        '${formatTimeOfDay12Hour(_suggestedSlot!.end)} · Tap to use',
+                        l10n.freeSlotSuggestion(
+                          formatTimeOfDay12Hour(_suggestedSlot!.start),
+                          formatTimeOfDay12Hour(_suggestedSlot!.end),
+                        ),
                         style: TextStyle(
                           color: colorScheme.primary,
                           fontWeight: FontWeight.w700,
@@ -602,7 +608,7 @@ class _AddEventPageState extends State<AddEventPage> {
               Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(
-                  'No free slot left that day — try another date.',
+                  l10n.noFreeSlotHint,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -616,13 +622,12 @@ class _AddEventPageState extends State<AddEventPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
 
     return GlassSubPage(
-      title: _isEditing ? 'Edit Event' : 'Add Event',
-      subtitle: _isEditing
-          ? 'Update the details for this event.'
-          : 'Share something happening in the barangay.',
+      title: _isEditing ? l10n.editEventTitle : l10n.addEventTitle,
+      subtitle: _isEditing ? l10n.editEventSubtitle : l10n.addEventSubtitle,
       children: [
         GlassPanel(
           child: Column(
@@ -634,21 +639,21 @@ class _AddEventPageState extends State<AddEventPage> {
                   showSelectedIcon: false,
                   segments: [
                     if (_canCreatePublic)
-                      const ButtonSegment<String>(
+                      ButtonSegment<String>(
                         value: EventType.public,
-                        label: Text('Public'),
-                        icon: FaIcon(FontAwesomeIcons.globe, size: 12),
+                        label: Text(l10n.eventTypePublic),
+                        icon: const FaIcon(FontAwesomeIcons.globe, size: 12),
                       ),
                     if (_canCreateGroupEvent)
-                      const ButtonSegment<String>(
+                      ButtonSegment<String>(
                         value: EventType.shared,
-                        label: Text('Group'),
-                        icon: FaIcon(FontAwesomeIcons.userGroup, size: 12),
+                        label: Text(l10n.eventTypeGroup),
+                        icon: const FaIcon(FontAwesomeIcons.userGroup, size: 12),
                       ),
-                    const ButtonSegment<String>(
+                    ButtonSegment<String>(
                       value: EventType.personal,
-                      label: Text('Personal'),
-                      icon: FaIcon(FontAwesomeIcons.lock, size: 12),
+                      label: Text(l10n.eventTypePersonal),
+                      icon: const FaIcon(FontAwesomeIcons.lock, size: 12),
                     ),
                   ],
                   selected: {_eventType},
@@ -664,7 +669,7 @@ class _AddEventPageState extends State<AddEventPage> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Personal event',
+                      l10n.personalEventLabel,
                       style: Theme.of(context)
                           .textTheme
                           .titleSmall
@@ -683,14 +688,14 @@ class _AddEventPageState extends State<AddEventPage> {
                 const SizedBox(height: 12),
                 if (widget.myGroups.isEmpty)
                   Text(
-                    'You have no groups yet — create one in the Groups tab first.',
+                    l10n.noGroupsYetError,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.error),
                   )
                 else
                   DropdownButtonFormField<BarangayGroup>(
                     initialValue: _selectedGroup,
                     decoration: InputDecoration(
-                      labelText: 'Post to group',
+                      labelText: l10n.postToGroupLabel,
                       prefixIcon: glassFieldIcon(FontAwesomeIcons.userGroup, size: 14),
                       prefixIconConstraints: glassFieldIconConstraints,
                     ),
@@ -712,8 +717,8 @@ class _AddEventPageState extends State<AddEventPage> {
               TextField(
                 controller: _titleController,
                 decoration: InputDecoration(
-                  labelText: 'Event title',
-                  hintText: 'e.g. Barangay Assembly',
+                  labelText: l10n.eventTitleLabel,
+                  hintText: l10n.eventTitleHint,
                   prefixIcon: glassFieldIcon(FontAwesomeIcons.penToSquare, size: 14),
                   prefixIconConstraints: glassFieldIconConstraints,
                 ),
@@ -722,8 +727,8 @@ class _AddEventPageState extends State<AddEventPage> {
               TextField(
                 controller: _locationController,
                 decoration: InputDecoration(
-                  labelText: 'Location',
-                  hintText: 'e.g. Barangay Hall',
+                  labelText: l10n.detailLocation,
+                  hintText: l10n.locationHint,
                   prefixIcon: glassFieldIcon(FontAwesomeIcons.locationDot, size: 14),
                   prefixIconConstraints: glassFieldIconConstraints,
                 ),
@@ -733,8 +738,8 @@ class _AddEventPageState extends State<AddEventPage> {
                 controller: _descriptionController,
                 maxLines: 3,
                 decoration: InputDecoration(
-                  labelText: 'Additional Details (optional)',
-                  hintText: 'Add a short note for residents',
+                  labelText: l10n.additionalDetailsLabel,
+                  hintText: l10n.additionalDetailsHint,
                   prefixIcon: glassFieldIcon(FontAwesomeIcons.alignLeft, size: 14),
                   prefixIconConstraints: glassFieldIconConstraints,
                 ),
@@ -755,14 +760,14 @@ class _AddEventPageState extends State<AddEventPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Multi-day event',
+                          l10n.multiDayEventLabel,
                           style: Theme.of(context)
                               .textTheme
                               .titleSmall
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                         Text(
-                          'Spans more than one day, e.g. a 3-day fiesta.',
+                          l10n.multiDayEventHint,
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                               ),
@@ -777,32 +782,32 @@ class _AddEventPageState extends State<AddEventPage> {
               if (_isMultiDay) ...[
                 _buildPickerRow(
                   icon: FontAwesomeIcons.calendarDay,
-                  label: 'Start date',
+                  label: l10n.startDateLabel,
                   value: DateFormat('EEEE, MMM d, yyyy').format(_startDate),
                   onTap: _pickStartDate,
                 ),
                 _buildPickerRow(
                   icon: FontAwesomeIcons.calendarCheck,
-                  label: 'End date',
+                  label: l10n.endDateLabel,
                   value: DateFormat('EEEE, MMM d, yyyy').format(_endDate),
                   onTap: _pickEndDate,
                 ),
               ] else
                 _buildPickerRow(
                   icon: FontAwesomeIcons.calendarDays,
-                  label: 'Date',
+                  label: l10n.dateLabel,
                   value: DateFormat('EEEE, MMM d, yyyy').format(_startDate),
                   onTap: _pickDate,
                 ),
               _buildPickerRow(
                 icon: FontAwesomeIcons.clock,
-                label: _isMultiDay ? 'Default start time' : 'Start time',
+                label: _isMultiDay ? l10n.defaultStartTimeLabel : l10n.startTimeLabel,
                 value: formatTimeOfDay12Hour(_startTime),
                 onTap: _pickStartTime,
               ),
               _buildPickerRow(
                 icon: FontAwesomeIcons.hourglassStart,
-                label: _isMultiDay ? 'Default end time' : 'End time',
+                label: _isMultiDay ? l10n.defaultEndTimeLabel : l10n.endTimeLabel,
                 value: formatTimeOfDay12Hour(_endTime),
                 onTap: _pickEndTime,
               ),
@@ -822,7 +827,7 @@ class _AddEventPageState extends State<AddEventPage> {
           ),
           onPressed: _saving ? null : () => unawaited(_save()),
           icon: FaIcon(_isEditing ? FontAwesomeIcons.check : FontAwesomeIcons.calendarPlus, size: 14),
-          label: Text(_saving ? 'Saving...' : (_isEditing ? 'Save changes' : 'Save event')),
+          label: Text(_saving ? l10n.savingButton : (_isEditing ? l10n.saveChangesButton : l10n.saveEventButton)),
         ),
       ],
     );
@@ -834,6 +839,7 @@ class _AddEventPageState extends State<AddEventPage> {
   /// implicitly by the date-range picker; a very long range just scrolls
   /// within the page like everything else here.
   Widget _buildPerDaySchedule() {
+    final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
     final days = <DateTime>[];
     for (var d = _startDate; !d.isAfter(_endDate); d = d.add(const Duration(days: 1))) {
@@ -845,13 +851,12 @@ class _AddEventPageState extends State<AddEventPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Per-day schedule',
+            l10n.perDayScheduleTitle,
             style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 4),
           Text(
-            'Every day uses the default time above unless you customize it — '
-            'e.g. a full day on day 1, just a few hours on day 2.',
+            l10n.perDayScheduleHint,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 8),
@@ -862,6 +867,7 @@ class _AddEventPageState extends State<AddEventPage> {
   }
 
   Widget _buildDayOverrideRow(DateTime day) {
+    final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
     final override = _perDayOverrides[day];
     final isCustom = override != null;
@@ -880,8 +886,10 @@ class _AddEventPageState extends State<AddEventPage> {
                 ),
                 Text(
                   isCustom
-                      ? '${formatTimeOfDay12Hour(override.start)} – ${formatTimeOfDay12Hour(override.end)}'
-                      : '${formatTimeOfDay12Hour(_startTime)} – ${formatTimeOfDay12Hour(_endTime)} (default)',
+                      ? l10n.timeRange(
+                          formatTimeOfDay12Hour(override.start), formatTimeOfDay12Hour(override.end))
+                      : l10n.defaultTimeRangeSuffix(
+                          formatTimeOfDay12Hour(_startTime), formatTimeOfDay12Hour(_endTime)),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
                 ),
               ],
@@ -893,7 +901,7 @@ class _AddEventPageState extends State<AddEventPage> {
                 _perDayOverrides.remove(day);
                 _recomputeConflicts();
               }),
-              child: const Text('Reset'),
+              child: Text(l10n.resetButton),
             )
           else
             TextButton(
@@ -901,11 +909,11 @@ class _AddEventPageState extends State<AddEventPage> {
                 _perDayOverrides[day] = (start: const TimeOfDay(hour: 0, minute: 0), end: const TimeOfDay(hour: 23, minute: 59));
                 _recomputeConflicts();
               }),
-              child: const Text('All day'),
+              child: Text(l10n.allDayButton),
             ),
           TextButton(
             onPressed: () => unawaited(_customizeDay(day)),
-            child: Text(isCustom ? 'Edit' : 'Customize'),
+            child: Text(isCustom ? l10n.edit : l10n.customizeButton),
           ),
         ],
       ),
