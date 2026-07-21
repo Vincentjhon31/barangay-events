@@ -20,6 +20,7 @@ class AppUserProfile {
     this.avatarUrl,
     this.role = 'citizen',
     this.lguRequestStatus,
+    this.isKioskAccount = false,
   });
 
   final String id;
@@ -42,6 +43,13 @@ class AppUserProfile {
 
   /// null (never applied) | 'pending' | 'approved' | 'rejected'.
   final String? lguRequestStatus;
+
+  /// Superadmin-designated (via the LGU-admin portal's All Users table,
+  /// admin_set_kiosk_account) — controls whether this account sees the
+  /// "Enable Kiosk Mode" entry point. Not a permission: it doesn't grant
+  /// or restrict anything server-side, so — like [role] — it's never sent
+  /// back on a self-save.
+  final bool isKioskAccount;
 
   bool get isLguMember => role == 'lgu_member';
   bool get isSuperadmin => role == 'superadmin';
@@ -82,6 +90,7 @@ class AppUserProfile {
       avatarUrl: json['avatar_url'] as String?,
       role: json['role'] as String? ?? 'citizen',
       lguRequestStatus: json['lgu_request_status'] as String?,
+      isKioskAccount: json['is_kiosk_account'] as bool? ?? false,
     );
   }
 
@@ -135,15 +144,16 @@ abstract class AppAuthService {
   /// image, this app only offers picking from the fixed catalog.
   Future<void> updateAvatar(String assetPath);
 
-  /// Raw `theme_mode`/`ui_style`/`language` values from the signed-in
-  /// user's profile (mirrors `ThemeMode`/`UiStyle`/`Locale` `.name`s/codes),
-  /// or null if unavailable — lets a chosen appearance/language follow the
-  /// user across devices.
-  Future<({String themeMode, String uiStyle, String language})?> fetchPreferences();
+  /// Raw `theme_mode`/`ui_style`/`language`/`display_mode` values from the
+  /// signed-in user's profile (mirrors `ThemeMode`/`UiStyle`/`Locale`/
+  /// `DisplayMode` `.name`s/codes), or null if unavailable — lets a chosen
+  /// appearance/language/display-size follow the user across devices.
+  Future<({String themeMode, String uiStyle, String language, String displayMode})?> fetchPreferences();
   Future<void> savePreferences({
     required String themeMode,
     required String uiStyle,
     required String language,
+    required String displayMode,
   });
 
   Future<void> signOut();
@@ -324,21 +334,22 @@ class SupabaseAuthService implements AppAuthService {
   }
 
   @override
-  Future<({String themeMode, String uiStyle, String language})?> fetchPreferences() async {
+  Future<({String themeMode, String uiStyle, String language, String displayMode})?> fetchPreferences() async {
     final user = _client.auth.currentUser;
     if (user == null) return null;
 
     try {
       final row = await _client
           .from('profiles')
-          .select('theme_mode, ui_style, language')
+          .select('theme_mode, ui_style, language, display_mode')
           .eq('id', user.id)
           .maybeSingle();
       final mode = row?['theme_mode'] as String?;
       final style = row?['ui_style'] as String?;
       final language = row?['language'] as String?;
-      if (mode == null || style == null || language == null) return null;
-      return (themeMode: mode, uiStyle: style, language: language);
+      final displayMode = row?['display_mode'] as String?;
+      if (mode == null || style == null || language == null || displayMode == null) return null;
+      return (themeMode: mode, uiStyle: style, language: language, displayMode: displayMode);
     } catch (_) {
       return null;
     }
@@ -349,16 +360,18 @@ class SupabaseAuthService implements AppAuthService {
     required String themeMode,
     required String uiStyle,
     required String language,
+    required String displayMode,
   }) async {
     final user = _client.auth.currentUser;
     if (user == null) return;
 
     // A targeted update (not upsert) so this never clobbers other profile
-    // fields when only appearance/language changed.
+    // fields when only appearance/language/display-size changed.
     await _client.from('profiles').update({
       'theme_mode': themeMode,
       'ui_style': uiStyle,
       'language': language,
+      'display_mode': displayMode,
     }).eq('id', user.id);
   }
 
@@ -381,7 +394,7 @@ class MemoryAuthService implements AppAuthService {
   /// exercising the full feature set unmodified — pass 'citizen' or
   /// 'lgu_member' explicitly for tests that specifically cover role
   /// restrictions.
-  factory MemoryAuthService.signedIn({String role = 'superadmin'}) {
+  factory MemoryAuthService.signedIn({String role = 'superadmin', bool isKioskAccount = false}) {
     return MemoryAuthService._(
       true,
       AppUserProfile(
@@ -390,6 +403,7 @@ class MemoryAuthService implements AppAuthService {
         displayName: 'Barangay Officer',
         department: "Mayor's Office",
         role: role,
+        isKioskAccount: isKioskAccount,
       ),
     );
   }
@@ -404,6 +418,7 @@ class MemoryAuthService implements AppAuthService {
   String? _themeMode;
   String? _uiStyle;
   String? _language;
+  String? _displayMode;
 
   @override
   Stream<bool> authStateChanges() async* {
@@ -460,6 +475,7 @@ class MemoryAuthService implements AppAuthService {
       avatarUrl: current.avatarUrl,
       role: current.role,
       lguRequestStatus: current.lguRequestStatus,
+      isKioskAccount: current.isKioskAccount,
     );
     _controller.add(true);
   }
@@ -481,6 +497,7 @@ class MemoryAuthService implements AppAuthService {
       avatarUrl: current.avatarUrl,
       role: current.role,
       lguRequestStatus: current.lguRequestStatus,
+      isKioskAccount: current.isKioskAccount,
     );
   }
 
@@ -506,17 +523,19 @@ class MemoryAuthService implements AppAuthService {
       avatarUrl: assetPath,
       role: current.role,
       lguRequestStatus: current.lguRequestStatus,
+      isKioskAccount: current.isKioskAccount,
     );
     _controller.add(true);
   }
 
   @override
-  Future<({String themeMode, String uiStyle, String language})?> fetchPreferences() async {
+  Future<({String themeMode, String uiStyle, String language, String displayMode})?> fetchPreferences() async {
     final mode = _themeMode;
     final style = _uiStyle;
     final language = _language;
-    if (mode == null || style == null || language == null) return null;
-    return (themeMode: mode, uiStyle: style, language: language);
+    final displayMode = _displayMode;
+    if (mode == null || style == null || language == null || displayMode == null) return null;
+    return (themeMode: mode, uiStyle: style, language: language, displayMode: displayMode);
   }
 
   @override
@@ -524,10 +543,12 @@ class MemoryAuthService implements AppAuthService {
     required String themeMode,
     required String uiStyle,
     required String language,
+    required String displayMode,
   }) async {
     _themeMode = themeMode;
     _uiStyle = uiStyle;
     _language = language;
+    _displayMode = displayMode;
   }
 
   @override

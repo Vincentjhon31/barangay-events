@@ -703,14 +703,12 @@ class _GroupsTabState extends State<GroupsTab> {
   }
 
   Future<void> _openCreateGroup() async {
+    final l10n = AppLocalizations.of(context)!;
     if (!widget.canCreateGroups) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Only verified LGU members can create a group. You can still '
-            'join one by searching its name or entering a code.',
-          ),
-          duration: Duration(seconds: 5),
+        SnackBar(
+          content: Text(l10n.onlyLguCanCreateGroupError),
+          duration: const Duration(seconds: 5),
         ),
       );
       return;
@@ -726,20 +724,19 @@ class _GroupsTabState extends State<GroupsTab> {
     await _loadMyGroups();
     widget.onGroupsChanged?.call();
     if (!mounted) return;
+    final base = created.requiresApproval
+        ? l10n.groupCreatedApprovalMessage(created.name, created.code)
+        : l10n.groupCreatedOpenMessage(created.name, created.code);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          created.isPrivate
-              ? 'Created private group "${created.name}". Code ${created.code} lets '
-                  'people request to join — you approve who gets in.'
-              : 'Created "${created.name}". Share code ${created.code} so others can join.',
-        ),
+        content: Text(created.isPrivate ? '$base ${l10n.groupCreatedPrivateNote}' : base),
         duration: const Duration(seconds: 8),
       ),
     );
   }
 
   Future<void> _openJoinByCode() async {
+    final l10n = AppLocalizations.of(context)!;
     final result = await Navigator.of(context).push<GroupJoinResult>(
       MaterialPageRoute(
         builder: (_) => JoinGroupPage(eventRepository: widget.eventRepository),
@@ -753,18 +750,16 @@ class _GroupsTabState extends State<GroupsTab> {
     }
     if (!mounted) return;
     final message = switch (result.status) {
-      GroupJoinStatus.joined => 'You joined "${result.group.name}".',
-      GroupJoinStatus.pending =>
-        'Request sent — waiting for "${result.group.name}" to approve you.',
-      GroupJoinStatus.alreadyMember =>
-        'You\'re already in "${result.group.name}".',
+      GroupJoinStatus.joined => l10n.joinedGroupMessage(result.group.name),
+      GroupJoinStatus.pending => l10n.joinRequestSentMessage(result.group.name),
+      GroupJoinStatus.alreadyMember => l10n.alreadyInGroupMessage(result.group.name),
     };
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _openGroupMembers(BarangayGroup group) async {
-    await Navigator.of(context).push(
+    final deleted = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => GroupMembersPage(
           group: group,
@@ -782,6 +777,12 @@ class _GroupsTabState extends State<GroupsTab> {
     if (!mounted) return;
     await _loadMyGroups();
     widget.onGroupsChanged?.call();
+    if (deleted == true && mounted) {
+      final l10n = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.groupDeletedMessage(group.name))),
+      );
+    }
   }
 
   // A blank [_searchController] deliberately still runs the search — the
@@ -809,21 +810,26 @@ class _GroupsTabState extends State<GroupsTab> {
   }
 
   Future<void> _join(BarangayGroup group) async {
+    final l10n = AppLocalizations.of(context)!;
     setState(() => _busyIds.add(group.id));
     try {
-      await widget.eventRepository.joinGroup(group.id);
+      final result = await widget.eventRepository.joinGroup(group.id);
       if (!mounted) return;
-      await _loadMyGroups();
-      widget.onGroupsChanged?.call();
+      if (result.status == GroupJoinStatus.joined) {
+        await _loadMyGroups();
+        widget.onGroupsChanged?.call();
+      }
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('You joined "${group.name}".')),
-      );
+      final message = switch (result.status) {
+        GroupJoinStatus.joined => l10n.joinedGroupMessage(group.name),
+        GroupJoinStatus.pending => l10n.joinRequestSentMessage(group.name),
+        GroupJoinStatus.alreadyMember => l10n.alreadyInGroupMessage(group.name),
+      };
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Could not join the group. Please try again.')),
+        SnackBar(content: Text(l10n.couldNotJoinGroupError)),
       );
     } finally {
       if (mounted) setState(() => _busyIds.remove(group.id));
@@ -1067,7 +1073,9 @@ class _GroupsTabState extends State<GroupsTab> {
                       ?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 Text(
-                  l10n.memberCount(group.memberCount),
+                  group.requiresApproval
+                      ? '${l10n.memberCount(group.memberCount)} • ${l10n.approvalRequiredTag}'
+                      : l10n.memberCount(group.memberCount),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -1081,7 +1089,7 @@ class _GroupsTabState extends State<GroupsTab> {
           else
             FilledButton(
               onPressed: busy ? null : () => unawaited(_join(group)),
-              child: Text(l10n.joinButton),
+              child: Text(group.requiresApproval ? l10n.requestToJoinButton : l10n.joinButton),
             ),
         ],
       ),

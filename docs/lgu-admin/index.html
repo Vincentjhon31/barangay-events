@@ -320,6 +320,8 @@
     table.applicants select.role-select {
       width: auto; margin: 0; padding: 6px 8px; font-size: 12.5px;
     }
+    .kiosk-toggle { display: inline-flex; align-items: center; }
+    .kiosk-toggle input { width: 17px; height: 17px; margin: 0; accent-color: var(--accent); cursor: pointer; }
     .filter-row { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
     .filter-row input { flex: 2; min-width: 160px; margin: 0; }
     .filter-row select { flex: 1; min-width: 150px; margin: 0; }
@@ -505,12 +507,13 @@
                       <th>Name</th>
                       <th>Email</th>
                       <th>Role</th>
+                      <th>Kiosk</th>
                       <th>Created</th>
                       <th></th>
                     </tr>
                   </thead>
                   <tbody id="users-list">
-                    <tr><td class="hint" colspan="5">Loading…</td></tr>
+                    <tr><td class="hint" colspan="6">Loading…</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -908,7 +911,7 @@
       var rows = filteredUsers();
 
       if (rows.length === 0) {
-        list.innerHTML = '<tr><td class="hint" colspan="5">No users match.</td></tr>';
+        list.innerHTML = '<tr><td class="hint" colspan="6">No users match.</td></tr>';
         return;
       }
 
@@ -926,6 +929,12 @@
               '<option value="superadmin"' + (u.role === 'superadmin' ? ' selected' : '') + '>Superadmin</option>' +
             '</select>' +
           '</td>' +
+          '<td>' +
+            '<label class="kiosk-toggle">' +
+              '<input type="checkbox" class="kiosk-checkbox" data-user-id="' + u.user_id + '"' +
+                (u.is_kiosk_account ? ' checked' : '') + '>' +
+            '</label>' +
+          '</td>' +
           '<td class="meta">' + formatDate(u.created_at) + '</td>' +
           '<td class="actions"><button class="ghost small" data-view="' + u.user_id + '">View</button></td>';
         list.appendChild(tr);
@@ -940,6 +949,11 @@
           changeRole(sel, sel.getAttribute('data-user-id'), sel.value);
         });
       });
+      list.querySelectorAll('input.kiosk-checkbox').forEach(function (checkbox) {
+        checkbox.addEventListener('change', function () {
+          toggleKiosk(checkbox, checkbox.getAttribute('data-user-id'), checkbox.checked);
+        });
+      });
       list.querySelectorAll('[data-view]').forEach(function (btn) {
         btn.addEventListener('click', function () {
           var id = btn.getAttribute('data-view');
@@ -947,6 +961,26 @@
           renderUsers();
         });
       });
+    }
+
+    // Designates/un-designates a "kiosk account" — purely organizational
+    // (see admin_set_kiosk_account's SQL comment): it only controls
+    // whether that account sees the app's "Enable Kiosk Mode" button,
+    // no permissions change, so this doesn't need the confirm() dialog
+    // changeRole() uses for a superadmin promotion.
+    function toggleKiosk(checkboxEl, userId, isKiosk) {
+      showMessage(usersMsg, '', '');
+      checkboxEl.disabled = true;
+      supabaseClient.rpc('admin_set_kiosk_account', { p_user_id: userId, p_is_kiosk: isKiosk })
+        .then(function (res) {
+          if (res.error) throw res.error;
+          return loadAllUsers();
+        })
+        .catch(function (err) {
+          showMessage(usersMsg, friendlyError(err), 'error');
+          checkboxEl.checked = !isKiosk;
+          checkboxEl.disabled = false;
+        });
     }
 
     function changeRole(selectEl, userId, newRole) {

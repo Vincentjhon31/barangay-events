@@ -1003,4 +1003,109 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get avatarCategoryPerson => 'Tao';
+
+  @override
+  String get requiresApprovalLabel => 'Kailangan ng pag-apruba para sumali';
+
+  @override
+  String get requiresApprovalHint =>
+      'Dapat tanggapin muna ng admin ang mga bagong miyembro bago nila makita ang mga kaganapan ng grupong ito.';
+
+  @override
+  String get joinPolicyOpen => 'Sinumang may access ay agad na makakasali';
+
+  @override
+  String get joinPolicyApprovalRequired =>
+      'Kailangan ng pag-apruba ang mga bagong miyembro';
+
+  @override
+  String get requireApprovalButton => 'Kailanganin ang pag-apruba';
+
+  @override
+  String get allowInstantJoinButton => 'Payagan ang agarang pagsali';
+
+  @override
+  String get requireApprovalEnabledMessage =>
+      'Kailangan na ngayong aprubahan ang mga bagong miyembro bago sumali.';
+
+  @override
+  String get requireApprovalDisabledMessage =>
+      'Kahit sino ay puwede nang agad sumali.';
+
+  @override
+  String get couldNotUpdateJoinSettingError =>
+      'Hindi ma-update ang setting ng pagsali ng grupong ito. Subukan ulit.';
+
+  @override
+  String get requestToJoinButton => 'Humiling na sumali';
+
+  @override
+  String get approvalRequiredTag => 'Kailangan ng pag-apruba';
+
+  @override
+  String joinedGroupMessage(String name) {
+    return 'Sumali ka sa \"$name\".';
+  }
+
+  @override
+  String joinRequestSentMessage(String name) {
+    return 'Naipadala ang hiling — hinihintay na aprubahan ka ng \"$name\".';
+  }
+
+  @override
+  String alreadyInGroupMessage(String name) {
+    return 'Kasapi ka na sa \"$name\".';
+  }
+
+  @override
+  String groupCreatedApprovalMessage(String name, String code) {
+    return 'Nagawa ang \"$name\". Ang code na $code ay nagpapahintulot sa mga tao na humiling na sumali — ikaw ang aaprubahan kung sino ang papasok.';
+  }
+
+  @override
+  String groupCreatedOpenMessage(String name, String code) {
+    return 'Nagawa ang \"$name\". Ibahagi ang code na $code para makasali agad ang iba.';
+  }
+
+  @override
+  String get groupCreatedPrivateNote =>
+      'Hindi ito lalabas sa paghahanap — ang mga taong may code lang ang makakahanap nito.';
+
+  @override
+  String get couldNotJoinGroupError => 'Hindi makasali sa grupo. Subukan ulit.';
+
+  @override
+  String get onlyLguCanCreateGroupError =>
+      'Mga beripikadong LGU member lang ang puwedeng gumawa ng grupo. Puwede ka pa ring sumali sa isa sa pamamagitan ng paghahanap ng pangalan nito o paglalagay ng code.';
+
+  @override
+  String get deleteGroupButton => 'Burahin ang grupo';
+
+  @override
+  String get deleteGroupHint =>
+      'Permanenteng buburahin ang grupong ito at aalisin ang lahat ng miyembro nito. Mananatili ang mga kaganapang na-post na dito, pero mawawala ang koneksyon nila sa grupo.';
+
+  @override
+  String deleteGroupConfirmTitle(String name) {
+    return 'Burahin ang \"$name\"?';
+  }
+
+  @override
+  String get deleteGroupConfirmBody =>
+      'Permanenteng buburahin nito ang grupo at aalisin ang lahat ng miyembro nito. Mananatili ang mga kaganapang na-post na dito, pero mawawala ang koneksyon nila sa grupo. Hindi na ito maibabalik.';
+
+  @override
+  String get couldNotDeleteGroupError =>
+      'Hindi maburahan ang grupo. Subukan ulit.';
+
+  @override
+  String groupDeletedMessage(String name) {
+    return 'Nabura ang \"$name\".';
+  }
+
+  @override
+  String get enableKioskModeButton => 'I-enable ang Kiosk Mode';
+
+  @override
+  String get exitKioskModeButton => 'Lumabas sa Kiosk Mode';
 }

@@ -1011,6 +1011,194 @@ begin
 end $$;
 
 -- ============================================================
+-- Group join policy: "requires approval" independent of "private"
+-- (July 2026). Previously is_private did double duty — hidden from
+-- search AND "needs approval to join" were the same flag. Now a group
+-- can be any combination: public+open (old public default), public+
+-- approval-gated (discoverable, but an admin must accept requests),
+-- private+open (hidden, but anyone with the code joins instantly), or
+-- private+approval-gated (old private default).
+-- Safe to re-run on an existing database.
+-- ============================================================
+
+-- One-time backfill, guarded so re-running this file later (after an
+-- admin has since used admin_set_group_requires_approval to pick their
+-- own value) never clobbers that choice — it only runs the moment the
+-- column is first added.
+do $$ begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'groups' and column_name = 'requires_approval'
+  ) then
+    alter table public.groups add column requires_approval boolean not null default false;
+    update public.groups set requires_approval = true where is_private = true;
+  end if;
+end $$;
+
+-- Join-by-code now branches on requires_approval instead of is_private.
+create or replace function public.request_or_join_group(p_code text)
+returns table(out_group_id uuid, out_group_name text, out_status text)
+language plpgsql security definer set search_path = public as $$
+declare target record; joiner record;
+begin
+  select id, name, requires_approval into target from groups where code = upper(trim(p_code));
+  if not found then raise exception 'Invalid group code'; end if;
+
+  if exists (select 1 from group_members gm where gm.group_id = target.id and gm.user_id = auth.uid()) then
+    return query select target.id, target.name, 'already_member'::text;
+    return;
+  end if;
+
+  if not target.requires_approval then
+    select coalesce(display_name, email) as name, avatar_url into joiner from profiles where id = auth.uid();
+    insert into group_members (group_id, user_id, role, display_name, avatar_url)
+      values (target.id, auth.uid(), 'member', joiner.name, joiner.avatar_url)
+      on conflict (group_id, user_id) do nothing;
+    return query select target.id, target.name, 'joined'::text;
+    return;
+  end if;
+
+  insert into group_join_requests (group_id, requester_id, status)
+    values (target.id, auth.uid(), 'pending')
+    on conflict (group_id, requester_id) do update set status = 'pending', created_at = now();
+  return query select target.id, target.name, 'pending'::text;
+end $$;
+
+-- Search-result join (no code — the group's own id, since it's already
+-- discoverable). Only meaningful for public groups; a private group must
+-- still be joined via its code, which is the whole point of hiding it.
+create or replace function public.request_or_join_group_by_id(p_group_id uuid)
+returns table(out_group_id uuid, out_group_name text, out_status text)
+language plpgsql security definer set search_path = public as $$
+declare target record; joiner record;
+begin
+  select id, name, is_private, requires_approval into target from groups where id = p_group_id;
+  if not found then raise exception 'Group not found'; end if;
+  if target.is_private then
+    raise exception 'This group is private — join it with its code instead';
+  end if;
+
+  if exists (select 1 from group_members gm where gm.group_id = target.id and gm.user_id = auth.uid()) then
+    return query select target.id, target.name, 'already_member'::text;
+    return;
+  end if;
+
+  if not target.requires_approval then
+    select coalesce(display_name, email) as name, avatar_url into joiner from profiles where id = auth.uid();
+    insert into group_members (group_id, user_id, role, display_name, avatar_url)
+      values (target.id, auth.uid(), 'member', joiner.name, joiner.avatar_url)
+      on conflict (group_id, user_id) do nothing;
+    return query select target.id, target.name, 'joined'::text;
+    return;
+  end if;
+
+  insert into group_join_requests (group_id, requester_id, status)
+    values (target.id, auth.uid(), 'pending')
+    on conflict (group_id, requester_id) do update set status = 'pending', created_at = now();
+  return query select target.id, target.name, 'pending'::text;
+end $$;
+
+-- Any admin of the group (not just its creator/a superadmin) can change
+-- this — it's an ordinary group setting, not a trust/verification signal.
+create or replace function public.admin_set_group_requires_approval(p_group_id uuid, p_requires_approval boolean)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (
+    select 1 from group_members where group_id = p_group_id and user_id = auth.uid() and role = 'admin'
+  ) then
+    raise exception 'Only an admin of this group can change its join settings';
+  end if;
+  update groups set requires_approval = p_requires_approval where id = p_group_id;
+end $$;
+
+-- Tightens the group_members INSERT policy now that every join path
+-- (open or approval-gated, public or private) goes through one of the
+-- two RPCs above, or respond_to_join_request's accept step — all three
+-- are security definer and so bypass this policy entirely. The only
+-- direct client-side insert left is createGroup's own bootstrap row
+-- (the new creator, inserting themselves as admin of the group they
+-- just created). This closes a real gap the old, broader policy left
+-- open: it only checked "is this group public, or mine" and never
+-- pinned the `role` column, so any signed-in user could previously
+-- insert themselves directly as 'admin' of any public group and use the
+-- existing "Admins promote/remove members" policies to take it over.
+drop policy if exists "Users join public groups or their own" on public.group_members;
+drop policy if exists "Creator bootstraps their own admin row" on public.group_members;
+create policy "Creator bootstraps their own admin row"
+  on public.group_members
+  for insert
+  with check (
+    auth.uid() = user_id
+    and role = 'admin'
+    and exists (select 1 from groups g where g.id = group_id and g.created_by = auth.uid())
+  );
+
+-- ============================================================
+-- Display-size preference synced across devices (July 2026).
+-- Previously local-only (SharedPreferences), by design, so a phone and a
+-- kiosk signed into the same account could each keep their own size —
+-- now synced like theme_mode/ui_style/language instead, so a kiosk device
+-- (or a reinstall) doesn't need the size re-picked from scratch every
+-- time. 'auto' | 'mobile' | 'tablet' | 'windows' — mirrors DisplayMode's
+-- .name values client-side (lib/responsive_scale.dart).
+-- Safe to re-run on an existing database.
+-- ============================================================
+
+alter table public.profiles add column if not exists display_mode text not null default 'auto';
+
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'profiles_display_mode_check') then
+    alter table public.profiles add constraint profiles_display_mode_check
+      check (display_mode in ('auto', 'mobile', 'tablet', 'windows'));
+  end if;
+end $$;
+
+-- ============================================================
+-- Kiosk mode (July 2026). A superadmin-designated account gets a
+-- one-tap "Enable Kiosk Mode" affordance in the app — a stripped-down,
+-- full-screen calendar + upcoming-events view meant for an unattended
+-- public display (e.g. at the barangay hall), with no Add Event button
+-- and no navigation menu. Purely an app-side UI mode: is_kiosk_account
+-- doesn't grant or remove any permission, it only controls whether that
+-- entry point shows up. See supabase/functions and docs/lgu-admin's All
+-- Users table for how a superadmin flips it.
+-- Safe to re-run on an existing database.
+-- ============================================================
+
+alter table public.profiles add column if not exists is_kiosk_account boolean not null default false;
+
+create or replace function public.admin_set_kiosk_account(p_user_id uuid, p_is_kiosk boolean)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles where id = auth.uid() and role = 'superadmin') then
+    raise exception 'Only a superadmin can designate a kiosk account';
+  end if;
+  update profiles set is_kiosk_account = p_is_kiosk where id = p_user_id;
+end $$;
+
+-- Widened to also return is_kiosk_account for the dashboard's All Users
+-- table — return-shape change needs a drop first (create or replace
+-- can't alter an existing function's output columns).
+drop function if exists public.list_all_users();
+create or replace function public.list_all_users()
+returns table(
+  user_id uuid, email text, display_name text, department text,
+  phone_number text, role text, lgu_request_status text, created_at timestamptz,
+  is_kiosk_account boolean
+)
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can list all users';
+  end if;
+  return query
+    select p.id, p.email, p.display_name, p.department, p.phone_number,
+           p.role, p.lgu_request_status, p.created_at, p.is_kiosk_account
+    from profiles p
+    order by p.created_at desc;
+end $$;
+
+-- ============================================================
 -- Group verification badge + ownership transfer (July 2026).
 -- Any lgu_member can name a public group anything, including something
 -- official-sounding ("Barangay Health Office") — is_verified is a purely

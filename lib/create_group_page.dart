@@ -21,6 +21,7 @@ class CreateGroupPage extends StatefulWidget {
 class _CreateGroupPageState extends State<CreateGroupPage> {
   final _nameController = TextEditingController();
   bool _isPrivate = false;
+  bool _requiresApproval = false;
   bool _creating = false;
 
   @override
@@ -41,7 +42,11 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
 
     setState(() => _creating = true);
     try {
-      final group = await widget.eventRepository.createGroup(name, isPrivate: _isPrivate);
+      final group = await widget.eventRepository.createGroup(
+        name,
+        isPrivate: _isPrivate,
+        requiresApproval: _requiresApproval,
+      );
       if (!mounted) return;
       Navigator.of(context).pop(group);
     } catch (_) {
@@ -137,7 +142,43 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                   ),
                   Switch(
                     value: _isPrivate,
-                    onChanged: (value) => setState(() => _isPrivate = value),
+                    onChanged: (value) => setState(() {
+                      _isPrivate = value;
+                      // Nudge toward the old default (private == needs
+                      // approval) without forcing it — still independently
+                      // toggleable right below.
+                      if (value) _requiresApproval = true;
+                    }),
+                  ),
+                ],
+              ),
+              const Divider(height: 24),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l10n.requiresApprovalLabel,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        Text(
+                          l10n.requiresApprovalHint,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: _requiresApproval,
+                    onChanged: (value) => setState(() => _requiresApproval = value),
                   ),
                 ],
               ),

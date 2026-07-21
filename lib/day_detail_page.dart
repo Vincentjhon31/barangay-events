@@ -23,6 +23,7 @@ class DayDetailPage extends StatefulWidget {
     required this.eventRepository,
     required this.creatorProfile,
     required this.buildEventCard,
+    this.kiosk = false,
   });
 
   final DateTime date;
@@ -34,6 +35,11 @@ class DayDetailPage extends StatefulWidget {
   /// so icon/tint heuristics, the delete menu, and the details sheet all
   /// stay in one place.
   final Widget Function(BarangayEvent event) buildEventCard;
+
+  /// True when opened from kiosk mode — hides this page's own Add Event
+  /// FAB, since that mode is meant to be read-only regardless of what
+  /// the signed-in account could otherwise do.
+  final bool kiosk;
 
   @override
   State<DayDetailPage> createState() => _DayDetailPageState();
@@ -141,14 +147,16 @@ class _DayDetailPageState extends State<DayDetailPage> {
       title: DateFormat('EEEE').format(widget.date),
       subtitle: DateFormat('MMMM d, yyyy').format(widget.date),
       scrollController: _scrollController,
-      floatingActionButton: FloatingActionButton.extended(
-        key: const Key('day-detail-add-event-fab'),
-        onPressed: () => unawaited(_openAddEvent()),
-        backgroundColor: colorScheme.primary,
-        foregroundColor: colorScheme.onPrimary,
-        icon: FaIcon(FontAwesomeIcons.plus, size: 16, color: colorScheme.onPrimary),
-        label: Text(l10n.addEventButton, style: TextStyle(color: colorScheme.onPrimary)),
-      ),
+      floatingActionButton: widget.kiosk
+          ? null
+          : FloatingActionButton.extended(
+              key: const Key('day-detail-add-event-fab'),
+              onPressed: () => unawaited(_openAddEvent()),
+              backgroundColor: colorScheme.primary,
+              foregroundColor: colorScheme.onPrimary,
+              icon: FaIcon(FontAwesomeIcons.plus, size: 16, color: colorScheme.onPrimary),
+              label: Text(l10n.addEventButton, style: TextStyle(color: colorScheme.onPrimary)),
+            ),
       bottomOverlay: _hasMoreBelow ? _buildMoreBelowHint(colorScheme) : null,
       children: [
         if (!_loaded)

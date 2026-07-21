@@ -46,8 +46,11 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
   // transfer needs to be reflected immediately, not just after re-opening.
   late bool _isVerified = widget.group.isVerified;
   late String? _createdBy = widget.group.createdBy;
+  late bool _requiresApproval = widget.group.requiresApproval;
   bool _verifyBusy = false;
   bool _transferBusy = false;
+  bool _joinPolicyBusy = false;
+  bool _deleting = false;
 
   @override
   void initState() {
@@ -180,6 +183,29 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
     }
   }
 
+  Future<void> _toggleRequiresApproval() async {
+    final l10n = AppLocalizations.of(context)!;
+    final next = !_requiresApproval;
+    setState(() => _joinPolicyBusy = true);
+    try {
+      await widget.eventRepository.setGroupRequiresApproval(widget.group.id, next);
+      if (!mounted) return;
+      setState(() => _requiresApproval = next);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(next ? l10n.requireApprovalEnabledMessage : l10n.requireApprovalDisabledMessage),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.couldNotUpdateJoinSettingError)),
+      );
+    } finally {
+      if (mounted) setState(() => _joinPolicyBusy = false);
+    }
+  }
+
   Future<void> _transferOwnership() async {
     final l10n = AppLocalizations.of(context)!;
     final candidates = _members.where((member) => member.userId != _createdBy).toList();
@@ -243,6 +269,42 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
     }
   }
 
+  Future<void> _delete() async {
+    final l10n = AppLocalizations.of(context)!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.deleteGroupConfirmTitle(widget.group.name)),
+        content: Text(l10n.deleteGroupConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(l10n.deleteGroupButton),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deleting = true);
+    try {
+      await widget.eventRepository.deleteGroup(widget.group.id);
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _deleting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.couldNotDeleteGroupError)),
+      );
+    }
+  }
+
   Future<void> _copyCode() async {
     await Clipboard.setData(ClipboardData(text: widget.group.code));
     if (!mounted) return;
@@ -256,7 +318,7 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
   /// entry point — only rendered when at least one of those is relevant
   /// to the viewer, so a regular member sees nothing extra here.
   Widget? _buildOwnerPanel() {
-    if (!_isVerified && !widget.isSuperadmin && !_canTransferOwnership) return null;
+    if (!_isVerified && !widget.isSuperadmin && !_canTransferOwnership && !_isCreator) return null;
     final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -320,6 +382,86 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
                 ],
               ),
             ],
+            if (_isCreator) ...[
+              if (_isVerified || widget.isSuperadmin || _canTransferOwnership) const Divider(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      l10n.deleteGroupHint,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _deleting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : TextButton(
+                          style: TextButton.styleFrom(foregroundColor: colorScheme.error),
+                          onPressed: () => unawaited(_delete()),
+                          child: Text(l10n.deleteGroupButton),
+                        ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Join-policy toggle (open vs. requires approval) — visible to any
+  /// admin of the group, independent of the owner-only settings above,
+  /// since this is an ordinary group setting rather than a trust signal.
+  Widget? _buildJoinSettingsPanel() {
+    if (!_isAdmin) return null;
+    final l10n = AppLocalizations.of(context)!;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: GlassPanel(
+        child: Row(
+          children: [
+            FaIcon(
+              _requiresApproval ? FontAwesomeIcons.userClock : FontAwesomeIcons.doorOpen,
+              size: 16,
+              color: colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _requiresApproval ? l10n.joinPolicyApprovalRequired : l10n.joinPolicyOpen,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  Text(
+                    l10n.requiresApprovalHint,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            _joinPolicyBusy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : TextButton(
+                    onPressed: () => unawaited(_toggleRequiresApproval()),
+                    child: Text(_requiresApproval ? l10n.allowInstantJoinButton : l10n.requireApprovalButton),
+                  ),
           ],
         ),
       ),
@@ -432,6 +574,7 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     final ownerPanel = _buildOwnerPanel();
+    final joinSettingsPanel = _buildJoinSettingsPanel();
 
     return GlassSubPage(
       title: widget.group.name,
@@ -439,6 +582,7 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
           '${widget.group.isPrivate ? ' • Private' : ''}',
       children: [
         if (ownerPanel != null) ownerPanel,
+        if (joinSettingsPanel != null) joinSettingsPanel,
         GlassPanel(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -1825,6 +1825,168 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Person'**
   String get avatarCategoryPerson;
+
+  /// No description provided for @requiresApprovalLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Require approval to join'**
+  String get requiresApprovalLabel;
+
+  /// No description provided for @requiresApprovalHint.
+  ///
+  /// In en, this message translates to:
+  /// **'New members must be accepted by an admin before they can see this group\'s events.'**
+  String get requiresApprovalHint;
+
+  /// No description provided for @joinPolicyOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Anyone with access can join instantly'**
+  String get joinPolicyOpen;
+
+  /// No description provided for @joinPolicyApprovalRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'New members need approval'**
+  String get joinPolicyApprovalRequired;
+
+  /// No description provided for @requireApprovalButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Require approval'**
+  String get requireApprovalButton;
+
+  /// No description provided for @allowInstantJoinButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow instant join'**
+  String get allowInstantJoinButton;
+
+  /// No description provided for @requireApprovalEnabledMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'New members must now be approved to join.'**
+  String get requireApprovalEnabledMessage;
+
+  /// No description provided for @requireApprovalDisabledMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Anyone can now join instantly.'**
+  String get requireApprovalDisabledMessage;
+
+  /// No description provided for @couldNotUpdateJoinSettingError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not update this group\'s join settings. Please try again.'**
+  String get couldNotUpdateJoinSettingError;
+
+  /// No description provided for @requestToJoinButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Request to join'**
+  String get requestToJoinButton;
+
+  /// No description provided for @approvalRequiredTag.
+  ///
+  /// In en, this message translates to:
+  /// **'Approval required'**
+  String get approvalRequiredTag;
+
+  /// No description provided for @joinedGroupMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'You joined \"{name}\".'**
+  String joinedGroupMessage(String name);
+
+  /// No description provided for @joinRequestSentMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Request sent — waiting for \"{name}\" to approve you.'**
+  String joinRequestSentMessage(String name);
+
+  /// No description provided for @alreadyInGroupMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re already in \"{name}\".'**
+  String alreadyInGroupMessage(String name);
+
+  /// No description provided for @groupCreatedApprovalMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Created \"{name}\". Code {code} lets people request to join — you approve who gets in.'**
+  String groupCreatedApprovalMessage(String name, String code);
+
+  /// No description provided for @groupCreatedOpenMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Created \"{name}\". Share code {code} so others can join instantly.'**
+  String groupCreatedOpenMessage(String name, String code);
+
+  /// No description provided for @groupCreatedPrivateNote.
+  ///
+  /// In en, this message translates to:
+  /// **'It won\'t show up in search — only people with the code can find it.'**
+  String get groupCreatedPrivateNote;
+
+  /// No description provided for @couldNotJoinGroupError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not join the group. Please try again.'**
+  String get couldNotJoinGroupError;
+
+  /// No description provided for @onlyLguCanCreateGroupError.
+  ///
+  /// In en, this message translates to:
+  /// **'Only verified LGU members can create a group. You can still join one by searching its name or entering a code.'**
+  String get onlyLguCanCreateGroupError;
+
+  /// No description provided for @deleteGroupButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete group'**
+  String get deleteGroupButton;
+
+  /// No description provided for @deleteGroupHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Permanently delete this group and remove all its members. Events already posted here stay, but lose their group association.'**
+  String get deleteGroupHint;
+
+  /// No description provided for @deleteGroupConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete \"{name}\"?'**
+  String deleteGroupConfirmTitle(String name);
+
+  /// No description provided for @deleteGroupConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This permanently deletes the group and removes all its members. Events already posted here stay, but lose their group association. This cannot be undone.'**
+  String get deleteGroupConfirmBody;
+
+  /// No description provided for @couldNotDeleteGroupError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not delete the group. Please try again.'**
+  String get couldNotDeleteGroupError;
+
+  /// No description provided for @groupDeletedMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{name}\" was deleted.'**
+  String groupDeletedMessage(String name);
+
+  /// No description provided for @enableKioskModeButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable Kiosk Mode'**
+  String get enableKioskModeButton;
+
+  /// No description provided for @exitKioskModeButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit Kiosk Mode'**
+  String get exitKioskModeButton;
 }
 
 class _AppLocalizationsDelegate

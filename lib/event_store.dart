@@ -278,6 +278,7 @@ class BarangayGroup {
     this.isPrivate = false,
     this.myRole,
     this.isVerified = false,
+    this.requiresApproval = false,
   });
 
   final String id;
@@ -286,7 +287,9 @@ class BarangayGroup {
   final int memberCount;
   final String? createdBy;
 
-  /// Hidden from search; joining requires a request the creator accepts.
+  /// Hidden from search; still needs the code to join either way — see
+  /// [requiresApproval] for whether that join is instant or needs an
+  /// admin's approval.
   final bool isPrivate;
 
   /// The caller's role in this group ('admin' | 'member'), or null if the
@@ -298,6 +301,12 @@ class BarangayGroup {
   /// apart from a same-named impostor. See admin_set_group_verified.
   final bool isVerified;
 
+  /// Independent of [isPrivate] — a public (discoverable) group can still
+  /// require an admin to accept join requests, and a private (code-only)
+  /// group can still let anyone with the code in instantly. See
+  /// admin_set_group_requires_approval / request_or_join_group(_by_id).
+  final bool requiresApproval;
+
   bool get isAdmin => myRole == 'admin';
 
   BarangayGroup copyWith({
@@ -305,6 +314,7 @@ class BarangayGroup {
     String? myRole,
     String? createdBy,
     bool? isVerified,
+    bool? requiresApproval,
   }) {
     return BarangayGroup(
       id: id,
@@ -315,6 +325,7 @@ class BarangayGroup {
       isPrivate: isPrivate,
       myRole: myRole ?? this.myRole,
       isVerified: isVerified ?? this.isVerified,
+      requiresApproval: requiresApproval ?? this.requiresApproval,
     );
   }
 }
@@ -424,17 +435,31 @@ abstract class EventRepository {
   /// Searches all groups by name.
   Future<List<BarangayGroup>> searchGroups(String query);
 
-  /// Creates a group (the creator automatically becomes a member).
-  Future<BarangayGroup> createGroup(String name, {bool isPrivate = false});
+  /// Deletes [groupId] entirely — creator-only server-side. Members are
+  /// removed automatically (cascade); any events posted to it keep
+  /// existing but lose their group association (group_id set to null).
+  Future<void> deleteGroup(String groupId);
 
-  /// Looks up the group behind [code]. Public groups join instantly; private
-  /// ones file a request the creator must accept — check the result's
-  /// [GroupJoinResult.status] to know which happened.
+  /// Creates a group (the creator automatically becomes a member/admin).
+  /// [isPrivate] and [requiresApproval] are independent — see
+  /// [BarangayGroup.requiresApproval].
+  Future<BarangayGroup> createGroup(
+    String name, {
+    bool isPrivate = false,
+    bool requiresApproval = false,
+  });
+
+  /// Looks up the group behind [code]. Joins instantly unless the group
+  /// requires approval, in which case it files a request the creator/an
+  /// admin must accept — check the result's [GroupJoinResult.status] to
+  /// know which happened.
   Future<GroupJoinResult> requestOrJoinGroupByCode(String code);
 
   /// Joins [groupId] directly (from search results — only ever a public
-  /// group, since private ones never appear in search results).
-  Future<void> joinGroup(String groupId);
+  /// group, since private ones never appear in search results). Same
+  /// instant-vs-request branching as [requestOrJoinGroupByCode], based on
+  /// the group's [BarangayGroup.requiresApproval].
+  Future<GroupJoinResult> joinGroup(String groupId);
 
   /// Leaves [groupId].
   Future<void> leaveGroup(String groupId);
@@ -462,6 +487,10 @@ abstract class EventRepository {
   /// Marks/unmarks [groupId] as verified/official (superadmin-only
   /// server-side) — see [BarangayGroup.isVerified].
   Future<void> setGroupVerified(String groupId, bool verified);
+
+  /// Changes whether [groupId] requires admin approval to join — callable
+  /// by any admin of that group. See [BarangayGroup.requiresApproval].
+  Future<void> setGroupRequiresApproval(String groupId, bool requiresApproval);
 
   /// Hands [groupId]'s creator-only privileges to [newOwnerUserId], who
   /// must already be a member — promoted to admin as part of the
@@ -544,6 +573,7 @@ class MemoryEventRepository implements EventRepository {
       memberCount: 5,
       createdBy: 'hrmo-1',
       isPrivate: true,
+      requiresApproval: true,
     ),
     // Private, owned by the mock user, with a seeded pending request below
     // — exercises the approval UI without any setup.
@@ -554,6 +584,7 @@ class MemoryEventRepository implements EventRepository {
       memberCount: 1,
       createdBy: _mockUserId,
       isPrivate: true,
+      requiresApproval: true,
     ),
   ];
   // Note: intentionally starts empty, even though 'grp-private-mock' above
@@ -627,7 +658,20 @@ class MemoryEventRepository implements EventRepository {
   }
 
   @override
-  Future<BarangayGroup> createGroup(String name, {bool isPrivate = false}) async {
+  Future<void> deleteGroup(String groupId) async {
+    _allGroups.removeWhere((group) => group.id == groupId);
+    _members.remove(groupId);
+    _myGroupIds.remove(groupId);
+    _myRoleByGroupId.remove(groupId);
+    _pendingRequests.removeWhere((request) => request.groupId == groupId);
+  }
+
+  @override
+  Future<BarangayGroup> createGroup(
+    String name, {
+    bool isPrivate = false,
+    bool requiresApproval = false,
+  }) async {
     _groupCounter++;
     final group = BarangayGroup(
       id: 'grp-local-$_groupCounter',
@@ -636,6 +680,7 @@ class MemoryEventRepository implements EventRepository {
       memberCount: 1,
       createdBy: _mockUserId,
       isPrivate: isPrivate,
+      requiresApproval: requiresApproval,
     );
     _allGroups.add(group);
     _myGroupIds.add(group.id);
@@ -665,7 +710,7 @@ class MemoryEventRepository implements EventRepository {
       return GroupJoinResult(group: group, status: GroupJoinStatus.alreadyMember);
     }
 
-    if (!group.isPrivate) {
+    if (!group.requiresApproval) {
       _joinAsMockMember(group.id);
       return GroupJoinResult(group: group, status: GroupJoinStatus.joined);
     }
@@ -696,11 +741,30 @@ class MemoryEventRepository implements EventRepository {
   }
 
   @override
-  Future<void> joinGroup(String groupId) async {
-    if (!_allGroups.any((group) => group.id == groupId)) {
+  Future<GroupJoinResult> joinGroup(String groupId) async {
+    final group = _allGroups.where((group) => group.id == groupId).firstOrNull;
+    if (group == null) {
       throw Exception('Group not found');
     }
-    _joinAsMockMember(groupId);
+    if (_myGroupIds.contains(groupId)) {
+      return GroupJoinResult(group: group, status: GroupJoinStatus.alreadyMember);
+    }
+
+    if (!group.requiresApproval) {
+      _joinAsMockMember(groupId);
+      return GroupJoinResult(group: group, status: GroupJoinStatus.joined);
+    }
+
+    _requestCounter++;
+    _pendingRequests.add(GroupJoinRequest(
+      id: 'req-local-$_requestCounter',
+      groupId: group.id,
+      groupName: group.name,
+      requesterId: _mockUserId,
+      requesterName: 'You',
+      createdAt: DateTime.now(),
+    ));
+    return GroupJoinResult(group: group, status: GroupJoinStatus.pending);
   }
 
   @override
@@ -789,6 +853,13 @@ class MemoryEventRepository implements EventRepository {
     final index = _allGroups.indexWhere((group) => group.id == groupId);
     if (index == -1) return;
     _allGroups[index] = _allGroups[index].copyWith(isVerified: verified);
+  }
+
+  @override
+  Future<void> setGroupRequiresApproval(String groupId, bool requiresApproval) async {
+    final index = _allGroups.indexWhere((group) => group.id == groupId);
+    if (index == -1) return;
+    _allGroups[index] = _allGroups[index].copyWith(requiresApproval: requiresApproval);
   }
 
   @override
@@ -885,6 +956,7 @@ class SupabaseEventRepository implements EventRepository {
       createdBy: row['created_by'] as String?,
       isPrivate: row['is_private'] as bool? ?? false,
       isVerified: row['is_verified'] as bool? ?? false,
+      requiresApproval: row['requires_approval'] as bool? ?? false,
     );
   }
 
@@ -905,7 +977,7 @@ class SupabaseEventRepository implements EventRepository {
 
     final rows = await _client
         .from('groups')
-        .select('id, name, code, created_by, is_private, is_verified, group_members(count)')
+        .select('id, name, code, created_by, is_private, is_verified, requires_approval, group_members(count)')
         .inFilter('id', roleByGroupId.keys.toList())
         .order('name', ascending: true);
     return rows
@@ -938,7 +1010,7 @@ class SupabaseEventRepository implements EventRepository {
     // enforces that server-side, so no client-side filtering is needed.
     final rows = await _client
         .from('groups')
-        .select('id, name, code, created_by, is_private, is_verified, group_members(count)')
+        .select('id, name, code, created_by, is_private, is_verified, requires_approval, group_members(count)')
         .ilike('name', '%$trimmed%')
         .order('name', ascending: true)
         .limit(20);
@@ -946,7 +1018,16 @@ class SupabaseEventRepository implements EventRepository {
   }
 
   @override
-  Future<BarangayGroup> createGroup(String name, {bool isPrivate = false}) async {
+  Future<void> deleteGroup(String groupId) async {
+    await _client.from('groups').delete().eq('id', groupId);
+  }
+
+  @override
+  Future<BarangayGroup> createGroup(
+    String name, {
+    bool isPrivate = false,
+    bool requiresApproval = false,
+  }) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) {
       throw Exception('You must be signed in to create a group');
@@ -958,6 +1039,7 @@ class SupabaseEventRepository implements EventRepository {
           'name': name.trim(),
           'created_by': userId,
           'is_private': isPrivate,
+          'requires_approval': requiresApproval,
         })
         .select('id, name, code, created_by')
         .single();
@@ -978,6 +1060,7 @@ class SupabaseEventRepository implements EventRepository {
       memberCount: 1,
       createdBy: userId,
       isPrivate: isPrivate,
+      requiresApproval: requiresApproval,
       myRole: 'admin',
     );
   }
@@ -1007,21 +1090,27 @@ class SupabaseEventRepository implements EventRepository {
   }
 
   @override
-  Future<void> joinGroup(String groupId) async {
-    final userId = _client.auth.currentUser?.id;
-    if (userId == null) return;
-    final snapshot = await _ownProfileSnapshot(userId);
-    await _client.from('group_members').upsert(
-      {
-        'group_id': groupId,
-        'user_id': userId,
-        'role': 'member',
-        'display_name': snapshot['display_name'],
-        'avatar_url': snapshot['avatar_url'],
-      },
-      onConflict: 'group_id,user_id',
-      ignoreDuplicates: true,
+  Future<GroupJoinResult> joinGroup(String groupId) async {
+    final rows = await _client.rpc(
+      'request_or_join_group_by_id',
+      params: {'p_group_id': groupId},
+    ) as List<dynamic>;
+    if (rows.isEmpty) {
+      throw Exception('Group not found');
+    }
+
+    final row = rows.first as Map<String, dynamic>;
+    final status = switch (row['out_status'] as String?) {
+      'joined' => GroupJoinStatus.joined,
+      'already_member' => GroupJoinStatus.alreadyMember,
+      _ => GroupJoinStatus.pending,
+    };
+    final group = BarangayGroup(
+      id: row['out_group_id'] as String,
+      name: row['out_group_name'] as String? ?? 'Unnamed group',
+      code: '',
     );
+    return GroupJoinResult(group: group, status: status);
   }
 
   @override
@@ -1112,6 +1201,14 @@ class SupabaseEventRepository implements EventRepository {
     await _client.rpc('admin_set_group_verified', params: {
       'p_group_id': groupId,
       'p_verified': verified,
+    });
+  }
+
+  @override
+  Future<void> setGroupRequiresApproval(String groupId, bool requiresApproval) async {
+    await _client.rpc('admin_set_group_requires_approval', params: {
+      'p_group_id': groupId,
+      'p_requires_approval': requiresApproval,
     });
   }
 

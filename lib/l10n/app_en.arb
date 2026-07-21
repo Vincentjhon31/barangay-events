@@ -426,5 +426,62 @@
   "couldNotSaveAvatarError": "Could not save your profile picture. Please try again.",
   "avatarCategoryAnime": "Anime",
   "avatarCategoryAnimal": "Animal",
-  "avatarCategoryPerson": "Person"
+  "avatarCategoryPerson": "Person",
+
+  "requiresApprovalLabel": "Require approval to join",
+  "requiresApprovalHint": "New members must be accepted by an admin before they can see this group's events.",
+  "joinPolicyOpen": "Anyone with access can join instantly",
+  "joinPolicyApprovalRequired": "New members need approval",
+  "requireApprovalButton": "Require approval",
+  "allowInstantJoinButton": "Allow instant join",
+  "requireApprovalEnabledMessage": "New members must now be approved to join.",
+  "requireApprovalDisabledMessage": "Anyone can now join instantly.",
+  "couldNotUpdateJoinSettingError": "Could not update this group's join settings. Please try again.",
+  "requestToJoinButton": "Request to join",
+  "approvalRequiredTag": "Approval required",
+  "joinedGroupMessage": "You joined \"{name}\".",
+  "@joinedGroupMessage": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "joinRequestSentMessage": "Request sent — waiting for \"{name}\" to approve you.",
+  "@joinRequestSentMessage": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "alreadyInGroupMessage": "You're already in \"{name}\".",
+  "@alreadyInGroupMessage": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "groupCreatedApprovalMessage": "Created \"{name}\". Code {code} lets people request to join — you approve who gets in.",
+  "@groupCreatedApprovalMessage": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "code": { "type": "String" }
+    }
+  },
+  "groupCreatedOpenMessage": "Created \"{name}\". Share code {code} so others can join instantly.",
+  "@groupCreatedOpenMessage": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "code": { "type": "String" }
+    }
+  },
+  "groupCreatedPrivateNote": "It won't show up in search — only people with the code can find it.",
+  "couldNotJoinGroupError": "Could not join the group. Please try again.",
+  "onlyLguCanCreateGroupError": "Only verified LGU members can create a group. You can still join one by searching its name or entering a code.",
+
+  "deleteGroupButton": "Delete group",
+  "deleteGroupHint": "Permanently delete this group and remove all its members. Events already posted here stay, but lose their group association.",
+  "deleteGroupConfirmTitle": "Delete \"{name}\"?",
+  "@deleteGroupConfirmTitle": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "deleteGroupConfirmBody": "This permanently deletes the group and removes all its members. Events already posted here stay, but lose their group association. This cannot be undone.",
+  "couldNotDeleteGroupError": "Could not delete the group. Please try again.",
+  "groupDeletedMessage": "\"{name}\" was deleted.",
+  "@groupDeletedMessage": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "enableKioskModeButton": "Enable Kiosk Mode",
+  "exitKioskModeButton": "Exit Kiosk Mode"
 }

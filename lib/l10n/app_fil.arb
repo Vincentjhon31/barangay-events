@@ -306,5 +306,35 @@
   "couldNotSaveAvatarError": "Hindi ma-save ang iyong larawan sa profile. Subukan ulit.",
   "avatarCategoryAnime": "Anime",
   "avatarCategoryAnimal": "Hayop",
-  "avatarCategoryPerson": "Tao"
+  "avatarCategoryPerson": "Tao",
+
+  "requiresApprovalLabel": "Kailangan ng pag-apruba para sumali",
+  "requiresApprovalHint": "Dapat tanggapin muna ng admin ang mga bagong miyembro bago nila makita ang mga kaganapan ng grupong ito.",
+  "joinPolicyOpen": "Sinumang may access ay agad na makakasali",
+  "joinPolicyApprovalRequired": "Kailangan ng pag-apruba ang mga bagong miyembro",
+  "requireApprovalButton": "Kailanganin ang pag-apruba",
+  "allowInstantJoinButton": "Payagan ang agarang pagsali",
+  "requireApprovalEnabledMessage": "Kailangan na ngayong aprubahan ang mga bagong miyembro bago sumali.",
+  "requireApprovalDisabledMessage": "Kahit sino ay puwede nang agad sumali.",
+  "couldNotUpdateJoinSettingError": "Hindi ma-update ang setting ng pagsali ng grupong ito. Subukan ulit.",
+  "requestToJoinButton": "Humiling na sumali",
+  "approvalRequiredTag": "Kailangan ng pag-apruba",
+  "joinedGroupMessage": "Sumali ka sa \"{name}\".",
+  "joinRequestSentMessage": "Naipadala ang hiling — hinihintay na aprubahan ka ng \"{name}\".",
+  "alreadyInGroupMessage": "Kasapi ka na sa \"{name}\".",
+  "groupCreatedApprovalMessage": "Nagawa ang \"{name}\". Ang code na {code} ay nagpapahintulot sa mga tao na humiling na sumali — ikaw ang aaprubahan kung sino ang papasok.",
+  "groupCreatedOpenMessage": "Nagawa ang \"{name}\". Ibahagi ang code na {code} para makasali agad ang iba.",
+  "groupCreatedPrivateNote": "Hindi ito lalabas sa paghahanap — ang mga taong may code lang ang makakahanap nito.",
+  "couldNotJoinGroupError": "Hindi makasali sa grupo. Subukan ulit.",
+  "onlyLguCanCreateGroupError": "Mga beripikadong LGU member lang ang puwedeng gumawa ng grupo. Puwede ka pa ring sumali sa isa sa pamamagitan ng paghahanap ng pangalan nito o paglalagay ng code.",
+
+  "deleteGroupButton": "Burahin ang grupo",
+  "deleteGroupHint": "Permanenteng buburahin ang grupong ito at aalisin ang lahat ng miyembro nito. Mananatili ang mga kaganapang na-post na dito, pero mawawala ang koneksyon nila sa grupo.",
+  "deleteGroupConfirmTitle": "Burahin ang \"{name}\"?",
+  "deleteGroupConfirmBody": "Permanenteng buburahin nito ang grupo at aalisin ang lahat ng miyembro nito. Mananatili ang mga kaganapang na-post na dito, pero mawawala ang koneksyon nila sa grupo. Hindi na ito maibabalik.",
+  "couldNotDeleteGroupError": "Hindi maburahan ang grupo. Subukan ulit.",
+  "groupDeletedMessage": "Nabura ang \"{name}\".",
+
+  "enableKioskModeButton": "I-enable ang Kiosk Mode",
+  "exitKioskModeButton": "Lumabas sa Kiosk Mode"
 }

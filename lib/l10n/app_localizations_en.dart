@@ -991,4 +991,108 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get avatarCategoryPerson => 'Person';
+
+  @override
+  String get requiresApprovalLabel => 'Require approval to join';
+
+  @override
+  String get requiresApprovalHint =>
+      'New members must be accepted by an admin before they can see this group\'s events.';
+
+  @override
+  String get joinPolicyOpen => 'Anyone with access can join instantly';
+
+  @override
+  String get joinPolicyApprovalRequired => 'New members need approval';
+
+  @override
+  String get requireApprovalButton => 'Require approval';
+
+  @override
+  String get allowInstantJoinButton => 'Allow instant join';
+
+  @override
+  String get requireApprovalEnabledMessage =>
+      'New members must now be approved to join.';
+
+  @override
+  String get requireApprovalDisabledMessage => 'Anyone can now join instantly.';
+
+  @override
+  String get couldNotUpdateJoinSettingError =>
+      'Could not update this group\'s join settings. Please try again.';
+
+  @override
+  String get requestToJoinButton => 'Request to join';
+
+  @override
+  String get approvalRequiredTag => 'Approval required';
+
+  @override
+  String joinedGroupMessage(String name) {
+    return 'You joined \"$name\".';
+  }
+
+  @override
+  String joinRequestSentMessage(String name) {
+    return 'Request sent — waiting for \"$name\" to approve you.';
+  }
+
+  @override
+  String alreadyInGroupMessage(String name) {
+    return 'You\'re already in \"$name\".';
+  }
+
+  @override
+  String groupCreatedApprovalMessage(String name, String code) {
+    return 'Created \"$name\". Code $code lets people request to join — you approve who gets in.';
+  }
+
+  @override
+  String groupCreatedOpenMessage(String name, String code) {
+    return 'Created \"$name\". Share code $code so others can join instantly.';
+  }
+
+  @override
+  String get groupCreatedPrivateNote =>
+      'It won\'t show up in search — only people with the code can find it.';
+
+  @override
+  String get couldNotJoinGroupError =>
+      'Could not join the group. Please try again.';
+
+  @override
+  String get onlyLguCanCreateGroupError =>
+      'Only verified LGU members can create a group. You can still join one by searching its name or entering a code.';
+
+  @override
+  String get deleteGroupButton => 'Delete group';
+
+  @override
+  String get deleteGroupHint =>
+      'Permanently delete this group and remove all its members. Events already posted here stay, but lose their group association.';
+
+  @override
+  String deleteGroupConfirmTitle(String name) {
+    return 'Delete \"$name\"?';
+  }
+
+  @override
+  String get deleteGroupConfirmBody =>
+      'This permanently deletes the group and removes all its members. Events already posted here stay, but lose their group association. This cannot be undone.';
+
+  @override
+  String get couldNotDeleteGroupError =>
+      'Could not delete the group. Please try again.';
+
+  @override
+  String groupDeletedMessage(String name) {
+    return '\"$name\" was deleted.';
+  }
+
+  @override
+  String get enableKioskModeButton => 'Enable Kiosk Mode';
+
+  @override
+  String get exitKioskModeButton => 'Exit Kiosk Mode';
 }

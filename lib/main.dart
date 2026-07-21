@@ -243,6 +243,7 @@ class _AuthenticatedShellState extends State<AuthenticatedShell> {
         themeMode: prefs.themeMode,
         uiStyle: prefs.uiStyle,
         language: prefs.language,
+        displayMode: prefs.displayMode,
       ));
     }));
   }
@@ -680,6 +681,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
   _NewEventNotice? _activeNewEventNotice;
   Timer? _newEventNoticeTimer;
 
+  // Local to this device (not synced) — an unattended kiosk display
+  // should stay in kiosk mode across app/device restarts without anyone
+  // needing to walk over and re-enable it.
+  static const String _kioskModePrefKey = 'kiosk_mode_active';
+  bool _kioskModeActive = false;
+
   bool get _hasUnseenFeedItems => _events.any(
       (event) => event.createdAt.millisecondsSinceEpoch > _feedLastSeenMillis);
 
@@ -726,7 +733,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
     unawaited(_loadUserProfile());
     unawaited(_loadFeedLastSeen());
     unawaited(_initializePushNotifications());
+    unawaited(_loadKioskModeState());
     _eventSubscription = _listenToEvents();
+  }
+
+  Future<void> _loadKioskModeState() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final active = prefs.getBool(_kioskModePrefKey) ?? false;
+    if (active) setState(() => _kioskModeActive = active);
+  }
+
+  Future<void> _setKioskModeActive(bool active) async {
+    setState(() => _kioskModeActive = active);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kioskModePrefKey, active);
   }
 
   Future<void> _initializePushNotifications() async {
@@ -985,8 +1006,39 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
+  /// Full-screen, unattended-display mode: calendar + upcoming events
+  /// only — no Add Event FAB, no tab bar, no menu. The exit button is the
+  /// only way back; nothing else on this screen is tappable into the
+  /// rest of the app. See _buildHeader's own `kiosk` flag for why the
+  /// avatar/enable-button are suppressed while this is showing.
+  Widget _buildKioskScaffold() {
+    final l10n = AppLocalizations.of(context)!;
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: LiquidGlassBackdrop()),
+          SafeArea(child: _buildCalendarTab(kiosk: true)),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: SafeArea(
+              child: FilledButton.icon(
+                onPressed: () => unawaited(_setKioskModeActive(false)),
+                icon: const FaIcon(FontAwesomeIcons.arrowRightFromBracket, size: 14),
+                label: Text(l10n.exitKioskModeButton),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_kioskModeActive) return _buildKioskScaffold();
+
     final colorScheme = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
 
@@ -1093,6 +1145,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           eventRepository: widget.eventRepository,
           creatorProfile: _userProfile ?? widget.authService?.currentUser,
           buildEventCard: _buildEventCard,
+          kiosk: _kioskModeActive,
         ),
       ),
     );
@@ -1218,13 +1271,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _buildCalendarTab() {
+  Widget _buildCalendarTab({bool kiosk = false}) {
     return RefreshIndicator(
       onRefresh: _refreshEvents,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
         children: [
-          _buildHeader(),
+          _buildHeader(kiosk: kiosk),
           const SizedBox(height: 18),
           _buildCalendarSearchField(),
           const SizedBox(height: 14),
@@ -1640,8 +1693,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _buildHeader() {
+  /// [kiosk]: true only when rendered inside [_buildKioskScaffold] — hides
+  /// the avatar (there's no Profile tab to jump to in kiosk mode) and the
+  /// "Enable Kiosk Mode" button (already active, showing it again would
+  /// be redundant with the Exit button pinned over the whole screen).
+  Widget _buildHeader({bool kiosk = false}) {
     final profile = _userProfile ?? widget.authService?.currentUser;
+    final l10n = AppLocalizations.of(context)!;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -1678,7 +1736,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
             ],
           ),
         ),
-        if (widget.authService != null)
+        if (!kiosk && profile?.isKioskAccount == true)
+          IconButton(
+            key: const Key('enable-kiosk-mode-button'),
+            tooltip: l10n.enableKioskModeButton,
+            onPressed: () => unawaited(_setKioskModeActive(true)),
+            icon: const FaIcon(FontAwesomeIcons.tv, size: 20),
+          ),
+        if (!kiosk && widget.authService != null)
           InkWell(
             onTap: () => _handleTabSelected(_profileTabIndex),
             borderRadius: BorderRadius.circular(28),
@@ -2547,11 +2612,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   onPressed: () => Navigator.pop(context),
                 ),
                 actions: [
-                  IconButton(
-                    tooltip: l10n.shareEvent,
-                    icon: const FaIcon(FontAwesomeIcons.shareNodes, size: 18),
-                    onPressed: () => unawaited(_shareEvent(event)),
-                  ),
+                  if (!_kioskModeActive)
+                    IconButton(
+                      tooltip: l10n.shareEvent,
+                      icon: const FaIcon(FontAwesomeIcons.shareNodes, size: 18),
+                      onPressed: () => unawaited(_shareEvent(event)),
+                    ),
                 ],
               ),
               // Event details content
@@ -2719,8 +2785,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       // and Delete (creator only) — Edit is the far more
                       // common action, so it gets the primary (filled)
                       // treatment; Delete stays a secondary, error-tinted
-                      // outline.
-                      if (_canEditEvent(event) || _canDeleteEvent(event)) ...[
+                      // outline. Hidden in kiosk mode regardless of
+                      // permission — that mode is meant to be read-only
+                      // even for an account that could otherwise edit.
+                      if (!_kioskModeActive && (_canEditEvent(event) || _canDeleteEvent(event))) ...[
                         Row(
                           children: [
                             if (_canEditEvent(event))
@@ -2939,7 +3007,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ],
               ),
             ),
-            if (_canEditEvent(event) || _canDeleteEvent(event))
+            if (!_kioskModeActive && (_canEditEvent(event) || _canDeleteEvent(event)))
               PopupMenuButton<String>(
                 onSelected: (value) {
                   if (value == 'edit') {
