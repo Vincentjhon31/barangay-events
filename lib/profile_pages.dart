@@ -14,6 +14,7 @@ import 'group_members_page.dart';
 import 'join_group_page.dart';
 import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
+import 'privacy_policy_page.dart';
 import 'responsive_scale.dart';
 import 'security_page.dart';
 import 'theme_controller.dart';
@@ -104,6 +105,12 @@ class _ProfileTabState extends State<ProfileTab> {
       MaterialPageRoute(
         builder: (_) => AboutPage(updateService: widget.updateService),
       ),
+    );
+  }
+
+  void _openPrivacyPolicy() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PrivacyPolicyPage()),
     );
   }
 
@@ -297,6 +304,17 @@ class _ProfileTabState extends State<ProfileTab> {
                 title: l10n.settingsTile,
                 subtitle: l10n.settingsTileCaption,
                 onTap: _openSettings,
+              ),
+              Divider(
+                height: 8,
+                color: colorScheme.onSurface.withValues(alpha: 0.08),
+              ),
+              QuickActionTile(
+                key: const Key('profile-privacy-policy-tile'),
+                icon: FontAwesomeIcons.userShield,
+                title: l10n.privacyPolicyTile,
+                subtitle: l10n.privacyPolicyTileCaption,
+                onTap: _openPrivacyPolicy,
               ),
               Divider(
                 height: 8,
@@ -1507,6 +1525,47 @@ class SettingsPage extends StatelessWidget {
                   selected: language == 'fil',
                   onTap: () => themeController.setLanguage('fil'),
                 ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 22),
+        Text(
+          l10n.settingsNotifications,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                letterSpacing: 0.6,
+                fontWeight: FontWeight.w700,
+              ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          l10n.settingsNotificationsHint,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 10),
+        ListenableBuilder(
+          listenable: themeController,
+          builder: (context, _) {
+            final reminder = themeController.reminderPreference;
+            final options = <(ReminderPreference, FaIconData, String)>[
+              (ReminderPreference.off, FontAwesomeIcons.bellSlash, l10n.settingsReminderOff),
+              (ReminderPreference.oneHour, FontAwesomeIcons.userClock, l10n.settingsReminderOneHour),
+              (ReminderPreference.oneDay, FontAwesomeIcons.bell, l10n.settingsReminderOneDay),
+            ];
+            return Column(
+              children: [
+                for (final (preference, icon, label) in options) ...[
+                  _ThemeOptionTile(
+                    icon: icon,
+                    label: label,
+                    selected: reminder == preference,
+                    onTap: () => themeController.setReminderPreference(preference),
+                  ),
+                  if (preference != options.last.$1) const SizedBox(height: 10),
+                ],
               ],
             );
           },

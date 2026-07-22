@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_update_service.dart';
+import 'faq_page.dart';
 import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
 
@@ -80,6 +81,78 @@ class _AboutPageState extends State<AboutPage> {
       ShareParams(
         text: 'Download eBongabong Calendar: $_downloadUrl',
         subject: 'eBongabong Calendar',
+      ),
+    );
+  }
+
+  void _openFaq() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const FaqPage()),
+    );
+  }
+
+  Widget _buildFeatureLine(String text) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: FaIcon(FontAwesomeIcons.circleCheck, size: 12, color: colorScheme.primary),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.35),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAboutThisAppPanel() {
+    final l10n = AppLocalizations.of(context)!;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return GlassPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _sectionHeader(FontAwesomeIcons.landmark, const Color(0xFF1F9D65), l10n.aboutThisAppSection),
+          const SizedBox(height: 12),
+          Text(
+            l10n.aboutThisAppBody,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.4),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            l10n.aboutThisAppFeaturesIntro,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          _buildFeatureLine(l10n.aboutFeaturePublicEvents),
+          _buildFeatureLine(l10n.aboutFeatureGroups),
+          _buildFeatureLine(l10n.aboutFeaturePersonal),
+          _buildFeatureLine(l10n.aboutFeatureNotifications),
+          _buildFeatureLine(l10n.aboutFeatureLanguage),
+          _buildFeatureLine(l10n.aboutFeatureDisplay),
+          const SizedBox(height: 16),
+          GlassPanel(
+            tint: colorScheme.primary,
+            tintAlpha: 0.08,
+            padding: const EdgeInsets.all(4),
+            child: QuickActionTile(
+              key: const Key('about-faq-tile'),
+              icon: FontAwesomeIcons.circleQuestion,
+              title: l10n.faqTile,
+              subtitle: l10n.faqTileCaption,
+              onTap: _openFaq,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -253,6 +326,8 @@ class _AboutPageState extends State<AboutPage> {
             ],
           ),
         ),
+        const SizedBox(height: 16),
+        _buildAboutThisAppPanel(),
         const SizedBox(height: 16),
         _buildShareAppPanel(),
         const SizedBox(height: 16),

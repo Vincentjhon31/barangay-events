@@ -462,6 +462,110 @@ void main() {
     expect(find.textContaining('No upcoming events match your search'), findsOneWidget);
   });
 
+  testWidgets('Group filter picker narrows Group events down to specific groups once you belong to more than one',
+      (WidgetTester tester) async {
+    final repo = MemoryEventRepository.seeded();
+    await repo.joinGroup('grp-mayor');
+    await repo.joinGroup('grp-basketball');
+    final now = DateTime.now();
+    await repo.addEvent(BarangayEvent(
+      id: 'test-mayor-group-event',
+      title: 'Mayor Group Event',
+      location: 'City Hall',
+      startTime: now.add(const Duration(days: 5)),
+      endTime: now.add(const Duration(days: 5, hours: 1)),
+      description: '',
+      hasAttachment: false,
+      createdAt: now,
+      createdByName: 'Mayor Staff',
+      eventType: EventType.shared,
+      groupId: 'grp-mayor',
+      groupName: "Mayor's Office Updates",
+    ));
+    await repo.addEvent(BarangayEvent(
+      id: 'test-basketball-group-event',
+      title: 'Basketball Group Event',
+      location: 'Covered Court',
+      startTime: now.add(const Duration(days: 6)),
+      endTime: now.add(const Duration(days: 6, hours: 1)),
+      description: '',
+      hasAttachment: false,
+      createdAt: now,
+      createdByName: 'Coach',
+      eventType: EventType.shared,
+      groupId: 'grp-basketball',
+      groupName: 'Basketball League',
+    ));
+
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(),
+        eventRepositoryFactory: () async => repo,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('List'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Upcoming'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Upcoming'));
+    await tester.pumpAndSettle();
+
+    // Both groups' events show before any picking happens.
+    await tester.scrollUntilVisible(
+      find.text('Mayor Group Event'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Mayor Group Event'), findsWidgets);
+    expect(find.text('Basketball Group Event'), findsWidgets);
+
+    // The picker icon only shows up once there's more than one group to
+    // choose between (see _buildTypeFilterChips's showGroupPicker).
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('calendar-filter-group-picker')),
+      -300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('calendar-filter-group-picker')));
+    await tester.pumpAndSettle();
+
+    // Uncheck Basketball League, leaving only Mayor's Office Updates picked.
+    await tester.tap(find.byKey(const Key('group-filter-checkbox-grp-basketball')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Mayor Group Event'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Mayor Group Event'), findsWidgets);
+    expect(find.text('Basketball Group Event'), findsNothing);
+  });
+
+  testWidgets('citizens see no Group filter chip on the Calendar tab (they can never join a group)',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedIn(role: 'citizen'),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('calendar-filter-shared')), findsNothing);
+    expect(find.byKey(const Key('calendar-filter-public')), findsOneWidget);
+    expect(find.byKey(const Key('calendar-filter-personal')), findsOneWidget);
+  });
+
   testWidgets('Upcoming mode sorts by nearest-to-today with an asc/desc toggle',
       (WidgetTester tester) async {
     final repo = MemoryEventRepository.seeded();
@@ -779,13 +883,30 @@ void main() {
     await tester.tap(find.text('Profile'));
     await tester.pumpAndSettle();
 
+    // The new Privacy Policy tile (inserted between Settings and About)
+    // pushed the About tile further down, past where it used to sit clear
+    // of the floating bottom tab bar — scroll it into view first so the
+    // tap actually lands on it rather than the overlay on top of it.
+    await tester.scrollUntilVisible(
+      find.text('About'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.text('About'));
     await tester.pumpAndSettle();
 
     expect(find.text('eBongabong Calendar'), findsWidgets);
     expect(find.textContaining('Version'), findsWidgets);
     // No updateService passed to BarangayCalendarApp in this test — the
-    // page should degrade gracefully rather than crash.
+    // page should degrade gracefully rather than crash. The Updates panel
+    // now sits below the new About This App / FAQ content, so it needs a
+    // scroll to come into the sliver's build range before it can be found.
+    await tester.scrollUntilVisible(
+      find.textContaining("isn't available on this build"),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.textContaining("isn't available on this build"), findsOneWidget);
   });
 

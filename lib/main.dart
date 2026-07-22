@@ -244,6 +244,7 @@ class _AuthenticatedShellState extends State<AuthenticatedShell> {
         uiStyle: prefs.uiStyle,
         language: prefs.language,
         displayMode: prefs.displayMode,
+        reminderPreference: prefs.reminderPreference,
       ));
     }));
   }
@@ -621,16 +622,31 @@ class CalendarScreen extends StatefulWidget {
   State<CalendarScreen> createState() => _CalendarScreenState();
 }
 
-/// A single "new event posted" banner is either about one specific event
-/// (tapping opens it) or, when several arrived in the same realtime batch,
-/// a coalesced count (tapping just jumps to the Feed tab) — see
-/// _CalendarScreenState._detectNewlyPostedEvents.
+/// What kind of toast is being shown — drives the label/icon/tap behavior
+/// in _buildNewEventBanner. [newEvent]/[newEvents] come from the realtime
+/// event stream (_detectNewlyPostedEvents); [reminder] comes from a
+/// foreground `user-<uid>` FCM push (see send-event-reminders and
+/// PushNotificationService.onEventReminder).
+enum _NoticeKind { newEvent, newEvents, reminder }
+
+/// A single toast is either about one specific event (tapping opens it) —
+/// whether that's a freshly-posted event or a reminder for an
+/// already-known one — or, when several new events arrived in the same
+/// realtime batch, a coalesced count (tapping just jumps to the Feed tab).
 class _NewEventNotice {
-  const _NewEventNotice.single(this.event) : count = 1;
-  const _NewEventNotice.multiple(this.count) : event = null;
+  const _NewEventNotice.single(this.event)
+      : count = 1,
+        kind = _NoticeKind.newEvent;
+  const _NewEventNotice.multiple(this.count)
+      : event = null,
+        kind = _NoticeKind.newEvents;
+  const _NewEventNotice.reminder(this.event)
+      : count = 1,
+        kind = _NoticeKind.reminder;
 
   final BarangayEvent? event;
   final int count;
+  final _NoticeKind kind;
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
@@ -648,10 +664,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
   final _calendarSearchController = TextEditingController();
   String _calendarSearchQuery = '';
 
+  // Which of the signed-in user's own groups' events should count as
+  // "Group" events on the Calendar tab — empty means no restriction (every
+  // joined group's events show), same "empty = show all" convention as
+  // [_typeFilters]. Only ever narrowed by the user explicitly unchecking a
+  // group in the picker opened from the Group filter chip (Calendar tab
+  // only — Feed keeps its own simpler all-or-nothing Group filter).
+  final Set<String> _selectedGroupIds = {};
+
   // Refreshed alongside push-topic sync (both need listMyGroups()) — used
   // by _canEditEvent to let a promoted group admin edit that group's
   // events, not just the event's own creator.
   final Set<String> _adminGroupIds = {};
+
+  // Also refreshed alongside push-topic sync — drives the Group filter
+  // chip's per-group checkbox picker (only shown once the user has more
+  // than one group to choose between).
+  List<BarangayGroup> _myGroups = const [];
 
   static const String _feedLastSeenKey = 'feed_last_seen';
   int _feedLastSeenMillis = 0; // persisted; drives the tab dot
@@ -687,6 +716,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
   static const String _kioskModePrefKey = 'kiosk_mode_active';
   bool _kioskModeActive = false;
 
+  // The Exit button starts full-size (icon + label) so it's obvious what
+  // it does, then auto-collapses to an icon-only button shortly after —
+  // it's meant to stay out of the way on an otherwise-idle public
+  // display, not sit there as a big permanent button.
+  bool _kioskExitButtonExpanded = true;
+  Timer? _kioskExitShrinkTimer;
+
+  void _armKioskExitShrinkTimer() {
+    _kioskExitShrinkTimer?.cancel();
+    _kioskExitButtonExpanded = true;
+    _kioskExitShrinkTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) setState(() => _kioskExitButtonExpanded = false);
+    });
+  }
+
   bool get _hasUnseenFeedItems => _events.any(
       (event) => event.createdAt.millisecondsSinceEpoch > _feedLastSeenMillis);
 
@@ -695,7 +739,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
       : CalendarFormat.month;
 
   bool _passesTypeFilter(BarangayEvent event) =>
-      _typeFilters.isEmpty || _typeFilters.contains(event.eventType);
+      (_typeFilters.isEmpty || _typeFilters.contains(event.eventType)) &&
+      _passesGroupFilter(event);
+
+  /// Narrows Group events down to the specific groups picked in the Group
+  /// filter chip's checkbox picker — a no-op for every other event type,
+  /// and a no-op entirely while [_selectedGroupIds] is empty (nothing
+  /// explicitly excluded yet, i.e. "show every joined group").
+  bool _passesGroupFilter(BarangayEvent event) {
+    if (event.eventType != EventType.shared) return true;
+    if (_selectedGroupIds.isEmpty) return true;
+    return event.groupId != null && _selectedGroupIds.contains(event.groupId);
+  }
 
   /// Independent from the Feed tab's own search — matches [_typeFilters]'
   /// existing "don't share filter state across tabs" convention.
@@ -741,10 +796,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     final active = prefs.getBool(_kioskModePrefKey) ?? false;
-    if (active) setState(() => _kioskModeActive = active);
+    if (active) {
+      _armKioskExitShrinkTimer();
+      setState(() => _kioskModeActive = active);
+    }
   }
 
   Future<void> _setKioskModeActive(bool active) async {
+    if (active) {
+      _armKioskExitShrinkTimer();
+    } else {
+      _kioskExitShrinkTimer?.cancel();
+    }
     setState(() => _kioskModeActive = active);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kioskModePrefKey, active);
@@ -755,6 +818,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     try {
       await widget.pushNotificationService.initialize(
         onAppUpdateAvailable: () => unawaited(_checkForUpdates()),
+        onEventReminder: _handleReminderPush,
       );
     } catch (_) {
       // Firebase not configured yet, or the user denied the permission —
@@ -772,11 +836,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
           _adminGroupIds
             ..clear()
             ..addAll(groups.where((group) => group.isAdmin).map((group) => group.id));
+          _myGroups = groups;
+          // Drop any picked group that's no longer joined (left the group,
+          // or it was deleted) — leaving it in would either silently keep
+          // hiding a group's events for no visible reason, or, if it was
+          // the only one left checked, look like "every group is hidden"
+          // with no way to tell why.
+          final joinedIds = groups.map((group) => group.id).toSet();
+          _selectedGroupIds.removeWhere((id) => !joinedIds.contains(id));
         });
       }
       await widget.pushNotificationService.syncTopics(
         groups.map((group) => group.id).toList(),
       );
+      await widget.pushNotificationService.syncUserTopic(_currentUserId);
     } catch (_) {
       // Non-critical — a failed topic sync shouldn't block the calendar.
     }
@@ -832,6 +905,25 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _enqueueNewEventNotice(freshlyPosted.length == 1
         ? _NewEventNotice.single(freshlyPosted.first)
         : _NewEventNotice.multiple(freshlyPosted.length));
+  }
+
+  /// Foreground handler for a `user-<uid>` reminder push (see
+  /// send-event-reminders and PushNotificationService.onEventReminder) —
+  /// shows the same toast used for freshly-posted events, since a
+  /// reminder deserves the same "surface it now, dismiss it soon" in-app
+  /// treatment as a system notification banner already gets. The event
+  /// may not be in `_events` yet (e.g. a stream hiccup) — the banner
+  /// still shows with a generic look via _buildNewEventBanner, it just
+  /// can't open the event detail sheet on tap.
+  void _handleReminderPush(String eventId) {
+    BarangayEvent? event;
+    for (final candidate in _events) {
+      if (candidate.id == eventId) {
+        event = candidate;
+        break;
+      }
+    }
+    _enqueueNewEventNotice(_NewEventNotice.reminder(event));
   }
 
   void _enqueueNewEventNotice(_NewEventNotice notice) {
@@ -923,6 +1015,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void dispose() {
     unawaited(_eventSubscription.cancel());
     _newEventNoticeTimer?.cancel();
+    _kioskExitShrinkTimer?.cancel();
     _feedSearchController.dispose();
     _calendarSearchController.dispose();
     super.dispose();
@@ -1023,10 +1116,24 @@ class _CalendarScreenState extends State<CalendarScreen> {
             top: 8,
             right: 8,
             child: SafeArea(
-              child: FilledButton.icon(
-                onPressed: () => unawaited(_setKioskModeActive(false)),
-                icon: const FaIcon(FontAwesomeIcons.arrowRightFromBracket, size: 14),
-                label: Text(l10n.exitKioskModeButton),
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                alignment: Alignment.centerRight,
+                child: _kioskExitButtonExpanded
+                    ? FilledButton.icon(
+                        onPressed: () => unawaited(_setKioskModeActive(false)),
+                        icon: const FaIcon(FontAwesomeIcons.arrowRightFromBracket, size: 14),
+                        label: Text(l10n.exitKioskModeButton),
+                      )
+                    : FilledButton(
+                        onPressed: () => unawaited(_setKioskModeActive(false)),
+                        style: FilledButton.styleFrom(
+                          shape: const CircleBorder(),
+                          padding: const EdgeInsets.all(14),
+                        ),
+                        child: const FaIcon(FontAwesomeIcons.arrowRightFromBracket, size: 16),
+                      ),
               ),
             ),
           ),
@@ -1588,6 +1695,134 @@ class _CalendarScreenState extends State<CalendarScreen> {
     });
   }
 
+  /// Opens the Group filter chip's checkbox picker (only reachable when
+  /// [_myGroups] has more than one entry — see [_buildTypeFilterChips]) so
+  /// the user can narrow "Group" events down to specific groups instead of
+  /// the previous all-or-nothing toggle.
+  Future<void> _openGroupFilterPicker() async {
+    final l10n = AppLocalizations.of(context)!;
+    final groups = _myGroups;
+    // The picker always starts from "everything checked" unless the user
+    // has previously excluded something specific — [_selectedGroupIds]
+    // being empty means "no restriction", not "nothing selected".
+    final initial = _selectedGroupIds.isEmpty
+        ? groups.map((group) => group.id).toSet()
+        : Set<String>.from(_selectedGroupIds);
+
+    final result = await showModalBottomSheet<Set<String>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        var selected = initial;
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final colorScheme = Theme.of(context).colorScheme;
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.55,
+              minChildSize: 0.3,
+              maxChildSize: 0.85,
+              builder: (context, scrollController) => Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  l10n.groupFilterPickerTitle,
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  l10n.groupFilterPickerSubtitle,
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const FaIcon(FontAwesomeIcons.xmark),
+                            onPressed: () => Navigator.pop(sheetContext),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        itemCount: groups.length,
+                        itemBuilder: (context, index) {
+                          final group = groups[index];
+                          final checked = selected.contains(group.id);
+                          return CheckboxListTile(
+                            key: Key('group-filter-checkbox-${group.id}'),
+                            value: checked,
+                            controlAffinity: ListTileControlAffinity.leading,
+                            activeColor: colorScheme.primary,
+                            title: Text(group.name),
+                            onChanged: (value) => setSheetState(() {
+                              selected = (value ?? false)
+                                  ? {...selected, group.id}
+                                  : ({...selected}..remove(group.id));
+                            }),
+                          );
+                        },
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                      child: FilledButton(
+                        onPressed: () => Navigator.pop(sheetContext, selected),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        child: Text(l10n.groupFilterPickerApply),
+                      ),
+                    ),
+                  ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (result == null || !mounted) return;
+    setState(() {
+      // Storing the full joined-groups set as an "explicit" selection would
+      // also work today, but would then wrongly exclude any group the user
+      // joins *after* this — canonicalizing back to empty keeps "every
+      // group" meaning exactly that, including ones joined later.
+      if (result.length == groups.length) {
+        _selectedGroupIds.clear();
+      } else {
+        _selectedGroupIds
+          ..clear()
+          ..addAll(result);
+      }
+    });
+  }
+
   /// Shared by the Calendar tab's own [_typeFilters] and the Feed tab's
   /// independent [_feedTypeFilters] — filtering one shouldn't silently
   /// affect what the other shows. [keyPrefix] keeps the two sets of chips
@@ -1600,11 +1835,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final options = <({String? value, String label, FaIconData icon})>[
       (value: null, label: l10n.eventTypeAll, icon: FontAwesomeIcons.layerGroup),
       (value: EventType.public, label: l10n.eventTypePublic, icon: FontAwesomeIcons.globe),
-      (
-        value: EventType.shared,
-        label: l10n.eventTypeGroup,
-        icon: FontAwesomeIcons.userGroup
-      ),
+      // Citizens are never members of any group (no Groups tab to join one
+      // from — see [[project-event-sharing-model]]), so this chip would
+      // always just be a dead end filtering nothing in for them.
+      if (_showGroupsTab)
+        (
+          value: EventType.shared,
+          label: l10n.eventTypeGroup,
+          icon: FontAwesomeIcons.userGroup
+        ),
       (
         value: EventType.personal,
         label: l10n.eventTypePersonal,
@@ -1612,6 +1851,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
     ];
     final colorScheme = Theme.of(context).colorScheme;
+    // The per-group checkbox picker only makes sense on the Calendar tab
+    // (Feed keeps a simpler all-or-nothing Group filter) and only once
+    // there's actually more than one group to choose between.
+    final showGroupPicker = keyPrefix == 'calendar' && _myGroups.length > 1;
 
     // "All" is active when no specific type is checked; the type chips are
     // checkable so several can be enabled at once.
@@ -1666,6 +1909,27 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
             ),
             const SizedBox(width: 8),
+            if (option.value == EventType.shared && showGroupPicker) ...[
+              InkWell(
+                key: const Key('calendar-filter-group-picker'),
+                borderRadius: BorderRadius.circular(999),
+                onTap: _openGroupFilterPicker,
+                child: GlassPanel(
+                  borderRadius: 999,
+                  padding: const EdgeInsets.all(8),
+                  tint: _selectedGroupIds.isNotEmpty ? colorScheme.primary : null,
+                  tintAlpha: _selectedGroupIds.isNotEmpty ? 0.22 : null,
+                  child: FaIcon(
+                    FontAwesomeIcons.sliders,
+                    size: 12,
+                    color: _selectedGroupIds.isNotEmpty
+                        ? colorScheme.primary
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
           ],
         ],
       ),
@@ -2289,11 +2553,26 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildNewEventBanner(_NewEventNotice notice) {
+    final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
     final event = notice.event;
-    final tint = event != null ? _getEventTint(event.title) : colorScheme.primary;
-    final icon = event != null ? _getEventIcon(event.title) : FontAwesomeIcons.calendarDays;
-    final title = event != null ? event.title : '${notice.count} new events posted';
+    final isReminder = notice.kind == _NoticeKind.reminder;
+    final tint = isReminder
+        ? const Color(0xFFFFA726)
+        : event != null
+            ? _getEventTint(event.title)
+            : colorScheme.primary;
+    final icon = isReminder
+        ? FontAwesomeIcons.bell
+        : event != null
+            ? _getEventIcon(event.title)
+            : FontAwesomeIcons.calendarDays;
+    final label = isReminder ? l10n.eventReminderNoticeLabel : 'New event posted';
+    final title = event != null
+        ? event.title
+        : isReminder
+            ? l10n.eventReminderGenericTitle
+            : '${notice.count} new events posted';
 
     return Material(
       color: Colors.transparent,
@@ -2307,7 +2586,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               _dismissNewEventNotice();
               if (event != null) {
                 unawaited(_showEventDetails(event));
-              } else {
+              } else if (!isReminder) {
                 _handleTabSelected(1);
               }
             },
@@ -2323,7 +2602,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'New event posted',
+                          label,
                           style: Theme.of(context).textTheme.labelSmall?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                                 fontWeight: FontWeight.w700,

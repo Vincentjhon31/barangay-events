@@ -1259,3 +1259,105 @@ begin
   update groups set created_by = p_new_owner_id where id = p_group_id;
   update group_members set role = 'admin' where group_id = p_group_id and user_id = p_new_owner_id;
 end $$;
+
+-- ============================================================
+-- Event reminders (July 2026). A user picks 'off' | '1h' | '1d' in
+-- Settings — synced across devices like theme_mode/ui_style/language/
+-- display_mode. Delivery is push-based (Firebase), driven by a scheduled
+-- Edge Function (supabase/functions/send-event-reminders) rather than a
+-- database webhook, since "remind me before this starts" is a
+-- time-based condition, not a row-change event.
+--
+-- Reminders can't ride the existing public-events/group-<id> FCM topics
+-- (see push_notifications.dart) — those broadcast to every subscriber
+-- regardless of that person's own reminder_preference, and a Personal
+-- event has no group/topic to broadcast to at all. Instead each device
+-- also subscribes to its own account's topic ('user-<uid>', see
+-- push_notifications.dart's userTopic()), and the Edge Function sends
+-- each qualifying (user, event) reminder individually to that topic.
+--
+-- One-time setup this SQL block can't do for you (run once, in the
+-- Supabase dashboard):
+--   1. supabase functions deploy send-event-reminders --use-api
+--   2. supabase secrets set "REMINDER_CRON_SECRET=<a random string>"
+--      (reuses the same FCM_SERVICE_ACCOUNT_JSON_B64 secret already set
+--      up for send-event-notification — no separate Firebase credential
+--      needed)
+--   3. Database > Cron Jobs (or the pg_cron extension directly) > new
+--      job, every 15-30 minutes, calling:
+--        select net.http_post(
+--          url := 'https://<project-ref>.supabase.co/functions/v1/send-event-reminders',
+--          headers := jsonb_build_object('Authorization', 'Bearer <REMINDER_CRON_SECRET>')
+--        );
+-- Safe to re-run on an existing database.
+-- ============================================================
+
+alter table public.profiles add column if not exists reminder_preference text not null default 'off';
+
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'profiles_reminder_preference_check') then
+    alter table public.profiles add constraint profiles_reminder_preference_check
+      check (reminder_preference in ('off', '1h', '1d'));
+  end if;
+end $$;
+
+-- Makes delivery idempotent: the cron job's lookahead window is
+-- deliberately wider than its own run interval (so a slow/delayed run
+-- never skips an event), which means consecutive runs' windows overlap
+-- and would otherwise re-notify the same person twice for the same
+-- event. Recording what's already been sent — and having
+-- list_due_event_reminders below exclude it — closes that gap. Not
+-- exposed to the app/PostgREST at all: no select/insert policy means no
+-- access under RLS for ordinary users; only the Edge Function's
+-- service-role client ever touches this table.
+create table if not exists public.event_reminders_sent (
+  event_id text not null references public.barangay_events(id) on delete cascade,
+  user_id uuid not null references auth.users on delete cascade,
+  reminder_window text not null,
+  sent_at timestamptz not null default now(),
+  primary key (event_id, user_id, reminder_window)
+);
+alter table public.event_reminders_sent enable row level security;
+
+-- Service-role only (see the table comment above) — revoked from every
+-- ordinary Postgres role so it can't be called via the public REST API,
+-- where it would otherwise leak every user's reminder_preference and
+-- upcoming-event visibility to any authenticated caller.
+create or replace function public.list_due_event_reminders(p_window text)
+returns table(
+  user_id uuid, event_id text, event_title text, event_start timestamptz,
+  event_location text, event_type text, group_name text
+)
+language plpgsql security definer set search_path = public as $$
+declare
+  window_start timestamptz;
+  window_end timestamptz;
+begin
+  if p_window = '1h' then
+    window_start := now() + interval '50 minutes';
+    window_end := now() + interval '70 minutes';
+  elsif p_window = '1d' then
+    window_start := now() + interval '23 hours';
+    window_end := now() + interval '25 hours';
+  else
+    raise exception 'Invalid window: %', p_window;
+  end if;
+
+  return query
+    select p.id, e.id, e.title, e.start_time, e.location, e.event_type, e.group_name
+    from barangay_events e
+    join profiles p on p.reminder_preference = p_window
+    where e.start_time between window_start and window_end
+      and (
+        e.event_type = 'public'
+        or (e.event_type = 'personal' and e.created_by_id = p.id)
+        or (e.event_type = 'shared' and e.group_id is not null and exists (
+              select 1 from group_members gm where gm.group_id = e.group_id and gm.user_id = p.id))
+      )
+      and not exists (
+        select 1 from event_reminders_sent ers
+        where ers.event_id = e.id and ers.user_id = p.id and ers.reminder_window = p_window
+      );
+end $$;
+
+revoke all on function public.list_due_event_reminders(text) from public, anon, authenticated;

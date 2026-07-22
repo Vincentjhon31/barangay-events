@@ -161,6 +161,29 @@ class AppLocalizationsFil extends AppLocalizations {
   String get settingsLanguageFilipino => 'Filipino';
 
   @override
+  String get settingsNotifications => 'Mga Paalala';
+
+  @override
+  String get settingsNotificationsHint =>
+      'Tumanggap ng paalala bago magsimula ang isang event na makikita mo.';
+
+  @override
+  String get settingsReminderOff => 'Naka-off';
+
+  @override
+  String get settingsReminderOneHour => '1 oras bago';
+
+  @override
+  String get settingsReminderOneDay => '1 araw bago';
+
+  @override
+  String get eventReminderNoticeLabel => 'Paalala sa event';
+
+  @override
+  String get eventReminderGenericTitle =>
+      'Malapit nang mangyari ang isang event na sinusundan mo';
+
+  @override
   String get calendarViewMonth => 'Buwan';
 
   @override
@@ -384,6 +407,16 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get eventTypePersonal => 'Personal';
+
+  @override
+  String get groupFilterPickerTitle => 'I-filter ang mga grupo';
+
+  @override
+  String get groupFilterPickerSubtitle =>
+      'Piliin kung aling mga grupo mo ang lalabas bilang mga Group event.';
+
+  @override
+  String get groupFilterPickerApply => 'I-apply';
 
   @override
   String get eventDetailsTitle => 'Detalye ng Kaganapan';
@@ -1108,4 +1141,192 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get exitKioskModeButton => 'Lumabas sa Kiosk Mode';
+
+  @override
+  String get aboutThisAppSection => 'Tungkol sa App na Ito';
+
+  @override
+  String get aboutThisAppBody =>
+      'Ang eBongabong Calendar ang opisyal na app ng mga kaganapan sa komunidad ng Munisipalidad ng Bongabong, Pilipinas — ginawa para malaman agad ng mga residente ang mga gawain sa barangay, anunsyo ng pamahalaan, at mga pagtitipon ng komunidad, lahat sa isang lugar.';
+
+  @override
+  String get aboutThisAppFeaturesIntro =>
+      'Sa eBongabong Calendar, puwede kang:';
+
+  @override
+  String get aboutFeaturePublicEvents =>
+      'Makakita ng mga pampublikong anunsyo at kaganapang na-post ng LGU';
+
+  @override
+  String get aboutFeatureGroups =>
+      'Sumali sa mga grupo ng iyong barangay, opisina, o organisasyon para makita ang mga kaganapang ibinabahagi lang sa bilog na iyon';
+
+  @override
+  String get aboutFeaturePersonal =>
+      'Mag-ingat ng personal na paalala at tala na ikaw lang ang makakakita';
+
+  @override
+  String get aboutFeatureNotifications =>
+      'Mabigyan ng abiso sa sandaling may na-post na bagong kaganapan, at magtakda ng paalala bago ito magsimula';
+
+  @override
+  String get aboutFeatureLanguage =>
+      'Magpalit sa pagitan ng Ingles at Filipino anumang oras';
+
+  @override
+  String get aboutFeatureDisplay =>
+      'Ayusin ang sukat ng display para sa telepono, tablet, o pampublikong kiosk screen';
+
+  @override
+  String get faqTile => 'Mga Madalas Itanong';
+
+  @override
+  String get faqTileCaption =>
+      'Mga karaniwang tanong tungkol sa paggamit ng app';
+
+  @override
+  String get faqPageTitle => 'Mga Madalas Itanong';
+
+  @override
+  String get faqPageSubtitle =>
+      'Mga sagot sa karaniwang tanong tungkol sa eBongabong Calendar. I-tap ang tanong para makita ang sagot.';
+
+  @override
+  String get faqQ1 =>
+      'Ano ang pagkakaiba ng Pampubliko, Grupo, at Personal na kaganapan?';
+
+  @override
+  String get faqA1 =>
+      'Ang mga Pampublikong kaganapan ay opisyal na anunsyo para sa buong barangay na ang superadmin lang ang puwedeng mag-post — makikita ito ng lahat ng gumagamit ng app. Ang mga kaganapan ng Grupo ay ibinabahagi lang sa mga miyembro ng partikular na grupo, tulad ng iyong opisina sa barangay o isang klub — ang mga miyembro lang ang makakakita. Ang mga Personal na kaganapan ay pribadong tala na ikaw lang ang makakakita, para sa sarili mong paalala.';
+
+  @override
+  String get faqQ2 => 'Paano ako sasali sa isang grupo?';
+
+  @override
+  String get faqA2 =>
+      'Mula sa tab na Mga Grupo, i-tap ang icon ng paghahanap para tingnan ang mga pampublikong grupo, o maglagay ng 6-karakter na invite code kung mayroon ka. Agad kang sasali sa mga pampublikong grupo, o magpapadala ng hiling kung kailangan ng pag-apruba ng grupo; laging kailangan ng code ang mga pribadong grupo.';
+
+  @override
+  String get faqQ3 => 'Paano ako gagawa ng grupo?';
+
+  @override
+  String get faqA3 =>
+      'Ang paggawa ng grupo ay para lang sa mga beripikadong LGU member at ang superadmin. Kung isa kang citizen, magtanong sa iyong opisina sa barangay o sa superadmin tungkol sa pag-apply para sa access bilang LGU mula sa tab na Mga Grupo.';
+
+  @override
+  String get faqQ4 => 'Bakit hindi ako makapag-post ng Pampublikong kaganapan?';
+
+  @override
+  String get faqA4 =>
+      'Naaabot ng mga Pampublikong kaganapan ang buong komunidad, kaya ang superadmin lang ang puwedeng mag-post nito — nakakatulong ito para hindi malunod ang opisyal na mga anunsyo sa gitna ng mga kaganapan ng komunidad. Puwede pa ring mag-post ang mga LGU member ng mga kaganapan ng Grupo sa mga miyembro ng sarili nilang grupo.';
+
+  @override
+  String get faqQ5 => 'Paano gumagana ang mga paalala sa kaganapan?';
+
+  @override
+  String get faqA5 =>
+      'Sa Mga Setting, sa ilalim ng Mga Abiso, piliin kung kailan mo gustong paalalahanan — 1 oras o 1 araw bago magsimula ang kaganapan. Makakatanggap ka ng abiso para sa bawat kaganapang nakikita mo na: mga pampublikong kaganapan, kaganapan ng iyong mga grupo, at ang iyong sariling personal na kaganapan.';
+
+  @override
+  String get faqQ6 => 'Paano ko papalitan ang app sa Filipino?';
+
+  @override
+  String get faqA6 =>
+      'Buksan ang Mga Setting at i-tap ang Wika, pagkatapos piliin ang Filipino o English. Agad itong magkakabisa at maaalala sa bawat device kung saan ka mag-log in.';
+
+  @override
+  String get faqQ7 => 'Ano ang Kiosk Mode?';
+
+  @override
+  String get faqA7 =>
+      'Ginagawang full-screen, view-only na display ng kalendaryo ang app sa Kiosk Mode — walang menu, walang button na Magdagdag ng Kaganapan — para sa isang pampublikong screen na walang bantay, tulad ng nasa barangay hall. Isang account lang na itinalaga ng superadmin bilang kiosk account ang makapagbubukas nito, mula sa isang button sa itaas ng tab na Kalendaryo.';
+
+  @override
+  String get faqQ8 => 'Paano ako magiging beripikadong LGU member?';
+
+  @override
+  String get faqA8 =>
+      'Mula sa tab na Mga Grupo o sa LGU admin portal, magsumite ng aplikasyon kasama ang iyong opisina o departamento. Susuriin at aaprubahan ito ng superadmin — kapag naaprubahan, puwede ka nang gumawa ng grupo at mag-post ng mga kaganapan ng Grupo.';
+
+  @override
+  String get faqQ9 => 'Pribado ba ang aking impormasyon?';
+
+  @override
+  String get faqA9 =>
+      'Makikita lang ang iyong profile ng iba kung pipiliin mong ibahagi ito, tulad ng pagsali sa isang grupo. Tingnan ang Patakaran sa Privacy sa Mga Setting para sa buong detalye kung ano ang kinokolekta at paano ito ginagamit.';
+
+  @override
+  String get privacyPolicyTile => 'Patakaran sa Privacy';
+
+  @override
+  String get privacyPolicyTileCaption =>
+      'Ano ang kinokolekta namin at paano ito ginagamit';
+
+  @override
+  String get privacyPolicyTitle => 'Patakaran sa Privacy';
+
+  @override
+  String get privacyPolicySubtitle =>
+      'Paano hinahawakan ng eBongabong Calendar ang iyong impormasyon.';
+
+  @override
+  String get privacyIntro =>
+      'Ipinapaliwanag ng Patakaran sa Privacy na ito kung anong impormasyon ang kinokolekta ng eBongabong Calendar, paano ito ginagamit, at sino ang makakakita nito. Ito ay para sa lahat ng gumagamit ng app, maging ikaw ay isang residente, LGU member, o superadmin.';
+
+  @override
+  String get privacyCollectHeading => 'Impormasyong Kinokolekta Namin';
+
+  @override
+  String get privacyCollectBody =>
+      'Kapag gumawa ka ng account, kinokolekta namin ang iyong email address at ang mga detalyeng idadagdag mo sa iyong profile — pangalan, departamento, numero ng telepono, address, maikling bio, at larawan sa profile na pinili mula sa nakapirming set ng mga avatar (hindi kailanman ina-access ng app ang iyong camera o photo library). Iniimbak din namin ang mga kaganapan, grupo, at kagustuhan (wika, tema, sukat ng display, paalala) na itinakda mo habang ginagamit ang app.';
+
+  @override
+  String get privacyUseHeading => 'Paano Namin Ginagamit ang Iyong Impormasyon';
+
+  @override
+  String get privacyUseBody =>
+      'Ang iyong impormasyon ay ginagamit lang para patakbuhin ang mga tampok ng app: pagpapakita ng mga may-kaugnayang kaganapan, pagpapahintulot sa iyong sumali at pamahalaan ang mga grupo, pag-alala ng iyong mga kagustuhan sa display at wika sa iba\'t ibang device, at pagpapadala ng mga abisong hiniling mo. Hindi namin ginagamit ang iyong impormasyon para sa advertising, at hindi namin ito ibinebenta kaninuman.';
+
+  @override
+  String get privacyVisibilityHeading =>
+      'Sino ang Makakakita ng Iyong Impormasyon';
+
+  @override
+  String get privacyVisibilityBody =>
+      'Ikaw lang ang makakakita ng mga detalye ng iyong profile. Kung sumali ka sa isang grupo, makikita ng ibang miyembro ng grupong iyon ang iyong pangalan at larawan sa listahan ng miyembro. Sinusunod ng mga kaganapan ang sarili nilang visibility: makikita ng lahat ang mga Pampublikong kaganapan, ng mga miyembro lang ng grupo ang mga kaganapan ng Grupo, at ikaw lang ang makakakita ng mga Personal na kaganapan.';
+
+  @override
+  String get privacyThirdPartyHeading => 'Mga Serbisyo ng Ikatlong Partido';
+
+  @override
+  String get privacyThirdPartyBody =>
+      'Ang app ay binuo gamit ang Supabase, na nag-hohost ng aming database at humahawak ng pag-sign in, at Firebase Cloud Messaging, na naghahatid ng mga push notification sa Android. Pareho itong nag-e-encrypt ng data habang ipinapadala, at ang Supabase ay nag-e-encrypt din ng data habang nakaimbak. Pinoproseso lang ng mga provider na ito ang data para tumulong patakbuhin ang app — wala silang sariling hiwalay na gamit para dito.';
+
+  @override
+  String get privacyRetentionHeading => 'Ang Iyong mga Pagpipilian';
+
+  @override
+  String get privacyRetentionBody =>
+      'Puwede mong i-edit o alisin ang karamihan ng detalye ng iyong profile, burahin ang mga kaganapan at grupong ginawa mo, at baguhin ang iyong mga kagustuhan sa abiso at wika anumang oras mula sa loob ng app. Para humiling ng pagbura ng buo mong account, makipag-ugnayan sa iyong opisina sa barangay o sa LGU admin team ng munisipalidad.';
+
+  @override
+  String get privacyChildrenHeading => 'Privacy ng mga Bata';
+
+  @override
+  String get privacyChildrenBody =>
+      'Ang eBongabong Calendar ay para sa pangkalahatang gamit ng komunidad at hindi partikular na nakatuon sa mga bata. Kung sa palagay mo ay may nagbigay ng personal na impormasyon ng isang bata nang walang naaangkop na pahintulot, makipag-ugnayan sa iyong opisina sa barangay para maalis ito.';
+
+  @override
+  String get privacyChangesHeading => 'Mga Pagbabago sa Patakarang Ito';
+
+  @override
+  String get privacyChangesBody =>
+      'Kung magbabago ang patakarang ito, makikita ang update dito na may bagong petsa ng pagkakabisa. Ang pagpapatuloy sa paggamit ng app pagkatapos ng pagbabago ay nangangahulugang tinatanggap mo ang na-update na patakaran.';
+
+  @override
+  String get privacyLegalHeading => 'Pagsunod sa Batas';
+
+  @override
+  String get privacyLegalBody =>
+      'Ang app na ito ay pinapatakbo ng Munisipalidad ng Bongabong alinsunod sa Data Privacy Act of 2012 (Republic Act No. 10173). Para sa mga tanong tungkol sa iyong data, makipag-ugnayan sa iyong opisina sa barangay o sa LGU admin team ng munisipalidad.';
 }

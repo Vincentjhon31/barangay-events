@@ -144,16 +144,20 @@ abstract class AppAuthService {
   /// image, this app only offers picking from the fixed catalog.
   Future<void> updateAvatar(String assetPath);
 
-  /// Raw `theme_mode`/`ui_style`/`language`/`display_mode` values from the
-  /// signed-in user's profile (mirrors `ThemeMode`/`UiStyle`/`Locale`/
-  /// `DisplayMode` `.name`s/codes), or null if unavailable — lets a chosen
-  /// appearance/language/display-size follow the user across devices.
-  Future<({String themeMode, String uiStyle, String language, String displayMode})?> fetchPreferences();
+  /// Raw `theme_mode`/`ui_style`/`language`/`display_mode`/
+  /// `reminder_preference` values from the signed-in user's profile
+  /// (mirrors `ThemeMode`/`UiStyle`/`Locale`/`DisplayMode`/
+  /// `ReminderPreference` `.name`s/codes), or null if unavailable — lets a
+  /// chosen appearance/language/display-size/reminder setting follow the
+  /// user across devices.
+  Future<({String themeMode, String uiStyle, String language, String displayMode, String reminderPreference})?>
+      fetchPreferences();
   Future<void> savePreferences({
     required String themeMode,
     required String uiStyle,
     required String language,
     required String displayMode,
+    required String reminderPreference,
   });
 
   Future<void> signOut();
@@ -334,22 +338,32 @@ class SupabaseAuthService implements AppAuthService {
   }
 
   @override
-  Future<({String themeMode, String uiStyle, String language, String displayMode})?> fetchPreferences() async {
+  Future<({String themeMode, String uiStyle, String language, String displayMode, String reminderPreference})?>
+      fetchPreferences() async {
     final user = _client.auth.currentUser;
     if (user == null) return null;
 
     try {
       final row = await _client
           .from('profiles')
-          .select('theme_mode, ui_style, language, display_mode')
+          .select('theme_mode, ui_style, language, display_mode, reminder_preference')
           .eq('id', user.id)
           .maybeSingle();
       final mode = row?['theme_mode'] as String?;
       final style = row?['ui_style'] as String?;
       final language = row?['language'] as String?;
       final displayMode = row?['display_mode'] as String?;
-      if (mode == null || style == null || language == null || displayMode == null) return null;
-      return (themeMode: mode, uiStyle: style, language: language, displayMode: displayMode);
+      final reminderPreference = row?['reminder_preference'] as String?;
+      if (mode == null || style == null || language == null || displayMode == null || reminderPreference == null) {
+        return null;
+      }
+      return (
+        themeMode: mode,
+        uiStyle: style,
+        language: language,
+        displayMode: displayMode,
+        reminderPreference: reminderPreference,
+      );
     } catch (_) {
       return null;
     }
@@ -361,17 +375,19 @@ class SupabaseAuthService implements AppAuthService {
     required String uiStyle,
     required String language,
     required String displayMode,
+    required String reminderPreference,
   }) async {
     final user = _client.auth.currentUser;
     if (user == null) return;
 
     // A targeted update (not upsert) so this never clobbers other profile
-    // fields when only appearance/language/display-size changed.
+    // fields when only appearance/language/display-size/reminders changed.
     await _client.from('profiles').update({
       'theme_mode': themeMode,
       'ui_style': uiStyle,
       'language': language,
       'display_mode': displayMode,
+      'reminder_preference': reminderPreference,
     }).eq('id', user.id);
   }
 
@@ -419,6 +435,7 @@ class MemoryAuthService implements AppAuthService {
   String? _uiStyle;
   String? _language;
   String? _displayMode;
+  String? _reminderPreference;
 
   @override
   Stream<bool> authStateChanges() async* {
@@ -529,13 +546,23 @@ class MemoryAuthService implements AppAuthService {
   }
 
   @override
-  Future<({String themeMode, String uiStyle, String language, String displayMode})?> fetchPreferences() async {
+  Future<({String themeMode, String uiStyle, String language, String displayMode, String reminderPreference})?>
+      fetchPreferences() async {
     final mode = _themeMode;
     final style = _uiStyle;
     final language = _language;
     final displayMode = _displayMode;
-    if (mode == null || style == null || language == null || displayMode == null) return null;
-    return (themeMode: mode, uiStyle: style, language: language, displayMode: displayMode);
+    final reminderPreference = _reminderPreference;
+    if (mode == null || style == null || language == null || displayMode == null || reminderPreference == null) {
+      return null;
+    }
+    return (
+      themeMode: mode,
+      uiStyle: style,
+      language: language,
+      displayMode: displayMode,
+      reminderPreference: reminderPreference,
+    );
   }
 
   @override
@@ -544,11 +571,13 @@ class MemoryAuthService implements AppAuthService {
     required String uiStyle,
     required String language,
     required String displayMode,
+    required String reminderPreference,
   }) async {
     _themeMode = themeMode;
     _uiStyle = uiStyle;
     _language = language;
     _displayMode = displayMode;
+    _reminderPreference = reminderPreference;
   }
 
   @override

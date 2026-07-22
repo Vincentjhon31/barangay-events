@@ -10,6 +10,13 @@ const String publicEventsTopic = 'public-events';
 /// The FCM topic a given group's events are pushed to.
 String groupTopic(String groupId) => 'group-$groupId';
 
+/// The FCM topic targeted notifications for one specific account go to —
+/// used for event reminders (see supabase/functions/send-event-reminders),
+/// since those are per-user opt-in and can't ride the broadcast
+/// public-events/group topics without notifying people who turned
+/// reminders off.
+String userTopic(String userId) => 'user-$userId';
+
 /// One FCM topic every device always listens to; a new app release is
 /// announced here (sent by the release GitHub Action, not by the app).
 const String appUpdatesTopic = 'app-updates';
@@ -38,12 +45,27 @@ abstract class PushNotificationService {
   /// notification being shown — the caller uses it to refresh its own
   /// in-app "update available" state immediately, rather than only on the
   /// next cold launch.
-  Future<void> initialize({void Function()? onAppUpdateAvailable});
+  ///
+  /// [onEventReminder] fires the same way for a `user-<uid>` reminder push
+  /// (see send-event-reminders), passing the reminded-about event's id —
+  /// the caller uses it to show an in-app toast on top of the system
+  /// notification, matching the existing "new event posted" toast.
+  Future<void> initialize({
+    void Function()? onAppUpdateAvailable,
+    void Function(String eventId)? onEventReminder,
+  });
 
   /// Subscribes to [publicEventsTopic] plus one topic per id in [groupIds],
   /// unsubscribing from any group topics no longer present. Call at sign-in
   /// and whenever the user's group memberships change.
   Future<void> syncTopics(List<String> groupIds);
+
+  /// Subscribes this device to [userId]'s personal topic (see [userTopic]),
+  /// unsubscribing from any previously-subscribed account's topic first —
+  /// matters for a shared/kiosk device where one account signs out and
+  /// another signs in, so reminders never leak to the wrong account. Pass
+  /// null on sign-out with nobody signed in.
+  Future<void> syncUserTopic(String? userId);
 }
 
 class FirebasePushNotificationService implements PushNotificationService {
@@ -70,11 +92,17 @@ class FirebasePushNotificationService implements PushNotificationService {
 
   bool _initialized = false;
   Set<String> _subscribedGroupIds = const {};
+  String? _subscribedUserId;
   void Function()? _onAppUpdateAvailable;
+  void Function(String eventId)? _onEventReminder;
 
   @override
-  Future<void> initialize({void Function()? onAppUpdateAvailable}) async {
+  Future<void> initialize({
+    void Function()? onAppUpdateAvailable,
+    void Function(String eventId)? onEventReminder,
+  }) async {
     _onAppUpdateAvailable = onAppUpdateAvailable;
+    _onEventReminder = onEventReminder;
     if (_initialized) return;
     _initialized = true;
 
@@ -102,6 +130,9 @@ class FirebasePushNotificationService implements PushNotificationService {
   Future<void> _showForegroundNotification(RemoteMessage message) async {
     if (message.data['type'] == 'app_update') {
       _onAppUpdateAvailable?.call();
+    } else if (message.data['type'] == 'event_reminder') {
+      final eventId = message.data['eventId'] as String?;
+      if (eventId != null) _onEventReminder?.call(eventId);
     }
 
     final notification = message.notification;
@@ -136,14 +167,32 @@ class FirebasePushNotificationService implements PushNotificationService {
 
     _subscribedGroupIds = nextGroupIds;
   }
+
+  @override
+  Future<void> syncUserTopic(String? userId) async {
+    if (_subscribedUserId == userId) return;
+    if (_subscribedUserId != null) {
+      await _messaging.unsubscribeFromTopic(userTopic(_subscribedUserId!));
+    }
+    if (userId != null) {
+      await _messaging.subscribeToTopic(userTopic(userId));
+    }
+    _subscribedUserId = userId;
+  }
 }
 
 class NoopPushNotificationService implements PushNotificationService {
   const NoopPushNotificationService();
 
   @override
-  Future<void> initialize({void Function()? onAppUpdateAvailable}) async {}
+  Future<void> initialize({
+    void Function()? onAppUpdateAvailable,
+    void Function(String eventId)? onEventReminder,
+  }) async {}
 
   @override
   Future<void> syncTopics(List<String> groupIds) async {}
+
+  @override
+  Future<void> syncUserTopic(String? userId) async {}
 }

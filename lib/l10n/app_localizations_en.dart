@@ -158,6 +158,29 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsLanguageFilipino => 'Filipino';
 
   @override
+  String get settingsNotifications => 'Notifications';
+
+  @override
+  String get settingsNotificationsHint =>
+      'Get a reminder before an event you can see is about to start.';
+
+  @override
+  String get settingsReminderOff => 'Off';
+
+  @override
+  String get settingsReminderOneHour => '1 hour before';
+
+  @override
+  String get settingsReminderOneDay => '1 day before';
+
+  @override
+  String get eventReminderNoticeLabel => 'Event reminder';
+
+  @override
+  String get eventReminderGenericTitle =>
+      'An event you\'re following is coming up soon';
+
+  @override
   String get calendarViewMonth => 'Month';
 
   @override
@@ -380,6 +403,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get eventTypePersonal => 'Personal';
+
+  @override
+  String get groupFilterPickerTitle => 'Filter groups';
+
+  @override
+  String get groupFilterPickerSubtitle =>
+      'Choose which of your groups\' events show up as Group events.';
+
+  @override
+  String get groupFilterPickerApply => 'Apply';
 
   @override
   String get eventDetailsTitle => 'Event Details';
@@ -1095,4 +1128,188 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get exitKioskModeButton => 'Exit Kiosk Mode';
+
+  @override
+  String get aboutThisAppSection => 'About This App';
+
+  @override
+  String get aboutThisAppBody =>
+      'eBongabong Calendar is the official community events app of the Municipality of Bongabong, Philippines — built to keep residents informed about barangay activities, government announcements, and community gatherings, all in one place.';
+
+  @override
+  String get aboutThisAppFeaturesIntro => 'With eBongabong Calendar, you can:';
+
+  @override
+  String get aboutFeaturePublicEvents =>
+      'See public announcements and events posted by the LGU';
+
+  @override
+  String get aboutFeatureGroups =>
+      'Join groups for your barangay, office, or organization to see events shared just with that circle';
+
+  @override
+  String get aboutFeaturePersonal =>
+      'Keep personal reminders and notes only you can see';
+
+  @override
+  String get aboutFeatureNotifications =>
+      'Get notified the moment a new event is posted, and set a reminder before it starts';
+
+  @override
+  String get aboutFeatureLanguage =>
+      'Switch between English and Filipino anytime';
+
+  @override
+  String get aboutFeatureDisplay =>
+      'Adjust the display size for phones, tablets, or a public kiosk screen';
+
+  @override
+  String get faqTile => 'Frequently Asked Questions';
+
+  @override
+  String get faqTileCaption => 'Common questions about using the app';
+
+  @override
+  String get faqPageTitle => 'Frequently Asked Questions';
+
+  @override
+  String get faqPageSubtitle =>
+      'Answers to common questions about eBongabong Calendar. Tap a question to expand it.';
+
+  @override
+  String get faqQ1 =>
+      'What\'s the difference between Public, Group, and Personal events?';
+
+  @override
+  String get faqA1 =>
+      'Public events are official barangay-wide announcements posted only by the superadmin — everyone using the app can see them. Group events are shared just with the members of a specific group, like your barangay office or a club — only members see them. Personal events are private notes only you can see, for your own reminders.';
+
+  @override
+  String get faqQ2 => 'How do I join a group?';
+
+  @override
+  String get faqA2 =>
+      'From the Groups tab, tap the search icon to browse public groups, or enter a 6-character invite code if you have one. Public groups let you join instantly, or send a request if the group requires approval; private groups always require the code.';
+
+  @override
+  String get faqQ3 => 'How do I create a group?';
+
+  @override
+  String get faqA3 =>
+      'Group creation is limited to verified LGU members and the superadmin. If you\'re a citizen, ask your barangay office or the superadmin about applying for LGU access from the Groups tab.';
+
+  @override
+  String get faqQ4 => 'Why can\'t I post a Public event?';
+
+  @override
+  String get faqA4 =>
+      'Public events reach the entire community, so only the superadmin can post them — this keeps official barangay-wide announcements from getting lost among community events. LGU members can still post Group events to their own group\'s members.';
+
+  @override
+  String get faqQ5 => 'How do event reminders work?';
+
+  @override
+  String get faqA5 =>
+      'In Settings, under Notifications, choose when you\'d like to be reminded — 1 hour or 1 day before an event starts. You\'ll get a notification for every event you can already see: public events, your groups\' events, and your own personal events.';
+
+  @override
+  String get faqQ6 => 'How do I switch the app to Filipino?';
+
+  @override
+  String get faqA6 =>
+      'Open Settings and tap Language, then choose Filipino or English. It takes effect immediately and is remembered on every device you sign in on.';
+
+  @override
+  String get faqQ7 => 'What is Kiosk Mode?';
+
+  @override
+  String get faqA7 =>
+      'Kiosk Mode turns the app into a full-screen, read-only calendar display — no menu, no Add Event button — meant for an unattended public screen, like one at the barangay hall. Only an account the superadmin has designated as a kiosk account can turn it on, from a button at the top of the Calendar tab.';
+
+  @override
+  String get faqQ8 => 'How do I become a verified LGU member?';
+
+  @override
+  String get faqA8 =>
+      'From the Groups tab or the LGU admin portal, submit an application with your office or department. A superadmin will review and approve it — once approved, you can create groups and post Group events.';
+
+  @override
+  String get faqQ9 => 'Is my information private?';
+
+  @override
+  String get faqA9 =>
+      'Your profile is only visible to you unless you choose to share it, such as by joining a group. See the Privacy Policy in Settings for full details on what\'s collected and how it\'s used.';
+
+  @override
+  String get privacyPolicyTile => 'Privacy Policy';
+
+  @override
+  String get privacyPolicyTileCaption => 'What we collect and how it\'s used';
+
+  @override
+  String get privacyPolicyTitle => 'Privacy Policy';
+
+  @override
+  String get privacyPolicySubtitle =>
+      'How eBongabong Calendar handles your information.';
+
+  @override
+  String get privacyIntro =>
+      'This Privacy Policy explains what information eBongabong Calendar collects, how it\'s used, and who can see it. It applies to everyone who uses the app, whether you\'re a resident, an LGU member, or a superadmin.';
+
+  @override
+  String get privacyCollectHeading => 'Information We Collect';
+
+  @override
+  String get privacyCollectBody =>
+      'When you create an account, we collect your email address and the details you choose to add to your profile — display name, department, phone number, address, a short bio, and a profile picture chosen from a fixed set of avatars (the app never accesses your camera or photo library). We also store the events, groups, and preferences (language, theme, display size, reminders) you set up while using the app.';
+
+  @override
+  String get privacyUseHeading => 'How We Use Your Information';
+
+  @override
+  String get privacyUseBody =>
+      'Your information is used only to run the app\'s own features: showing you relevant events, letting you join and manage groups, remembering your display and language preferences across devices, and sending the notifications you\'ve asked for. We don\'t use your information for advertising, and we don\'t sell it to anyone.';
+
+  @override
+  String get privacyVisibilityHeading => 'Who Can See Your Information';
+
+  @override
+  String get privacyVisibilityBody =>
+      'Your profile details are visible only to you. If you join a group, that group\'s other members can see your display name and profile picture in the member list. Events follow their own visibility: Public events are visible to everyone, Group events only to that group\'s members, and Personal events only to you.';
+
+  @override
+  String get privacyThirdPartyHeading => 'Third-Party Services';
+
+  @override
+  String get privacyThirdPartyBody =>
+      'The app is built on Supabase, which hosts our database and handles sign-in, and Firebase Cloud Messaging, which delivers push notifications on Android. Both encrypt data in transit, and Supabase encrypts data at rest. These providers process data only to help the app function — they don\'t have their own separate use for it.';
+
+  @override
+  String get privacyRetentionHeading => 'Your Choices';
+
+  @override
+  String get privacyRetentionBody =>
+      'You can edit or remove most of your profile details, delete events and groups you created, and change your notification and language preferences at any time from within the app. To request deletion of your account entirely, contact your barangay office or the municipality\'s LGU admin team.';
+
+  @override
+  String get privacyChildrenHeading => 'Children\'s Privacy';
+
+  @override
+  String get privacyChildrenBody =>
+      'eBongabong Calendar is intended for general community use and isn\'t specifically directed at children. If you believe a child has provided personal information without appropriate consent, please contact your barangay office so it can be removed.';
+
+  @override
+  String get privacyChangesHeading => 'Changes to This Policy';
+
+  @override
+  String get privacyChangesBody =>
+      'If this policy changes, the update will be reflected here with a new effective date. Continuing to use the app after a change means you accept the updated policy.';
+
+  @override
+  String get privacyLegalHeading => 'Compliance';
+
+  @override
+  String get privacyLegalBody =>
+      'This app is operated by the Municipality of Bongabong in line with the Data Privacy Act of 2012 (Republic Act No. 10173). For questions about your data, contact your barangay office or the municipality\'s LGU admin team.';
 }

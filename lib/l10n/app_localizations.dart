@@ -386,6 +386,48 @@ abstract class AppLocalizations {
   /// **'Filipino'**
   String get settingsLanguageFilipino;
 
+  /// No description provided for @settingsNotifications.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications'**
+  String get settingsNotifications;
+
+  /// No description provided for @settingsNotificationsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Get a reminder before an event you can see is about to start.'**
+  String get settingsNotificationsHint;
+
+  /// No description provided for @settingsReminderOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get settingsReminderOff;
+
+  /// No description provided for @settingsReminderOneHour.
+  ///
+  /// In en, this message translates to:
+  /// **'1 hour before'**
+  String get settingsReminderOneHour;
+
+  /// No description provided for @settingsReminderOneDay.
+  ///
+  /// In en, this message translates to:
+  /// **'1 day before'**
+  String get settingsReminderOneDay;
+
+  /// No description provided for @eventReminderNoticeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Event reminder'**
+  String get eventReminderNoticeLabel;
+
+  /// No description provided for @eventReminderGenericTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'An event you\'re following is coming up soon'**
+  String get eventReminderGenericTitle;
+
   /// No description provided for @calendarViewMonth.
   ///
   /// In en, this message translates to:
@@ -757,6 +799,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Personal'**
   String get eventTypePersonal;
+
+  /// No description provided for @groupFilterPickerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Filter groups'**
+  String get groupFilterPickerTitle;
+
+  /// No description provided for @groupFilterPickerSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose which of your groups\' events show up as Group events.'**
+  String get groupFilterPickerSubtitle;
+
+  /// No description provided for @groupFilterPickerApply.
+  ///
+  /// In en, this message translates to:
+  /// **'Apply'**
+  String get groupFilterPickerApply;
 
   /// No description provided for @eventDetailsTitle.
   ///
@@ -1987,6 +2047,318 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Exit Kiosk Mode'**
   String get exitKioskModeButton;
+
+  /// No description provided for @aboutThisAppSection.
+  ///
+  /// In en, this message translates to:
+  /// **'About This App'**
+  String get aboutThisAppSection;
+
+  /// No description provided for @aboutThisAppBody.
+  ///
+  /// In en, this message translates to:
+  /// **'eBongabong Calendar is the official community events app of the Municipality of Bongabong, Philippines — built to keep residents informed about barangay activities, government announcements, and community gatherings, all in one place.'**
+  String get aboutThisAppBody;
+
+  /// No description provided for @aboutThisAppFeaturesIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'With eBongabong Calendar, you can:'**
+  String get aboutThisAppFeaturesIntro;
+
+  /// No description provided for @aboutFeaturePublicEvents.
+  ///
+  /// In en, this message translates to:
+  /// **'See public announcements and events posted by the LGU'**
+  String get aboutFeaturePublicEvents;
+
+  /// No description provided for @aboutFeatureGroups.
+  ///
+  /// In en, this message translates to:
+  /// **'Join groups for your barangay, office, or organization to see events shared just with that circle'**
+  String get aboutFeatureGroups;
+
+  /// No description provided for @aboutFeaturePersonal.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep personal reminders and notes only you can see'**
+  String get aboutFeaturePersonal;
+
+  /// No description provided for @aboutFeatureNotifications.
+  ///
+  /// In en, this message translates to:
+  /// **'Get notified the moment a new event is posted, and set a reminder before it starts'**
+  String get aboutFeatureNotifications;
+
+  /// No description provided for @aboutFeatureLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch between English and Filipino anytime'**
+  String get aboutFeatureLanguage;
+
+  /// No description provided for @aboutFeatureDisplay.
+  ///
+  /// In en, this message translates to:
+  /// **'Adjust the display size for phones, tablets, or a public kiosk screen'**
+  String get aboutFeatureDisplay;
+
+  /// No description provided for @faqTile.
+  ///
+  /// In en, this message translates to:
+  /// **'Frequently Asked Questions'**
+  String get faqTile;
+
+  /// No description provided for @faqTileCaption.
+  ///
+  /// In en, this message translates to:
+  /// **'Common questions about using the app'**
+  String get faqTileCaption;
+
+  /// No description provided for @faqPageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Frequently Asked Questions'**
+  String get faqPageTitle;
+
+  /// No description provided for @faqPageSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Answers to common questions about eBongabong Calendar. Tap a question to expand it.'**
+  String get faqPageSubtitle;
+
+  /// No description provided for @faqQ1.
+  ///
+  /// In en, this message translates to:
+  /// **'What\'s the difference between Public, Group, and Personal events?'**
+  String get faqQ1;
+
+  /// No description provided for @faqA1.
+  ///
+  /// In en, this message translates to:
+  /// **'Public events are official barangay-wide announcements posted only by the superadmin — everyone using the app can see them. Group events are shared just with the members of a specific group, like your barangay office or a club — only members see them. Personal events are private notes only you can see, for your own reminders.'**
+  String get faqA1;
+
+  /// No description provided for @faqQ2.
+  ///
+  /// In en, this message translates to:
+  /// **'How do I join a group?'**
+  String get faqQ2;
+
+  /// No description provided for @faqA2.
+  ///
+  /// In en, this message translates to:
+  /// **'From the Groups tab, tap the search icon to browse public groups, or enter a 6-character invite code if you have one. Public groups let you join instantly, or send a request if the group requires approval; private groups always require the code.'**
+  String get faqA2;
+
+  /// No description provided for @faqQ3.
+  ///
+  /// In en, this message translates to:
+  /// **'How do I create a group?'**
+  String get faqQ3;
+
+  /// No description provided for @faqA3.
+  ///
+  /// In en, this message translates to:
+  /// **'Group creation is limited to verified LGU members and the superadmin. If you\'re a citizen, ask your barangay office or the superadmin about applying for LGU access from the Groups tab.'**
+  String get faqA3;
+
+  /// No description provided for @faqQ4.
+  ///
+  /// In en, this message translates to:
+  /// **'Why can\'t I post a Public event?'**
+  String get faqQ4;
+
+  /// No description provided for @faqA4.
+  ///
+  /// In en, this message translates to:
+  /// **'Public events reach the entire community, so only the superadmin can post them — this keeps official barangay-wide announcements from getting lost among community events. LGU members can still post Group events to their own group\'s members.'**
+  String get faqA4;
+
+  /// No description provided for @faqQ5.
+  ///
+  /// In en, this message translates to:
+  /// **'How do event reminders work?'**
+  String get faqQ5;
+
+  /// No description provided for @faqA5.
+  ///
+  /// In en, this message translates to:
+  /// **'In Settings, under Notifications, choose when you\'d like to be reminded — 1 hour or 1 day before an event starts. You\'ll get a notification for every event you can already see: public events, your groups\' events, and your own personal events.'**
+  String get faqA5;
+
+  /// No description provided for @faqQ6.
+  ///
+  /// In en, this message translates to:
+  /// **'How do I switch the app to Filipino?'**
+  String get faqQ6;
+
+  /// No description provided for @faqA6.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Settings and tap Language, then choose Filipino or English. It takes effect immediately and is remembered on every device you sign in on.'**
+  String get faqA6;
+
+  /// No description provided for @faqQ7.
+  ///
+  /// In en, this message translates to:
+  /// **'What is Kiosk Mode?'**
+  String get faqQ7;
+
+  /// No description provided for @faqA7.
+  ///
+  /// In en, this message translates to:
+  /// **'Kiosk Mode turns the app into a full-screen, read-only calendar display — no menu, no Add Event button — meant for an unattended public screen, like one at the barangay hall. Only an account the superadmin has designated as a kiosk account can turn it on, from a button at the top of the Calendar tab.'**
+  String get faqA7;
+
+  /// No description provided for @faqQ8.
+  ///
+  /// In en, this message translates to:
+  /// **'How do I become a verified LGU member?'**
+  String get faqQ8;
+
+  /// No description provided for @faqA8.
+  ///
+  /// In en, this message translates to:
+  /// **'From the Groups tab or the LGU admin portal, submit an application with your office or department. A superadmin will review and approve it — once approved, you can create groups and post Group events.'**
+  String get faqA8;
+
+  /// No description provided for @faqQ9.
+  ///
+  /// In en, this message translates to:
+  /// **'Is my information private?'**
+  String get faqQ9;
+
+  /// No description provided for @faqA9.
+  ///
+  /// In en, this message translates to:
+  /// **'Your profile is only visible to you unless you choose to share it, such as by joining a group. See the Privacy Policy in Settings for full details on what\'s collected and how it\'s used.'**
+  String get faqA9;
+
+  /// No description provided for @privacyPolicyTile.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy Policy'**
+  String get privacyPolicyTile;
+
+  /// No description provided for @privacyPolicyTileCaption.
+  ///
+  /// In en, this message translates to:
+  /// **'What we collect and how it\'s used'**
+  String get privacyPolicyTileCaption;
+
+  /// No description provided for @privacyPolicyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy Policy'**
+  String get privacyPolicyTitle;
+
+  /// No description provided for @privacyPolicySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'How eBongabong Calendar handles your information.'**
+  String get privacyPolicySubtitle;
+
+  /// No description provided for @privacyIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'This Privacy Policy explains what information eBongabong Calendar collects, how it\'s used, and who can see it. It applies to everyone who uses the app, whether you\'re a resident, an LGU member, or a superadmin.'**
+  String get privacyIntro;
+
+  /// No description provided for @privacyCollectHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Information We Collect'**
+  String get privacyCollectHeading;
+
+  /// No description provided for @privacyCollectBody.
+  ///
+  /// In en, this message translates to:
+  /// **'When you create an account, we collect your email address and the details you choose to add to your profile — display name, department, phone number, address, a short bio, and a profile picture chosen from a fixed set of avatars (the app never accesses your camera or photo library). We also store the events, groups, and preferences (language, theme, display size, reminders) you set up while using the app.'**
+  String get privacyCollectBody;
+
+  /// No description provided for @privacyUseHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'How We Use Your Information'**
+  String get privacyUseHeading;
+
+  /// No description provided for @privacyUseBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your information is used only to run the app\'s own features: showing you relevant events, letting you join and manage groups, remembering your display and language preferences across devices, and sending the notifications you\'ve asked for. We don\'t use your information for advertising, and we don\'t sell it to anyone.'**
+  String get privacyUseBody;
+
+  /// No description provided for @privacyVisibilityHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Who Can See Your Information'**
+  String get privacyVisibilityHeading;
+
+  /// No description provided for @privacyVisibilityBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your profile details are visible only to you. If you join a group, that group\'s other members can see your display name and profile picture in the member list. Events follow their own visibility: Public events are visible to everyone, Group events only to that group\'s members, and Personal events only to you.'**
+  String get privacyVisibilityBody;
+
+  /// No description provided for @privacyThirdPartyHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Third-Party Services'**
+  String get privacyThirdPartyHeading;
+
+  /// No description provided for @privacyThirdPartyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The app is built on Supabase, which hosts our database and handles sign-in, and Firebase Cloud Messaging, which delivers push notifications on Android. Both encrypt data in transit, and Supabase encrypts data at rest. These providers process data only to help the app function — they don\'t have their own separate use for it.'**
+  String get privacyThirdPartyBody;
+
+  /// No description provided for @privacyRetentionHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Choices'**
+  String get privacyRetentionHeading;
+
+  /// No description provided for @privacyRetentionBody.
+  ///
+  /// In en, this message translates to:
+  /// **'You can edit or remove most of your profile details, delete events and groups you created, and change your notification and language preferences at any time from within the app. To request deletion of your account entirely, contact your barangay office or the municipality\'s LGU admin team.'**
+  String get privacyRetentionBody;
+
+  /// No description provided for @privacyChildrenHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Children\'s Privacy'**
+  String get privacyChildrenHeading;
+
+  /// No description provided for @privacyChildrenBody.
+  ///
+  /// In en, this message translates to:
+  /// **'eBongabong Calendar is intended for general community use and isn\'t specifically directed at children. If you believe a child has provided personal information without appropriate consent, please contact your barangay office so it can be removed.'**
+  String get privacyChildrenBody;
+
+  /// No description provided for @privacyChangesHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Changes to This Policy'**
+  String get privacyChangesHeading;
+
+  /// No description provided for @privacyChangesBody.
+  ///
+  /// In en, this message translates to:
+  /// **'If this policy changes, the update will be reflected here with a new effective date. Continuing to use the app after a change means you accept the updated policy.'**
+  String get privacyChangesBody;
+
+  /// No description provided for @privacyLegalHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Compliance'**
+  String get privacyLegalHeading;
+
+  /// No description provided for @privacyLegalBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This app is operated by the Municipality of Bongabong in line with the Data Privacy Act of 2012 (Republic Act No. 10173). For questions about your data, contact your barangay office or the municipality\'s LGU admin team.'**
+  String get privacyLegalBody;
 }
 
 class _AppLocalizationsDelegate
