@@ -57,7 +57,7 @@ class GitHubReleaseUpdateService implements AppUpdateService {
   }
 
   Future<_GitHubRelease> _fetchLatestRelease() async {
-    final client = HttpClient();
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     try {
       final uri = Uri.https(
         'api.github.com',

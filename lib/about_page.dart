@@ -59,7 +59,8 @@ class _AboutPageState extends State<AboutPage> {
       final release = await updateService.fetchLatestRelease();
       if (!mounted) return;
       setState(() => _latestRelease = release);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Update check failed: $e');
       if (!mounted) return;
       setState(() => _error = AppLocalizations.of(context)!.checkUpdateError);
     } finally {

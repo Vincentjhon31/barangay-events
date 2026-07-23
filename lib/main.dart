@@ -1,6 +1,8 @@
 ﻿import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -10,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'add_event_page.dart';
 import 'app_update_service.dart';
@@ -24,8 +27,13 @@ import 'push_notifications.dart';
 import 'responsive_scale.dart';
 import 'theme_controller.dart';
 
+bool get _isWindowManagerSupported => !kIsWeb && Platform.isWindows;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (_isWindowManagerSupported) {
+    await windowManager.ensureInitialized();
+  }
   await Supabase.initialize(
     url: 'https://xuxnoydakqembrytdbyz.supabase.co',
     anonKey: 'sb_publishable_XnqlZ-m2efmbasNuZ7fyVg_74qTnghA',
@@ -799,6 +807,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     if (active) {
       _armKioskExitShrinkTimer();
       setState(() => _kioskModeActive = active);
+      unawaited(_applyKioskWindowChrome(active));
     }
   }
 
@@ -809,8 +818,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _kioskExitShrinkTimer?.cancel();
     }
     setState(() => _kioskModeActive = active);
+    unawaited(_applyKioskWindowChrome(active));
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kioskModePrefKey, active);
+  }
+
+  /// Drops the OS window's title bar/min/max/close chrome and goes
+  /// fullscreen while Kiosk Mode is on — this is a public unattended
+  /// display, so there's nothing for that chrome to do, and the in-app
+  /// Exit Kiosk Mode button is the only way out. Windows desktop only;
+  /// on every other platform (including the Android build this ships on)
+  /// there's no OS window to touch.
+  Future<void> _applyKioskWindowChrome(bool kiosk) async {
+    if (!_isWindowManagerSupported) return;
+    await windowManager.setFullScreen(kiosk);
   }
 
   Future<void> _initializePushNotifications() async {
@@ -1038,7 +1059,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
       if (update != null && showDialogWhenAvailable) {
         _showUpdateDialog(update);
       }
-    } catch (_) {
+    } catch (e) {
+      // Kept plain instead of surfacing `e` to end users, but printed here
+      // so running the .exe from a console (see main.cpp's AttachConsole)
+      // shows the real reason — e.g. network/proxy/firewall blocking
+      // api.github.com, or a GitHub API rate limit — on a machine where
+      // the update check silently fails.
+      debugPrint('Update check failed: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
