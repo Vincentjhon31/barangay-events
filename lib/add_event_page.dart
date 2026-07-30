@@ -5,6 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 
 import 'auth_service.dart' show AppUserProfile;
+import 'event_colors.dart';
 import 'event_store.dart';
 import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
@@ -66,6 +67,7 @@ class _AddEventPageState extends State<AddEventPage> {
   TimeOfDay _startTime = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 10, minute: 0);
   String _eventType = EventType.public;
+  String? _colorKey;
   BarangayGroup? _selectedGroup;
   bool _isMultiDay = false;
   bool _saving = false;
@@ -118,6 +120,7 @@ class _AddEventPageState extends State<AddEventPage> {
       _startTime = TimeOfDay.fromDateTime(existing.startTime);
       _endTime = TimeOfDay.fromDateTime(existing.endTime);
       _eventType = existing.eventType;
+      _colorKey = existing.colorKey;
       _isMultiDay = existing.isMultiDay;
       for (final group in widget.myGroups) {
         if (group.id == existing.groupId) {
@@ -436,6 +439,7 @@ class _AddEventPageState extends State<AddEventPage> {
             createdByDepartment: existing.createdByDepartment,
             createdById: existing.createdById,
             eventType: _eventType,
+            colorKey: _colorKey,
             groupId: group?.id,
             groupName: group?.name,
             dailyOverrides: dailyOverrides,
@@ -456,6 +460,7 @@ class _AddEventPageState extends State<AddEventPage> {
             createdByDepartment: widget.creatorProfile?.department,
             createdById: widget.creatorProfile?.id,
             eventType: _eventType,
+            colorKey: _colorKey,
             groupId: group?.id,
             groupName: group?.name,
             dailyOverrides: dailyOverrides,
@@ -683,6 +688,24 @@ class _AddEventPageState extends State<AddEventPage> {
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                l10n.eventColorLabel,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final key in eventColorPalette.keys)
+                    _ColorSwatch(
+                      colorKey: key,
+                      selected: _colorKey == key,
+                      onTap: () => setState(() => _colorKey = _colorKey == key ? null : key),
+                    ),
+                ],
               ),
               if (_eventType == EventType.shared) ...[
                 const SizedBox(height: 12),
@@ -936,5 +959,55 @@ class _AddEventPageState extends State<AddEventPage> {
       _perDayOverrides[day] = (start: start, end: end);
       _recomputeConflicts();
     });
+  }
+}
+
+/// A tappable color circle in the event-color picker (see [eventColorPalette]).
+/// Tapping the already-selected swatch clears it back to "no color chosen".
+class _ColorSwatch extends StatelessWidget {
+  const _ColorSwatch({
+    required this.colorKey,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String colorKey;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = eventColorPalette[colorKey]!;
+    return Tooltip(
+      message: eventColorNames[colorKey] ?? colorKey,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected ? Theme.of(context).colorScheme.onSurface : Colors.transparent,
+              width: 2.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.35),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          alignment: Alignment.center,
+          child: selected
+              ? const Icon(Icons.check, color: Colors.white, size: 18)
+              : null,
+        ),
+      ),
+    );
   }
 }

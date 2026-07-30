@@ -87,7 +87,10 @@ class _ProfileTabState extends State<ProfileTab> {
   void _openSecurity() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => SecurityPage(authService: widget.authService),
+        builder: (_) => SecurityPage(
+          authService: widget.authService,
+          userProfile: _profile,
+        ),
       ),
     );
   }
@@ -668,6 +671,10 @@ class _GroupsTabState extends State<GroupsTab> {
     setState(() => _loadingGroups = true);
     await Future.wait([_loadMyGroups(), _loadPendingRequests()]);
     if (mounted) setState(() => _loadingGroups = false);
+    // Cheap insurance alongside the dedicated group_members realtime
+    // listener in main.dart — a manual pull-to-refresh here should also
+    // never leave the calendar's event stream stale.
+    widget.onGroupsChanged?.call();
   }
 
   Future<void> _loadMyGroups() async {
@@ -696,6 +703,12 @@ class _GroupsTabState extends State<GroupsTab> {
     try {
       await widget.eventRepository
           .respondToJoinRequest(request.id, accept: accept);
+      // Accepting adds a new member to the group's event visibility set —
+      // the calendar's own realtime stream needs to reopen so this admin's
+      // own view stays consistent. (The newly-accepted member's own client
+      // gets the same signal via a dedicated group_members realtime
+      // listener in main.dart, since it isn't the one calling this RPC.)
+      if (accept) widget.onGroupsChanged?.call();
       if (!mounted) return;
       await Future.wait([_loadPendingRequests(), _loadMyGroups()]);
       if (!mounted) return;

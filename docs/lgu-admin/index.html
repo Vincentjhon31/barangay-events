@@ -934,6 +934,9 @@
               '<input type="checkbox" class="kiosk-checkbox" data-user-id="' + u.user_id + '"' +
                 (u.is_kiosk_account ? ' checked' : '') + '>' +
             '</label>' +
+            (u.is_kiosk_account
+              ? '<button class="ghost small reset-passcode" data-user-id="' + u.user_id + '" style="margin-left:6px;">Reset passcode</button>'
+              : '') +
           '</td>' +
           '<td class="meta">' + formatDate(u.created_at) + '</td>' +
           '<td class="actions"><button class="ghost small" data-view="' + u.user_id + '">View</button></td>';
@@ -952,6 +955,11 @@
       list.querySelectorAll('input.kiosk-checkbox').forEach(function (checkbox) {
         checkbox.addEventListener('change', function () {
           toggleKiosk(checkbox, checkbox.getAttribute('data-user-id'), checkbox.checked);
+        });
+      });
+      list.querySelectorAll('button.reset-passcode').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          resetKioskPasscode(btn, btn.getAttribute('data-user-id'));
         });
       });
       list.querySelectorAll('[data-view]').forEach(function (btn) {
@@ -980,6 +988,27 @@
           showMessage(usersMsg, friendlyError(err), 'error');
           checkboxEl.checked = !isKiosk;
           checkboxEl.disabled = false;
+        });
+    }
+
+    // Resets a kiosk account's exit passcode back to the default '0000' —
+    // e.g. the device's staff forgot it. Security-relevant (unlike the
+    // kiosk toggle itself), so this gets the confirm() guard changeRole()
+    // uses for a superadmin promotion.
+    function resetKioskPasscode(btnEl, userId) {
+      var confirmed = window.confirm('Reset this account\'s kiosk exit passcode to 0000?');
+      if (!confirmed) return;
+      showMessage(usersMsg, '', '');
+      btnEl.disabled = true;
+      supabaseClient.rpc('admin_reset_kiosk_passcode', { p_user_id: userId })
+        .then(function (res) {
+          if (res.error) throw res.error;
+          showMessage(usersMsg, 'Passcode reset to 0000.', 'success');
+          btnEl.disabled = false;
+        })
+        .catch(function (err) {
+          showMessage(usersMsg, friendlyError(err), 'error');
+          btnEl.disabled = false;
         });
     }
 

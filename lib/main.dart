@@ -16,12 +16,16 @@ import 'package:window_manager/window_manager.dart';
 
 import 'add_event_page.dart';
 import 'app_update_service.dart';
+import 'app_update_service_factory.dart';
 import 'auth_service.dart';
 import 'day_detail_page.dart';
+import 'day_timeline_view.dart';
+import 'event_colors.dart';
 import 'event_conflicts.dart';
 import 'event_store.dart';
 import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
+import 'numeric_keypad.dart';
 import 'profile_pages.dart';
 import 'push_notifications.dart';
 import 'responsive_scale.dart';
@@ -62,7 +66,7 @@ Future<void> main() async {
   runApp(
     BarangayCalendarApp(
       themeController: themeController,
-      updateService: GitHubReleaseUpdateService(
+      updateService: createDefaultUpdateService(
         repositoryOwner: 'Vincentjhon31',
         repositoryName: 'barangay-events',
       ),
@@ -113,9 +117,16 @@ class BarangayCalendarApp extends StatefulWidget {
   State<BarangayCalendarApp> createState() => _BarangayCalendarAppState();
 }
 
+/// What an unauthenticated visitor has chosen, above the real sign-in gate.
+/// Deliberately held in memory only (never persisted) — a fresh app launch
+/// always starts back at [pending], so the Guest-or-Register/Login choice
+/// reappears every time until there's a real signed-in session.
+enum _PreAuthChoice { pending, guest, loginFlow }
+
 class _BarangayCalendarAppState extends State<BarangayCalendarApp> {
   late final Future<AppAuthService> _authServiceFuture;
   AppAuthService? _resolvedAuthService;
+  _PreAuthChoice _preAuthChoice = _PreAuthChoice.pending;
 
   @override
   void initState() {
@@ -184,7 +195,33 @@ class _BarangayCalendarAppState extends State<BarangayCalendarApp> {
                   final signedIn = authSnapshot.data ?? false;
 
                   if (!signedIn) {
-                    return SignInScreen(authService: authService);
+                    switch (_preAuthChoice) {
+                      case _PreAuthChoice.pending:
+                        return WelcomeScreen(
+                          onContinueAsGuest: () => setState(
+                              () => _preAuthChoice = _PreAuthChoice.guest),
+                          onRegisterLogin: () => setState(
+                              () => _preAuthChoice = _PreAuthChoice.loginFlow),
+                        );
+                      case _PreAuthChoice.guest:
+                        return GuestShell(
+                          themeController: widget.themeController,
+                          eventRepositoryFactory:
+                              widget.eventRepositoryFactory ??
+                                  createEventRepository,
+                          // Back to the Welcome choice (Guest vs.
+                          // Register/Login), not straight into the sign-in
+                          // form — matches the button's "back" framing.
+                          onExitGuestMode: () => setState(() =>
+                              _preAuthChoice = _PreAuthChoice.pending),
+                        );
+                      case _PreAuthChoice.loginFlow:
+                        return SignInScreen(
+                          authService: authService,
+                          onBack: () => setState(
+                              () => _preAuthChoice = _PreAuthChoice.pending),
+                        );
+                    }
                   }
 
                   return AuthenticatedShell(
@@ -307,10 +344,90 @@ class _AuthenticatedShellState extends State<AuthenticatedShell> {
   }
 }
 
+/// A thin sibling of [AuthenticatedShell] for a Guest session — no real
+/// account, so it skips everything [AuthenticatedShell] does to sync with
+/// one (`themeController.attachAuthService`, `fetchPreferences`, push-topic
+/// sync). [CalendarScreen] is constructed with `authService: null`, which
+/// server-side RLS already restricts to public data regardless of any
+/// client-side UI (see supabase/barangay_events.sql's "Read visible
+/// events" policy — it has no `to authenticated` clause, so an anonymous
+/// `anon`-role caller only ever gets `event_type = 'public'` rows).
+class GuestShell extends StatefulWidget {
+  const GuestShell({
+    super.key,
+    required this.themeController,
+    required this.eventRepositoryFactory,
+    required this.onExitGuestMode,
+  });
+
+  final ThemeController themeController;
+  final Future<EventRepository> Function() eventRepositoryFactory;
+  final VoidCallback onExitGuestMode;
+
+  @override
+  State<GuestShell> createState() => _GuestShellState();
+}
+
+class _GuestShellState extends State<GuestShell> {
+  late final Future<EventRepository> _eventRepositoryFuture;
+  EventRepository? _resolvedRepository;
+
+  @override
+  void initState() {
+    super.initState();
+    _eventRepositoryFuture = widget.eventRepositoryFactory();
+    unawaited(_eventRepositoryFuture.then((repository) {
+      if (mounted) {
+        _resolvedRepository = repository;
+      }
+    }));
+  }
+
+  @override
+  void dispose() {
+    unawaited(_resolvedRepository?.dispose());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<EventRepository>(
+      future: _eventRepositoryFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final repository = snapshot.data;
+        if (repository == null) {
+          return const Scaffold(
+            body: Center(child: Text('Could not load event storage.')),
+          );
+        }
+
+        return CalendarScreen(
+          authService: null,
+          themeController: widget.themeController,
+          eventRepository: repository,
+          pushNotificationService: const NoopPushNotificationService(),
+          onExitGuestMode: widget.onExitGuestMode,
+        );
+      },
+    );
+  }
+}
+
 class SignInScreen extends StatefulWidget {
-  const SignInScreen({super.key, required this.authService});
+  const SignInScreen({super.key, required this.authService, this.onBack});
 
   final AppAuthService authService;
+
+  /// Returns to [WelcomeScreen] (the Guest/Register-Login choice) — present
+  /// only when reached from there (see `_PreAuthChoice.loginFlow`); `null`
+  /// for any other caller, which hides the back button entirely.
+  final VoidCallback? onBack;
 
   @override
   State<SignInScreen> createState() => _SignInScreenState();
@@ -457,6 +574,24 @@ class _SignInScreenState extends State<SignInScreen> {
       body: Stack(
         children: [
           const Positioned.fill(child: LiquidGlassBackdrop()),
+          if (widget.onBack != null)
+            Positioned(
+              top: 8,
+              left: 8,
+              child: SafeArea(
+                child: InkWell(
+                  key: const Key('signin-back-to-welcome'),
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: widget.onBack,
+                  child: IconBadge(
+                    icon: FontAwesomeIcons.chevronLeft,
+                    tint: colorScheme.primary,
+                    size: 44,
+                    iconSize: 16,
+                  ),
+                ),
+              ),
+            ),
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
@@ -601,9 +736,118 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 }
 
+/// The first thing an unauthenticated visitor sees, on every platform, on
+/// every launch (this choice is never remembered — see [_PreAuthChoice]):
+/// a prominent "Continue as Guest" button for read-only access with no
+/// account, and a secondary "Register / Login" link below it for the full
+/// experience. A dedicated screen rather than a third button folded into
+/// [SignInScreen]'s existing sign-in/sign-up form, since that screen
+/// already toggles between two concerns of its own.
+class WelcomeScreen extends StatelessWidget {
+  const WelcomeScreen({
+    super.key,
+    required this.onContinueAsGuest,
+    required this.onRegisterLogin,
+  });
+
+  final VoidCallback onContinueAsGuest;
+  final VoidCallback onRegisterLogin;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
+
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: LiquidGlassBackdrop()),
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: Image.asset(
+                            'assets/icons/Launcher_app.png',
+                            width: 72,
+                            height: 72,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'eBongabong Calendar',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context)
+                            .textTheme
+                            .headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        l10n.appTagline,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                      const SizedBox(height: 28),
+                      GlassPanel(
+                        borderRadius: 30,
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            FilledButton(
+                              key: const Key('welcome-continue-as-guest'),
+                              style: FilledButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(18)),
+                              ),
+                              onPressed: onContinueAsGuest,
+                              child: Text(
+                                l10n.continueAsGuestButton,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            TextButton(
+                              key: const Key('welcome-register-login'),
+                              onPressed: onRegisterLogin,
+                              child: Text(l10n.registerOrLoginButton),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// How the Calendar tab presents events: a month grid, a week strip, or a
 /// month-by-month agenda list.
-enum _CalendarViewMode { month, week, list }
+enum _CalendarViewMode { month, week, list, day }
 
 /// Within List view: browse one month at a time (the original behavior),
 /// or a flat "Upcoming" feed sorted by distance from today regardless of
@@ -618,6 +862,7 @@ class CalendarScreen extends StatefulWidget {
     required this.themeController,
     required this.eventRepository,
     required this.pushNotificationService,
+    this.onExitGuestMode,
   });
 
   final AppUpdateService? updateService;
@@ -625,6 +870,14 @@ class CalendarScreen extends StatefulWidget {
   final ThemeController themeController;
   final EventRepository eventRepository;
   final PushNotificationService pushNotificationService;
+
+  /// Present only for a Guest session (see [GuestShell]) — lets the guest
+  /// scaffold's own back button hand control back to
+  /// `_BarangayCalendarAppState` to show [WelcomeScreen] again (the
+  /// Guest/Register-Login choice, not straight into the sign-in form).
+  /// `null` for every normal, signed-in [CalendarScreen] (via
+  /// [AuthenticatedShell]).
+  final VoidCallback? onExitGuestMode;
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
@@ -709,6 +962,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
   List<BarangayEvent> _events = const [];
   bool _eventsLoaded = false;
   late StreamSubscription<List<BarangayEvent>> _eventSubscription;
+
+  /// Watches this account's own `group_members` rows so a newly-approved
+  /// join request (accepted from someone ELSE's session — see
+  /// GroupsTab._respondToRequest) still reopens this client's event stream,
+  /// instead of only refreshing after a manual visit to the Groups tab.
+  /// Null for guest/kiosk-without-account sessions (see _listenToGroupMemberships).
+  StreamSubscription<void>? _groupMembershipSubscription;
 
   // "Someone just posted this" banner — separate from the Feed tab's own
   // NEW-pill/unseen-dot system (which is about what's still unread), this
@@ -797,7 +1057,24 @@ class _CalendarScreenState extends State<CalendarScreen> {
     unawaited(_loadFeedLastSeen());
     unawaited(_initializePushNotifications());
     unawaited(_loadKioskModeState());
+    if (_isGuestMode) _armGuestExitShrinkTimer();
     _eventSubscription = _listenToEvents();
+    _groupMembershipSubscription = _listenToGroupMemberships();
+  }
+
+  /// Null for a guest/kiosk-without-account session (no `_currentUserId`
+  /// to filter by) — group membership realtime tracking only makes sense
+  /// for a real signed-in account. Routed through `widget.eventRepository`
+  /// (see `EventRepository.watchMyGroupMemberships`), not a direct
+  /// `Supabase.instance` call, so this also works against
+  /// `MemoryEventRepository` in widget tests.
+  StreamSubscription<void>? _listenToGroupMemberships() {
+    final userId = _currentUserId;
+    if (userId == null) return null;
+
+    return widget.eventRepository.watchMyGroupMemberships(userId).listen((_) {
+      if (mounted) _resubscribeEvents();
+    });
   }
 
   Future<void> _loadKioskModeState() async {
@@ -821,6 +1098,94 @@ class _CalendarScreenState extends State<CalendarScreen> {
     unawaited(_applyKioskWindowChrome(active));
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kioskModePrefKey, active);
+  }
+
+  /// Prompts for the 4-digit exit passcode before actually leaving Kiosk
+  /// Mode — a bit of friction so a passerby at an unattended public kiosk
+  /// can't casually back out of it with a single tap. Falls back to
+  /// exiting directly if there's somehow no signed-in account to verify
+  /// against (shouldn't normally happen — kiosk mode can only ever be
+  /// enabled by a signed-in isKioskAccount user in the first place — but
+  /// this avoids a null-assertion crash if it ever did).
+  Future<void> _confirmKioskExit() async {
+    final authService = widget.authService;
+    if (authService == null) {
+      unawaited(_setKioskModeActive(false));
+      return;
+    }
+
+    final l10n = AppLocalizations.of(context)!;
+    final keypadKey = GlobalKey<NumericKeypadState>();
+    String? errorText;
+    var confirmed = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Container(
+              padding: EdgeInsets.fromLTRB(
+                  24, 24, 24, 24 + MediaQuery.of(context).viewInsets.bottom),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    l10n.kioskExitPasscodeTitle,
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    l10n.kioskExitPasscodeSubtitle,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                  const SizedBox(height: 20),
+                  NumericKeypad(
+                    key: keypadKey,
+                    errorText: errorText,
+                    onCompleted: (passcode) async {
+                      try {
+                        final correct =
+                            await authService.verifyKioskPasscode(passcode);
+                        if (correct) {
+                          confirmed = true;
+                          if (sheetContext.mounted) Navigator.pop(sheetContext);
+                        } else {
+                          setSheetState(
+                              () => errorText = l10n.kioskExitPasscodeWrong);
+                          keypadKey.currentState?.clear();
+                        }
+                      } catch (error) {
+                        setSheetState(() => errorText = error
+                            .toString()
+                            .replaceFirst('Exception: ', ''));
+                        keypadKey.currentState?.clear();
+                      }
+                    },
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed) {
+      unawaited(_setKioskModeActive(false));
+    }
   }
 
   /// Drops the OS window's title bar/min/max/close chrome and goes
@@ -1021,6 +1386,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
     if (!mounted) return;
     setState(() {
       _userProfile = profile;
+      // Seed the Group filter from the account's synced preference (see
+      // AppUserProfile.calendarGroupFilterIds) — only on this initial load,
+      // not on every rebuild, so a filter change made moments after sign-in
+      // (before this async fetch resolves) isn't clobbered.
+      if (profile != null) {
+        _selectedGroupIds
+          ..clear()
+          ..addAll(profile.calendarGroupFilterIds);
+      }
       // The Groups tab can disappear out from under the currently-selected
       // index once the real role loads (it defaults to showing Groups
       // until proven otherwise — see _showGroupsTab) — land on Profile
@@ -1035,8 +1409,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   void dispose() {
     unawaited(_eventSubscription.cancel());
+    unawaited(_groupMembershipSubscription?.cancel());
     _newEventNoticeTimer?.cancel();
     _kioskExitShrinkTimer?.cancel();
+    _guestExitShrinkTimer?.cancel();
     _feedSearchController.dispose();
     _calendarSearchController.dispose();
     super.dispose();
@@ -1149,12 +1525,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 alignment: Alignment.centerRight,
                 child: _kioskExitButtonExpanded
                     ? FilledButton.icon(
-                        onPressed: () => unawaited(_setKioskModeActive(false)),
+                        onPressed: () => unawaited(_confirmKioskExit()),
                         icon: const FaIcon(FontAwesomeIcons.arrowRightFromBracket, size: 14),
                         label: Text(l10n.exitKioskModeButton),
                       )
                     : FilledButton(
-                        onPressed: () => unawaited(_setKioskModeActive(false)),
+                        onPressed: () => unawaited(_confirmKioskExit()),
                         style: FilledButton.styleFrom(
                           shape: const CircleBorder(),
                           padding: const EdgeInsets.all(14),
@@ -1169,9 +1545,83 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  /// True for a Guest session (see [GuestShell]) — distinguished from a
+  /// merely-not-yet-loaded `authService` by also requiring
+  /// [CalendarScreen.onExitGuestMode], which only [GuestShell] ever sets.
+  bool get _isGuestMode =>
+      widget.authService == null && widget.onExitGuestMode != null;
+
+  /// True for either read-only mode (kiosk or guest) — anywhere content
+  /// creation/editing should be hidden regardless of which one it is.
+  bool get _isReadOnlySession => _kioskModeActive || _isGuestMode;
+
+  // Same "starts full-size, auto-collapses to icon-only shortly after" idea
+  // as the kiosk Exit button (_kioskExitButtonExpanded/
+  // _armKioskExitShrinkTimer) — a separate bool/timer pair rather than
+  // reusing those, since kiosk and guest are independent, never-both-true
+  // states with their own arm points (see initState/dispose).
+  bool _guestExitButtonExpanded = true;
+  Timer? _guestExitShrinkTimer;
+
+  void _armGuestExitShrinkTimer() {
+    _guestExitShrinkTimer?.cancel();
+    _guestExitButtonExpanded = true;
+    _guestExitShrinkTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) setState(() => _guestExitButtonExpanded = false);
+    });
+  }
+
+  /// Read-only calendar view for an anonymous Guest — a sibling of
+  /// [_buildKioskScaffold] (same "calendar tab only, no tab bar/FAB" shape,
+  /// server-side already restricted to public events regardless of this
+  /// UI — see [GuestShell]'s doc comment, and the same auto-collapsing
+  /// button behavior), but the button itself goes back to [WelcomeScreen]
+  /// (the Guest/Register-Login choice) rather than exiting a device-wide
+  /// kiosk mode.
+  Widget _buildGuestScaffold() {
+    final l10n = AppLocalizations.of(context)!;
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: LiquidGlassBackdrop()),
+          SafeArea(child: _buildCalendarTab()),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: SafeArea(
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                alignment: Alignment.centerRight,
+                child: _guestExitButtonExpanded
+                    ? FilledButton.icon(
+                        key: const Key('guest-register-login-button'),
+                        onPressed: widget.onExitGuestMode,
+                        icon: const FaIcon(FontAwesomeIcons.rightToBracket, size: 14),
+                        label: Text(l10n.guestRegisterLoginButton),
+                      )
+                    : FilledButton(
+                        key: const Key('guest-register-login-button'),
+                        onPressed: widget.onExitGuestMode,
+                        style: FilledButton.styleFrom(
+                          shape: const CircleBorder(),
+                          padding: const EdgeInsets.all(14),
+                        ),
+                        child: const FaIcon(FontAwesomeIcons.rightToBracket, size: 16),
+                      ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_kioskModeActive) return _buildKioskScaffold();
+    if (_isGuestMode) return _buildGuestScaffold();
 
     final colorScheme = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
@@ -1279,7 +1729,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
           eventRepository: widget.eventRepository,
           creatorProfile: _userProfile ?? widget.authService?.currentUser,
           buildEventCard: _buildEventCard,
-          kiosk: _kioskModeActive,
+          // Guests get the same read-only treatment as kiosk mode here —
+          // _kioskModeActive alone would miss guests entirely, since kiosk
+          // and guest are separate, independent flags (see
+          // _isReadOnlySession).
+          kiosk: _isReadOnlySession,
         ),
       ),
     );
@@ -1415,10 +1869,32 @@ class _CalendarScreenState extends State<CalendarScreen> {
           const SizedBox(height: 18),
           _buildCalendarSearchField(),
           const SizedBox(height: 14),
-          Center(child: _buildViewToggle()),
+          Row(
+            children: [
+              Expanded(child: Center(child: _buildViewToggle())),
+              // Guest has no Profile tab (no tab bar at all — see
+              // _buildGuestScaffold), so this is its only way to reach
+              // Theme/Language settings. Kiosk mode and signed-in accounts
+              // already have their own entry points and don't need this.
+              if (_isGuestMode)
+                IconButton(
+                  key: const Key('guest-settings-button'),
+                  tooltip: AppLocalizations.of(context)!.settingsTitle,
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          SettingsPage(themeController: widget.themeController),
+                    ),
+                  ),
+                  icon: const FaIcon(FontAwesomeIcons.gear, size: 18),
+                ),
+            ],
+          ),
           const SizedBox(height: 14),
-          _buildTypeFilterChips(_typeFilters, keyPrefix: 'calendar'),
-          const SizedBox(height: 14),
+          if (!_isGuestMode) ...[
+            _buildTypeFilterChips(_typeFilters, keyPrefix: 'calendar'),
+            const SizedBox(height: 14),
+          ],
           if (_viewMode == _CalendarViewMode.list) ...[
             Center(child: _buildListSubModeToggle()),
             const SizedBox(height: 14),
@@ -1431,6 +1907,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
               const SizedBox(height: 10),
               ..._buildUpcomingListSections(),
             ],
+          ] else if (_viewMode == _CalendarViewMode.day) ...[
+            _buildDayNav(),
+            const SizedBox(height: 14),
+            DayTimelineView(
+              day: _selectedDay ?? _focusedDay,
+              events: _getEventsForDay(_selectedDay ?? _focusedDay),
+              tintForEvent: (event) => colorForKey(event.colorKey) ?? _getEventTint(event.title),
+              iconForEvent: (event) => _getEventIcon(event.title),
+              onEventTap: _showEventDetails,
+            ),
           ] else ...[
             _buildCalendar(),
             const SizedBox(height: 22),
@@ -1469,6 +1955,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
           value: _CalendarViewMode.list,
           label: Text(l10n.calendarViewList),
         ),
+        ButtonSegment<_CalendarViewMode>(
+          value: _CalendarViewMode.day,
+          label: Text(l10n.calendarViewFull),
+        ),
       ],
       selected: {_viewMode},
       onSelectionChanged: (selection) {
@@ -1476,6 +1966,56 @@ class _CalendarScreenState extends State<CalendarScreen> {
           _viewMode = selection.first;
         });
       },
+    );
+  }
+
+  Widget _buildDayNav() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final day = _selectedDay ?? _focusedDay;
+    return GlassPanel(
+      borderRadius: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      child: Row(
+        children: [
+          IconButton(
+            key: const Key('day-timeline-prev-day'),
+            tooltip: 'Previous day',
+            onPressed: () => setState(() {
+              final previous = day.subtract(const Duration(days: 1));
+              _selectedDay = previous;
+              _focusedDay = previous;
+            }),
+            icon: FaIcon(
+              FontAwesomeIcons.chevronLeft,
+              size: 15,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              _formatDate(day),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+          ),
+          IconButton(
+            key: const Key('day-timeline-next-day'),
+            tooltip: 'Next day',
+            onPressed: () => setState(() {
+              final next = day.add(const Duration(days: 1));
+              _selectedDay = next;
+              _focusedDay = next;
+            }),
+            icon: FaIcon(
+              FontAwesomeIcons.chevronRight,
+              size: 15,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1848,6 +2388,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ..addAll(result);
       }
     });
+    // Synced per-account (like theme/language) so it follows across
+    // devices — a no-op for guest/kiosk-without-account (null authService).
+    unawaited(widget.authService
+        ?.saveCalendarGroupFilter(_selectedGroupIds.toList()));
   }
 
   /// Shared by the Calendar tab's own [_typeFilters] and the Feed tab's
@@ -2326,7 +2870,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _buildTimelineEntry(BarangayEvent event,
       {required bool isFirst, required bool isLast}) {
-    final tint = _getEventTint(event.title);
+    final tint = colorForKey(event.colorKey) ?? _getEventTint(event.title);
     final railColor = tint.withValues(alpha: 0.3);
 
     return IntrinsicHeight(
@@ -2403,7 +2947,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           children: [
             IconBadge(
                 icon: _getEventIcon(event.title),
-                tint: _getEventTint(event.title)),
+                tint: colorForKey(event.colorKey) ?? _getEventTint(event.title)),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -2587,7 +3131,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final tint = isReminder
         ? const Color(0xFFFFA726)
         : event != null
-            ? _getEventTint(event.title)
+            ? (colorForKey(event.colorKey) ?? _getEventTint(event.title))
             : colorScheme.primary;
     final icon = isReminder
         ? FontAwesomeIcons.bell
@@ -2853,7 +3397,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final formattedDate = _dateRangeLabel(event);
     final startTimeStr = _formatTime(startTime);
     final endTimeStr = _formatTime(endTime);
-    final eventTint = _getEventTint(event.title);
+    final eventTint = colorForKey(event.colorKey) ?? _getEventTint(event.title);
 
     // Time/Location/Posted-by/Group, all sharing one tint (the event's own
     // type color) and grouped into a single card with dividers, instead of
@@ -3168,7 +3712,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final l10n = AppLocalizations.of(context)!;
     final startTime = event.startTime;
     final endTime = event.endTime;
-    final tint = _getEventTint(event.title);
+    final tint = colorForKey(event.colorKey) ?? _getEventTint(event.title);
 
     return InkWell(
       borderRadius: BorderRadius.circular(26),
@@ -3431,8 +3975,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
   /// Citizens don't get a Groups tab at all — group creation/events are an
   /// LGU-level feature (see [[project-event-sharing-model]]), so there's
   /// nothing for them to do there besides being confused by an empty tab.
-  bool get _showGroupsTab =>
-      (_userProfile ?? widget.authService?.currentUser)?.role != 'citizen';
+  bool get _showGroupsTab {
+    // No account at all (guest) — nothing loads to "prove otherwise" the
+    // way a real user's profile eventually does, so this must be an
+    // explicit false rather than the null-role default below, which would
+    // otherwise stay wrongly true forever for a guest session.
+    if (widget.authService == null) return false;
+    return (_userProfile ?? widget.authService?.currentUser)?.role != 'citizen';
+  }
 
   /// Profile's index in the bottom tab bar shifts left by one when the
   /// Groups tab is hidden — Calendar (0) and Feed (1) never move.

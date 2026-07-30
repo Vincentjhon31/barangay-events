@@ -64,6 +64,7 @@ class BarangayEvent {
     this.groupId,
     this.groupName,
     this.dailyOverrides = const [],
+    this.colorKey,
   });
 
   final String id;
@@ -90,6 +91,12 @@ class BarangayEvent {
   /// [DailyOverride]. Empty for the common case (every spanned day uses
   /// this event's own [startTime]/[endTime] clock-time uniformly).
   final List<DailyOverride> dailyOverrides;
+
+  /// User-chosen color label (see `lib/event_colors.dart`'s
+  /// `eventColorPalette`), or null if never set — every event created
+  /// before this feature shipped falls back to the existing
+  /// keyword-guessed tint (`_getEventTint`) wherever this is null.
+  final String? colorKey;
 
   /// "Name • Department", or whichever half is available; null when neither is.
   String? get creatorLabel {
@@ -179,6 +186,7 @@ class BarangayEvent {
       'groupId': groupId,
       'groupName': groupName,
       'dailyOverrides': dailyOverrides.map((o) => o.toJson()).toList(),
+      'colorKey': colorKey,
     };
   }
 
@@ -202,6 +210,7 @@ class BarangayEvent {
       'group_id': groupId,
       'group_name': groupName,
       'daily_overrides': dailyOverrides.map((o) => o.toJson()).toList(),
+      'color_key': colorKey,
     };
   }
 
@@ -227,6 +236,7 @@ class BarangayEvent {
               ?.map((e) => DailyOverride.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
+      colorKey: json['colorKey'] as String?,
     );
   }
 
@@ -252,6 +262,7 @@ class BarangayEvent {
               ?.map((e) => DailyOverride.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
+      colorKey: row['color_key'] as String?,
     );
   }
 
@@ -417,6 +428,16 @@ class GroupJoinResult {
 
 abstract class EventRepository {
   Stream<List<BarangayEvent>> watchAllEvents();
+
+  /// Emits whenever [userId]'s own group memberships change (joined a new
+  /// group, left/was removed from one, an admin accepted their pending
+  /// request from a DIFFERENT session) — used purely as a "something
+  /// changed, go re-fetch" signal (the emitted value itself carries no
+  /// data) so the caller knows to reopen [watchAllEvents] and pick up
+  /// newly-visible historical events for that group, which a long-lived
+  /// realtime stream never backfills on its own.
+  Stream<void> watchMyGroupMemberships(String userId);
+
   Future<void> addEvent(BarangayEvent event);
 
   /// Full edit of an existing event (title, location, description,
@@ -510,6 +531,8 @@ class MemoryEventRepository implements EventRepository {
 
   final StreamController<List<BarangayEvent>> _updates =
       StreamController<List<BarangayEvent>>.broadcast();
+  final StreamController<void> _membershipChanges =
+      StreamController<void>.broadcast();
   List<BarangayEvent> _events;
 
   Future<void> initialize() async {}
@@ -519,6 +542,9 @@ class MemoryEventRepository implements EventRepository {
     yield _sortedEvents;
     yield* _updates.stream;
   }
+
+  @override
+  Stream<void> watchMyGroupMemberships(String userId) => _membershipChanges.stream;
 
   @override
   Future<void> addEvent(BarangayEvent event) async {
@@ -738,6 +764,7 @@ class MemoryEventRepository implements EventRepository {
             joinedAt: DateTime.now(),
           ),
         );
+    _membershipChanges.add(null);
   }
 
   @override
@@ -772,6 +799,7 @@ class MemoryEventRepository implements EventRepository {
     _myGroupIds.remove(groupId);
     _myRoleByGroupId.remove(groupId);
     _members[groupId]?.removeWhere((member) => member.userId == _mockUserId);
+    _membershipChanges.add(null);
   }
 
   @override
@@ -886,6 +914,7 @@ class MemoryEventRepository implements EventRepository {
   @override
   Future<void> dispose() async {
     await _updates.close();
+    await _membershipChanges.close();
   }
 
   List<BarangayEvent> get _sortedEvents {
@@ -915,6 +944,25 @@ class SupabaseEventRepository implements EventRepository {
         .stream(primaryKey: ['id'])
         .order('start_time')
         .map((rows) => rows.map(BarangayEvent.fromSupabase).toList());
+  }
+
+  @override
+  Stream<void> watchMyGroupMemberships(String userId) {
+    var isInitialSnapshot = true;
+    return _client
+        .from('group_members')
+        .stream(primaryKey: ['group_id', 'user_id'])
+        .eq('user_id', userId)
+        .where((_) {
+      // .stream() always emits once immediately with the current snapshot
+      // — only later emissions represent an actual membership change (a
+      // group joined/left since this listener started).
+      if (isInitialSnapshot) {
+        isInitialSnapshot = false;
+        return false;
+      }
+      return true;
+    });
   }
 
   @override

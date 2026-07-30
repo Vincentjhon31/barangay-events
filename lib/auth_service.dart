@@ -21,6 +21,7 @@ class AppUserProfile {
     this.role = 'citizen',
     this.lguRequestStatus,
     this.isKioskAccount = false,
+    this.calendarGroupFilterIds = const [],
   });
 
   final String id;
@@ -50,6 +51,15 @@ class AppUserProfile {
   /// or restrict anything server-side, so — like [role] — it's never sent
   /// back on a self-save.
   final bool isKioskAccount;
+
+  /// Which of this account's groups currently show as "Shared" events on
+  /// the Calendar tab's Group filter — synced per-account (like theme/
+  /// language) rather than a device-local setting, so it follows the user
+  /// across devices. Saved via its own dedicated
+  /// `AppAuthService.saveCalendarGroupFilter` rather than the generic
+  /// profile [toJson] save, since filter taps happen far more often than
+  /// profile edits.
+  final List<String> calendarGroupFilterIds;
 
   bool get isLguMember => role == 'lgu_member';
   bool get isSuperadmin => role == 'superadmin';
@@ -91,6 +101,10 @@ class AppUserProfile {
       role: json['role'] as String? ?? 'citizen',
       lguRequestStatus: json['lgu_request_status'] as String?,
       isKioskAccount: json['is_kiosk_account'] as bool? ?? false,
+      calendarGroupFilterIds: (json['calendar_group_filter_ids'] as List<dynamic>?)
+              ?.map((id) => id as String)
+              .toList() ??
+          const [],
     );
   }
 
@@ -158,6 +172,29 @@ abstract class AppAuthService {
     required String language,
     required String displayMode,
     required String reminderPreference,
+  });
+
+  /// Persists the Calendar tab's Group filter selection (see
+  /// [AppUserProfile.calendarGroupFilterIds]) — a dedicated call rather
+  /// than folded into [savePreferences], since filter taps happen far
+  /// more often than appearance changes.
+  Future<void> saveCalendarGroupFilter(List<String> groupIds);
+
+  /// Confirms [passcode] against the signed-in kiosk account's stored
+  /// exit passcode (see `verify_kiosk_passcode` — the passcode itself is
+  /// never sent back to the client). Returns `false` on an ordinary
+  /// mismatch; throws only for the locked-out case (too many recent wrong
+  /// attempts), which the caller should treat as a distinct error state
+  /// rather than just "wrong code".
+  Future<bool> verifyKioskPasscode(String passcode);
+
+  /// Self-service passcode change — verifies [currentPasscode] server-side
+  /// before applying [newPasscode] (throws on mismatch), since a 4-digit
+  /// passcode has no session-based guarantee the way a real password
+  /// change does.
+  Future<void> setKioskPasscode({
+    required String currentPasscode,
+    required String newPasscode,
   });
 
   Future<void> signOut();
@@ -392,6 +429,35 @@ class SupabaseAuthService implements AppAuthService {
   }
 
   @override
+  Future<void> saveCalendarGroupFilter(List<String> groupIds) async {
+    final user = _client.auth.currentUser;
+    if (user == null) return;
+    await _client
+        .from('profiles')
+        .update({'calendar_group_filter_ids': groupIds}).eq('id', user.id);
+  }
+
+  @override
+  Future<bool> verifyKioskPasscode(String passcode) async {
+    final result = await _client.rpc(
+      'verify_kiosk_passcode',
+      params: {'p_passcode': passcode},
+    );
+    return result as bool;
+  }
+
+  @override
+  Future<void> setKioskPasscode({
+    required String currentPasscode,
+    required String newPasscode,
+  }) async {
+    await _client.rpc('set_own_kiosk_passcode', params: {
+      'p_current': currentPasscode,
+      'p_new': newPasscode,
+    });
+  }
+
+  @override
   Future<void> signOut() async {
     await _client.auth.signOut();
   }
@@ -436,6 +502,7 @@ class MemoryAuthService implements AppAuthService {
   String? _language;
   String? _displayMode;
   String? _reminderPreference;
+  String _kioskPasscode = '0000';
 
   @override
   Stream<bool> authStateChanges() async* {
@@ -493,6 +560,7 @@ class MemoryAuthService implements AppAuthService {
       role: current.role,
       lguRequestStatus: current.lguRequestStatus,
       isKioskAccount: current.isKioskAccount,
+      calendarGroupFilterIds: current.calendarGroupFilterIds,
     );
     _controller.add(true);
   }
@@ -515,6 +583,7 @@ class MemoryAuthService implements AppAuthService {
       role: current.role,
       lguRequestStatus: current.lguRequestStatus,
       isKioskAccount: current.isKioskAccount,
+      calendarGroupFilterIds: current.calendarGroupFilterIds,
     );
   }
 
@@ -541,6 +610,7 @@ class MemoryAuthService implements AppAuthService {
       role: current.role,
       lguRequestStatus: current.lguRequestStatus,
       isKioskAccount: current.isKioskAccount,
+      calendarGroupFilterIds: current.calendarGroupFilterIds,
     );
     _controller.add(true);
   }
@@ -578,6 +648,42 @@ class MemoryAuthService implements AppAuthService {
     _language = language;
     _displayMode = displayMode;
     _reminderPreference = reminderPreference;
+  }
+
+  @override
+  Future<void> saveCalendarGroupFilter(List<String> groupIds) async {
+    final current = _currentUser;
+    if (current == null) return;
+    _currentUser = AppUserProfile(
+      id: current.id,
+      email: current.email,
+      displayName: current.displayName,
+      department: current.department,
+      phoneNumber: current.phoneNumber,
+      streetAddress: current.streetAddress,
+      barangay: current.barangay,
+      city: current.city,
+      bio: current.bio,
+      avatarUrl: current.avatarUrl,
+      role: current.role,
+      lguRequestStatus: current.lguRequestStatus,
+      isKioskAccount: current.isKioskAccount,
+      calendarGroupFilterIds: groupIds,
+    );
+  }
+
+  @override
+  Future<bool> verifyKioskPasscode(String passcode) async => passcode == _kioskPasscode;
+
+  @override
+  Future<void> setKioskPasscode({
+    required String currentPasscode,
+    required String newPasscode,
+  }) async {
+    if (currentPasscode != _kioskPasscode) {
+      throw Exception('Current passcode is incorrect');
+    }
+    _kioskPasscode = newPasscode;
   }
 
   @override

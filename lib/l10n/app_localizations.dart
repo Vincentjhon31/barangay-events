@@ -176,6 +176,24 @@ abstract class AppLocalizations {
   /// **'Need an account? Create one'**
   String get needAccountPrompt;
 
+  /// No description provided for @continueAsGuestButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue as Guest'**
+  String get continueAsGuestButton;
+
+  /// No description provided for @registerOrLoginButton.
+  ///
+  /// In en, this message translates to:
+  /// **'or Register / Login'**
+  String get registerOrLoginButton;
+
+  /// No description provided for @guestRegisterLoginButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Register / Login'**
+  String get guestRegisterLoginButton;
+
   /// No description provided for @authEmailPasswordRequired.
   ///
   /// In en, this message translates to:
@@ -445,6 +463,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'List'**
   String get calendarViewList;
+
+  /// No description provided for @calendarViewFull.
+  ///
+  /// In en, this message translates to:
+  /// **'Day'**
+  String get calendarViewFull;
 
   /// No description provided for @addEventButton.
   ///
@@ -799,6 +823,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Personal'**
   String get eventTypePersonal;
+
+  /// No description provided for @eventColorLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Color label'**
+  String get eventColorLabel;
 
   /// No description provided for @groupFilterPickerTitle.
   ///
@@ -2047,6 +2077,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Exit Kiosk Mode'**
   String get exitKioskModeButton;
+
+  /// No description provided for @kioskExitPasscodeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter Passcode'**
+  String get kioskExitPasscodeTitle;
+
+  /// No description provided for @kioskExitPasscodeSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the 4-digit passcode to exit Kiosk Mode.'**
+  String get kioskExitPasscodeSubtitle;
+
+  /// No description provided for @kioskExitPasscodeWrong.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect passcode. Try again.'**
+  String get kioskExitPasscodeWrong;
+
+  /// No description provided for @kioskPasscodeSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Kiosk Passcode'**
+  String get kioskPasscodeSectionTitle;
+
+  /// No description provided for @kioskPasscodeSectionSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Used to exit Kiosk Mode on this account\'s devices.'**
+  String get kioskPasscodeSectionSubtitle;
+
+  /// No description provided for @kioskPasscodeCurrentLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Current passcode'**
+  String get kioskPasscodeCurrentLabel;
+
+  /// No description provided for @kioskPasscodeNewLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'New passcode'**
+  String get kioskPasscodeNewLabel;
+
+  /// No description provided for @kioskPasscodeConfirmLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm new passcode'**
+  String get kioskPasscodeConfirmLabel;
+
+  /// No description provided for @kioskPasscodeUpdateButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Update Passcode'**
+  String get kioskPasscodeUpdateButton;
+
+  /// No description provided for @kioskPasscodeMismatch.
+  ///
+  /// In en, this message translates to:
+  /// **'Passcodes do not match.'**
+  String get kioskPasscodeMismatch;
+
+  /// No description provided for @kioskPasscodeInvalidLength.
+  ///
+  /// In en, this message translates to:
+  /// **'Passcode must be exactly 4 digits.'**
+  String get kioskPasscodeInvalidLength;
+
+  /// No description provided for @kioskPasscodeUpdateSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Passcode updated.'**
+  String get kioskPasscodeUpdateSuccess;
 
   /// No description provided for @aboutThisAppSection.
   ///

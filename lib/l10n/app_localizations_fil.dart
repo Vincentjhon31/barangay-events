@@ -49,6 +49,15 @@ class AppLocalizationsFil extends AppLocalizations {
   String get needAccountPrompt => 'Wala ka pang account? Gumawa ng isa';
 
   @override
+  String get continueAsGuestButton => 'Magpatuloy bilang Guest';
+
+  @override
+  String get registerOrLoginButton => 'o Mag-register / Mag-login';
+
+  @override
+  String get guestRegisterLoginButton => 'Mag-register / Mag-login';
+
+  @override
   String get authEmailPasswordRequired => 'Kailangan ang email at password.';
 
   @override
@@ -191,6 +200,9 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get calendarViewList => 'Listahan';
+
+  @override
+  String get calendarViewFull => 'Araw';
 
   @override
   String get addEventButton => 'Magdagdag ng Kaganapan';
@@ -407,6 +419,9 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get eventTypePersonal => 'Personal';
+
+  @override
+  String get eventColorLabel => 'Kulay na etiketa';
 
   @override
   String get groupFilterPickerTitle => 'I-filter ang mga grupo';
@@ -1141,6 +1156,45 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get exitKioskModeButton => 'Lumabas sa Kiosk Mode';
+
+  @override
+  String get kioskExitPasscodeTitle => 'Ilagay ang Passcode';
+
+  @override
+  String get kioskExitPasscodeSubtitle =>
+      'Ilagay ang 4-digit na passcode para lumabas sa Kiosk Mode.';
+
+  @override
+  String get kioskExitPasscodeWrong => 'Maling passcode. Subukan ulit.';
+
+  @override
+  String get kioskPasscodeSectionTitle => 'Passcode ng Kiosk';
+
+  @override
+  String get kioskPasscodeSectionSubtitle =>
+      'Ginagamit para lumabas sa Kiosk Mode sa mga device ng account na ito.';
+
+  @override
+  String get kioskPasscodeCurrentLabel => 'Kasalukuyang passcode';
+
+  @override
+  String get kioskPasscodeNewLabel => 'Bagong passcode';
+
+  @override
+  String get kioskPasscodeConfirmLabel => 'Kumpirmahin ang bagong passcode';
+
+  @override
+  String get kioskPasscodeUpdateButton => 'I-update ang Passcode';
+
+  @override
+  String get kioskPasscodeMismatch => 'Hindi magkatugma ang mga passcode.';
+
+  @override
+  String get kioskPasscodeInvalidLength =>
+      'Dapat eksaktong 4 na numero ang passcode.';
+
+  @override
+  String get kioskPasscodeUpdateSuccess => 'Na-update na ang passcode.';
 
   @override
   String get aboutThisAppSection => 'Tungkol sa App na Ito';

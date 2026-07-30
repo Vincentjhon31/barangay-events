@@ -1276,21 +1276,50 @@ end $$;
 -- push_notifications.dart's userTopic()), and the Edge Function sends
 -- each qualifying (user, event) reminder individually to that topic.
 --
--- One-time setup this SQL block can't do for you (run once, in the
--- Supabase dashboard):
+-- One-time setup this SQL block genuinely can't do for you (Postgres has
+-- no way to set its own secrets from inside a migration):
 --   1. supabase functions deploy send-event-reminders --use-api
 --   2. supabase secrets set "REMINDER_CRON_SECRET=<a random string>"
 --      (reuses the same FCM_SERVICE_ACCOUNT_JSON_B64 secret already set
 --      up for send-event-notification — no separate Firebase credential
 --      needed)
---   3. Database > Cron Jobs (or the pg_cron extension directly) > new
---      job, every 15-30 minutes, calling:
---        select net.http_post(
---          url := 'https://<project-ref>.supabase.co/functions/v1/send-event-reminders',
---          headers := jsonb_build_object('Authorization', 'Bearer <REMINDER_CRON_SECRET>')
---        );
--- Safe to re-run on an existing database.
+--   3. Run this once in the SQL Editor, using the *same* random string as
+--      step 2 (confirmed on hosted Supabase: `alter database ... set
+--      app.foo = ...` is blocked with "permission denied to set
+--      parameter", even for the postgres role — Vault is the actual
+--      supported way to hand a cron job a secret):
+--        select vault.create_secret('<the same random string from step 2>', 'reminder_cron_secret');
+--      Only run this once — `name` is unique, so calling it again raises
+--      a duplicate-key error. To rotate the value later, use
+--      `select vault.update_secret(id, new_secret)` (look up id via
+--      `select id from vault.decrypted_secrets where name = 'reminder_cron_secret'`)
+--      instead of calling create_secret again.
+--
+-- IMPORTANT: found via code review (July 2026) that this cron job was
+-- documented here as a manual step but NEVER ACTUALLY CREATED — nothing
+-- in this repo or the live project was invoking send-event-reminders on
+-- any schedule, so reminders have never been sent. The cron.schedule call
+-- below fixes that; it's idempotent (cron.schedule with an existing job
+-- name updates it in place) and safe to re-run.
 -- ============================================================
+
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
+select cron.schedule(
+  'send-event-reminders',
+  '*/15 * * * *',
+  $cron$
+  select net.http_post(
+    url := 'https://xuxnoydakqembrytdbyz.supabase.co/functions/v1/send-event-reminders',
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || (
+        select decrypted_secret from vault.decrypted_secrets where name = 'reminder_cron_secret'
+      )
+    )
+  );
+  $cron$
+);
 
 alter table public.profiles add column if not exists reminder_preference text not null default 'off';
 
@@ -1333,12 +1362,22 @@ declare
   window_start timestamptz;
   window_end timestamptz;
 begin
+  -- `barangay_events.start_time` is stored the same "naive local wall-clock
+  -- value, mislabeled as UTC" way the whole app already treats it (see
+  -- BarangayEvent.startTime / event_store.dart — never .toUtc()'d before
+  -- being written). Comparing it against plain now() would silently be off
+  -- by the Philippines' UTC+8 offset — `now() at time zone 'Asia/Manila'`
+  -- re-labels the current real moment using that exact same convention
+  -- (a naive PHT wall-clock value, then reinterpreted as if it were UTC),
+  -- so both sides of the comparison agree on what "the same convention"
+  -- means, rather than introducing real timezone-awareness for the first
+  -- time just in this one function.
   if p_window = '1h' then
-    window_start := now() + interval '50 minutes';
-    window_end := now() + interval '70 minutes';
+    window_start := (now() at time zone 'Asia/Manila') + interval '50 minutes';
+    window_end := (now() at time zone 'Asia/Manila') + interval '70 minutes';
   elsif p_window = '1d' then
-    window_start := now() + interval '23 hours';
-    window_end := now() + interval '25 hours';
+    window_start := (now() at time zone 'Asia/Manila') + interval '23 hours';
+    window_end := (now() at time zone 'Asia/Manila') + interval '25 hours';
   else
     raise exception 'Invalid window: %', p_window;
   end if;
@@ -1361,3 +1400,206 @@ begin
 end $$;
 
 revoke all on function public.list_due_event_reminders(text) from public, anon, authenticated;
+
+-- ============================================================
+-- App store reviews (July 2026) — backs docs/store/index.html, the
+-- Play-Store-style hub listing eCalendar (and, as "Coming Soon" cards
+-- with no data behind them yet, the rest of the eBongabong app family).
+-- The store page is a plain static site with no sign-in, so this table
+-- is intentionally readable AND insertable by anyone (`anon` role) —
+-- same trust model already used by docs/lgu-admin/index.html talking to
+-- Supabase directly with the public anon key. There is no update/delete
+-- policy for anon at all, so a review, once posted, can't be edited or
+-- removed by the person who left it (or anyone else) short of an admin
+-- acting directly in the Supabase dashboard — deliberately simple for a
+-- v1 with no accounts to tie edit-rights to.
+--
+-- Not linked to `profiles`/`auth.users` at all — reviewers are always
+-- anonymous site visitors, not signed-in app users, so `reviewer_name`
+-- is free-text the visitor optionally types in, not a real identity.
+create table if not exists public.app_reviews (
+  id uuid primary key default gen_random_uuid(),
+  app_id text not null,
+  rating smallint not null check (rating between 1 and 5),
+  reviewer_name text,
+  comment text,
+  created_at timestamptz not null default now()
+);
+alter table public.app_reviews enable row level security;
+
+do $$ begin
+  if not exists (select 1 from pg_policies where tablename = 'app_reviews' and policyname = 'Anyone can read reviews') then
+    create policy "Anyone can read reviews" on public.app_reviews for select using (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'app_reviews' and policyname = 'Anyone can post a review') then
+    create policy "Anyone can post a review" on public.app_reviews for insert with check (true);
+  end if;
+end $$;
+
+-- ============================================================
+-- Auto-delete empty groups (July 2026). A group that loses its last
+-- member (via leaveGroup/removeMember, both plain client-side deletes
+-- against group_members — no single RPC choke point to hang a
+-- client-side "check count then delete" off) is orphaned: nobody left who
+-- could ever open it, rename it, or clean it up. Delete it automatically
+-- instead, the same way guard_profile_role_columns (above) uses a plain
+-- trigger rather than relying on every call site to remember a follow-up
+-- step. The pending-join-request guard matters: group_join_requests rows
+-- are never deleted on their own (status just becomes accepted/declined),
+-- and cascade from groups — without the guard, the last member leaving
+-- while someone's request is still pending would silently destroy that
+-- request instead of leaving it to be declined normally.
+-- ============================================================
+
+create or replace function public.delete_group_if_empty()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from group_members where group_id = old.group_id)
+     and not exists (
+       select 1 from group_join_requests
+       where group_id = old.group_id and status = 'pending'
+     )
+  then
+    delete from groups where id = old.group_id;
+  end if;
+  return old;
+end $$;
+
+drop trigger if exists delete_group_if_empty on public.group_members;
+create trigger delete_group_if_empty
+  after delete on public.group_members
+  for each row execute function public.delete_group_if_empty();
+
+-- ============================================================
+-- Group filter (calendar) preference (July 2026). Which of a signed-in
+-- member's groups show as "Shared" events on the Calendar tab, persisted
+-- per-account like theme/language already are (see profiles.theme_mode
+-- etc. above) — synced across devices instead of a device-local setting.
+-- Kept as its own column (not folded into the existing theme/appearance
+-- preferences) since filter taps happen far more often than appearance
+-- changes and are conceptually unrelated to them.
+-- ============================================================
+
+alter table public.profiles
+  add column if not exists calendar_group_filter_ids jsonb not null default '[]'::jsonb;
+
+-- The Flutter client now also watches its own group_members rows in
+-- realtime (to notice "I was just added to a group" and reopen the event
+-- stream — see main.dart's _listenToGroupMemberships) — barangay_events
+-- was the only table already in this publication (line ~57).
+alter publication supabase_realtime add table public.group_members;
+
+-- ============================================================
+-- Kiosk exit passcode (July 2026). Exiting kiosk mode now needs a 4-digit
+-- passcode (see _buildKioskScaffold's exit button in main.dart), not just
+-- a tap — a bit of friction so a passerby at an unattended public kiosk
+-- can't casually back out of it. The passcode itself is never sent to the
+-- client outside these RPCs: verify_kiosk_passcode returns only a
+-- boolean, never the stored value. A lightweight lockout (5 wrong
+-- attempts -> 60s cooldown) guards the obvious "mash all 10,000
+-- combinations" attack without building a full audit/rate-limit system —
+-- proportional to what this actually protects (a shared-device exit
+-- gate), not a financial system.
+-- ============================================================
+
+alter table public.profiles
+  add column if not exists kiosk_passcode text not null default '0000',
+  add column if not exists kiosk_passcode_fail_count int not null default 0,
+  add column if not exists kiosk_passcode_locked_until timestamptz;
+
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'profiles_kiosk_passcode_check') then
+    alter table public.profiles add constraint profiles_kiosk_passcode_check
+      check (kiosk_passcode ~ '^[0-9]{4}$');
+  end if;
+end $$;
+
+-- Callable by the signed-in kiosk account itself to confirm the passcode
+-- typed on the exit dialog. Returns false (not an exception) on a simple
+-- mismatch so the caller can show an inline "wrong passcode" error rather
+-- than catching a thrown error for an expected, ordinary case; still
+-- raises for the locked-out case since that's more of an exceptional
+-- state worth distinguishing in the UI.
+create or replace function public.verify_kiosk_passcode(p_passcode text)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare
+  row_locked_until timestamptz;
+  row_passcode text;
+begin
+  select kiosk_passcode, kiosk_passcode_locked_until
+    into row_passcode, row_locked_until
+    from profiles where id = auth.uid();
+
+  if row_locked_until is not null and row_locked_until > now() then
+    raise exception 'Too many wrong attempts. Try again in a moment.';
+  end if;
+
+  if row_passcode = p_passcode then
+    update profiles
+      set kiosk_passcode_fail_count = 0, kiosk_passcode_locked_until = null
+      where id = auth.uid();
+    return true;
+  end if;
+
+  update profiles set kiosk_passcode_fail_count = kiosk_passcode_fail_count + 1,
+    kiosk_passcode_locked_until = case
+      when kiosk_passcode_fail_count + 1 >= 5 then now() + interval '60 seconds'
+      else kiosk_passcode_locked_until
+    end
+    where id = auth.uid();
+  return false;
+end $$;
+
+-- Self-service passcode change from the Security page — verifies the
+-- current passcode server-side first (unlike a real password change,
+-- which trusts the already-active Supabase session; a 4-digit passcode
+-- has no such session-based guarantee of its own).
+create or replace function public.set_own_kiosk_passcode(p_current text, p_new text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if p_new !~ '^[0-9]{4}$' then
+    raise exception 'Passcode must be exactly 4 digits';
+  end if;
+  if not exists (select 1 from profiles where id = auth.uid() and kiosk_passcode = p_current) then
+    raise exception 'Current passcode is incorrect';
+  end if;
+  update profiles
+    set kiosk_passcode = p_new, kiosk_passcode_fail_count = 0, kiosk_passcode_locked_until = null
+    where id = auth.uid();
+end $$;
+
+-- Superadmin-only reset (LGU-admin portal), mirroring admin_set_kiosk_account's
+-- exact structure above — e.g. a kiosk device's staff forgot the passcode.
+create or replace function public.admin_reset_kiosk_passcode(p_user_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles where id = auth.uid() and role = 'superadmin') then
+    raise exception 'Only a superadmin can reset a kiosk passcode';
+  end if;
+  update profiles
+    set kiosk_passcode = '0000', kiosk_passcode_fail_count = 0, kiosk_passcode_locked_until = null
+    where id = p_user_id;
+end $$;
+
+-- ============================================================
+-- Event color labels (July 2026). An optional, user-chosen color for an
+-- event card (like Google Calendar) — distinct from the existing
+-- keyword-guessed tint (_getEventTint in main.dart) and the event-type
+-- badge color (_eventTypeTint/_buildEventTypePill, Public/Group/Personal —
+-- unrelated to this and left untouched). Stored as a short lookup key
+-- (not a raw hex string) so the actual color values live in one place in
+-- the Dart client (lib/event_colors.dart) and can be retuned later
+-- without a data migration. Null means "no color chosen" — falls back to
+-- the existing keyword-based tint for full backward compatibility with
+-- every event created before this shipped.
+-- ============================================================
+
+alter table public.barangay_events add column if not exists color_key text;
+
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'barangay_events_color_key_check') then
+    alter table public.barangay_events add constraint barangay_events_color_key_check
+      check (color_key is null or color_key in
+        ('tomato', 'tangerine', 'banana', 'basil', 'peacock', 'blueberry', 'grape', 'graphite'));
+  end if;
+end $$;

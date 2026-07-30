@@ -58,7 +58,8 @@ void main() {
     });
   });
 
-  testWidgets('Login screen renders when signed out', (WidgetTester tester) async {
+  testWidgets('Welcome screen renders when signed out, offering Guest or Register/Login',
+      (WidgetTester tester) async {
     await tester.pumpWidget(
       BarangayCalendarApp(
         authServiceFactory: () async => MemoryAuthService.signedOut(),
@@ -67,8 +68,186 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const Key('welcome-continue-as-guest')), findsOneWidget);
+    expect(find.byKey(const Key('welcome-register-login')), findsOneWidget);
+  });
+
+  testWidgets('Login screen renders after tapping Register/Login from Welcome',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedOut(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('welcome-register-login')));
+    await tester.pumpAndSettle();
+
     expect(find.text('Login'), findsWidgets);
     expect(find.textContaining('Create one'), findsOneWidget);
+  });
+
+  testWidgets('Continuing as Guest renders a read-only Calendar with no Add Event/Groups',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedOut(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('welcome-continue-as-guest')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CalendarScreen), findsOneWidget);
+    expect(find.byKey(const Key('calendar-add-event-fab')), findsNothing);
+    expect(find.byKey(const Key('calendar-filter-shared')), findsNothing);
+    expect(find.byKey(const Key('guest-register-login-button')), findsOneWidget);
+  });
+
+  testWidgets("Guest's back button returns to the Welcome choice, not straight to sign-in",
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedOut(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('welcome-continue-as-guest')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('guest-register-login-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('welcome-continue-as-guest')), findsOneWidget);
+    expect(find.byKey(const Key('welcome-register-login')), findsOneWidget);
+    expect(find.byType(CalendarScreen), findsNothing);
+  });
+
+  testWidgets("Guest's back button starts expanded (icon + label), then auto-collapses to icon-only",
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedOut(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('welcome-continue-as-guest')));
+    await tester.pumpAndSettle();
+
+    expect(
+        find.descendant(
+            of: find.byKey(const Key('guest-register-login-button')),
+            matching: find.byType(Text)),
+        findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+
+    expect(
+        find.descendant(
+            of: find.byKey(const Key('guest-register-login-button')),
+            matching: find.byType(Text)),
+        findsNothing);
+  });
+
+  testWidgets('the Guest choice is never remembered — a fresh launch starts at Welcome again',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedOut(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('welcome-continue-as-guest')));
+    await tester.pumpAndSettle();
+    expect(find.byType(CalendarScreen), findsOneWidget);
+
+    // A second, independent app instance (simulating a fresh relaunch) must
+    // not inherit the first instance's guest choice — it's in-memory-only
+    // state on _BarangayCalendarAppState, not persisted anywhere. Pumping a
+    // throwaway widget first forces the old State to actually be disposed —
+    // otherwise pumpWidget's normal element-reconciliation would just call
+    // didUpdateWidget on the *same* _BarangayCalendarAppState instance
+    // (same widget type, no key), which wouldn't exercise "fresh state" at
+    // all despite looking like a new app instance.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedOut(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('welcome-continue-as-guest')), findsOneWidget);
+    expect(find.byType(CalendarScreen), findsNothing);
+  });
+
+  testWidgets('Guest cannot add an event from the day-detail page (no FAB)',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedOut(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('welcome-continue-as-guest')));
+    await tester.pumpAndSettle();
+
+    await openTodayDetail(tester);
+
+    expect(find.byType(DayDetailPage), findsOneWidget);
+    expect(find.byKey(const Key('day-detail-add-event-fab')), findsNothing);
+  });
+
+  testWidgets('Guest has no type-filter chips but can reach Settings via the gear button',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedOut(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('welcome-continue-as-guest')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('calendar-filter-all')), findsNothing);
+    expect(find.byKey(const Key('calendar-filter-public')), findsNothing);
+    expect(find.byKey(const Key('calendar-filter-personal')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('guest-settings-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SettingsPage), findsOneWidget);
+  });
+
+  testWidgets("Sign-in screen's back button returns to the Welcome choice",
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => MemoryAuthService.signedOut(),
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('welcome-register-login')));
+    await tester.pumpAndSettle();
+    expect(find.byType(SignInScreen), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('signin-back-to-welcome')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('welcome-continue-as-guest')), findsOneWidget);
+    expect(find.byKey(const Key('welcome-register-login')), findsOneWidget);
   });
 
   testWidgets(
@@ -82,6 +261,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byKey(const Key('welcome-register-login')));
+    await tester.pumpAndSettle();
     await tester.tap(find.textContaining('Create one'));
     await tester.pumpAndSettle();
 
@@ -2006,6 +2187,107 @@ void main() {
       await tester.pump();
 
       expect(find.text('Passwords do not match.'), findsOneWidget);
+    });
+
+    testWidgets('Kiosk Passcode section only shows for kiosk accounts',
+        (WidgetTester tester) async {
+      await openSecurityPage(tester);
+      expect(find.text('Kiosk Passcode'), findsNothing);
+    });
+
+    testWidgets('Kiosk Passcode section shows and rejects a mismatched confirmation',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async =>
+              MemoryAuthService.signedIn(isKioskAccount: true),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Profile'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('profile-security-tile')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Kiosk Passcode'), findsOneWidget);
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('security-update-passcode-button')),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('security-current-passcode-field')), '0000');
+      await tester.enterText(
+        find.byKey(const Key('security-new-passcode-field')), '1234');
+      await tester.enterText(
+        find.byKey(const Key('security-confirm-passcode-field')), '5678');
+      await tester.tap(find.byKey(const Key('security-update-passcode-button')));
+      await tester.pump();
+
+      expect(find.text('Passcodes do not match.'), findsOneWidget);
+    });
+  });
+
+  group('kiosk exit passcode', () {
+    Future<void> enterPasscode(WidgetTester tester, String passcode) async {
+      for (final digit in passcode.split('')) {
+        await tester.tap(find.byKey(Key('keypad-digit-$digit')));
+        await tester.pump();
+      }
+    }
+
+    testWidgets('wrong passcode shows an error and does not exit kiosk mode',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async =>
+              MemoryAuthService.signedIn(isKioskAccount: true),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('enable-kiosk-mode-button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Exit Kiosk Mode'), findsOneWidget);
+
+      await tester.tap(find.text('Exit Kiosk Mode'));
+      await tester.pumpAndSettle();
+      expect(find.text('Enter Passcode'), findsOneWidget);
+
+      await enterPasscode(tester, '9999'); // mock default passcode is 0000
+      await tester.pumpAndSettle();
+
+      expect(find.text('Incorrect passcode. Try again.'), findsOneWidget);
+      // Still in kiosk mode — the sheet is still open, not dismissed.
+      expect(find.text('Enter Passcode'), findsOneWidget);
+    });
+
+    testWidgets('correct passcode exits kiosk mode',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async =>
+              MemoryAuthService.signedIn(isKioskAccount: true),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('enable-kiosk-mode-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Exit Kiosk Mode'));
+      await tester.pumpAndSettle();
+
+      await enterPasscode(tester, '0000');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Enter Passcode'), findsNothing);
+      expect(find.byKey(const Key('enable-kiosk-mode-button')), findsOneWidget);
     });
   });
 }

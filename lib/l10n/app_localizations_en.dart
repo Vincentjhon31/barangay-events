@@ -49,6 +49,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get needAccountPrompt => 'Need an account? Create one';
 
   @override
+  String get continueAsGuestButton => 'Continue as Guest';
+
+  @override
+  String get registerOrLoginButton => 'or Register / Login';
+
+  @override
+  String get guestRegisterLoginButton => 'Register / Login';
+
+  @override
   String get authEmailPasswordRequired => 'Email and password are required.';
 
   @override
@@ -188,6 +197,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get calendarViewList => 'List';
+
+  @override
+  String get calendarViewFull => 'Day';
 
   @override
   String get addEventButton => 'Add event';
@@ -403,6 +415,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get eventTypePersonal => 'Personal';
+
+  @override
+  String get eventColorLabel => 'Color label';
 
   @override
   String get groupFilterPickerTitle => 'Filter groups';
@@ -1128,6 +1143,44 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get exitKioskModeButton => 'Exit Kiosk Mode';
+
+  @override
+  String get kioskExitPasscodeTitle => 'Enter Passcode';
+
+  @override
+  String get kioskExitPasscodeSubtitle =>
+      'Enter the 4-digit passcode to exit Kiosk Mode.';
+
+  @override
+  String get kioskExitPasscodeWrong => 'Incorrect passcode. Try again.';
+
+  @override
+  String get kioskPasscodeSectionTitle => 'Kiosk Passcode';
+
+  @override
+  String get kioskPasscodeSectionSubtitle =>
+      'Used to exit Kiosk Mode on this account\'s devices.';
+
+  @override
+  String get kioskPasscodeCurrentLabel => 'Current passcode';
+
+  @override
+  String get kioskPasscodeNewLabel => 'New passcode';
+
+  @override
+  String get kioskPasscodeConfirmLabel => 'Confirm new passcode';
+
+  @override
+  String get kioskPasscodeUpdateButton => 'Update Passcode';
+
+  @override
+  String get kioskPasscodeMismatch => 'Passcodes do not match.';
+
+  @override
+  String get kioskPasscodeInvalidLength => 'Passcode must be exactly 4 digits.';
+
+  @override
+  String get kioskPasscodeUpdateSuccess => 'Passcode updated.';
 
   @override
   String get aboutThisAppSection => 'About This App';
