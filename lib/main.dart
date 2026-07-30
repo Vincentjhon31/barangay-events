@@ -16,7 +16,6 @@ import 'package:window_manager/window_manager.dart';
 
 import 'add_event_page.dart';
 import 'app_update_service.dart';
-import 'app_update_service_factory.dart';
 import 'auth_service.dart';
 import 'day_detail_page.dart';
 import 'day_timeline_view.dart';
@@ -66,7 +65,7 @@ Future<void> main() async {
   runApp(
     BarangayCalendarApp(
       themeController: themeController,
-      updateService: createDefaultUpdateService(
+      updateService: GitHubReleaseUpdateService(
         repositoryOwner: 'Vincentjhon31',
         repositoryName: 'barangay-events',
       ),
