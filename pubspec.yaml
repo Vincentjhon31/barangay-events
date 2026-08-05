@@ -9,6 +9,13 @@ version: 1.15.0+25
 environment:
   sdk: ">=3.4.0 <4.0.0"
 dependencies:
+  # Pinned to 8.x deliberately. 8.3.7's Android module is plain Java and only
+  # applies com.android.library, so it builds under this project's AGP 9.0.1.
+  # file_picker 11 skips `apply plugin: org.jetbrains.kotlin.android` whenever
+  # AGP >= 9 (assuming AGP's built-in Kotlin support, which this project does
+  # not opt into), so its Kotlin sources never compile and FilePickerPlugin
+  # goes missing at link time. 8.x's only defect is a hardcoded `compileSdk 34`
+  # — corrected by the compileSdk floor in android/build.gradle.kts.
   file_picker: ^8.0.0
   firebase_core: ^4.11.0
   firebase_messaging: ^16.4.1
