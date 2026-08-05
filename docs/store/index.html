@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>eBongabong Apps — Municipality of Bongabong</title>
+  <link rel="icon" href="municipal-logo.png">
+  <meta name="description" content="Official apps of the Municipality of Bongabong — browse, install, and review eCalendar and the rest of the eBongabong app family.">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-1: #071410;
+      --bg-2: #0B1E17;
+      --text: #EAF4EE;
+      --text-muted: #93AC9D;
+      --accent: #1EBE82;
+      --accent-strong: #17A673;
+      --gold: #E8A93D;
+      --gold-fg: #E8A93D;
+      --link: #6FE0B4;
+      --border-soft: rgba(255, 255, 255, 0.08);
+      --card-bg: rgba(255, 255, 255, 0.045);
+      --card-border: rgba(255, 255, 255, 0.10);
+      --card-shadow: rgba(0, 0, 0, 0.28);
+      --input-bg: rgba(255, 255, 255, 0.05);
+      --input-border: rgba(255, 255, 255, 0.16);
+      --chip-bg: rgba(30, 190, 130, 0.14);
+      --chip-border: rgba(30, 190, 130, 0.32);
+      --pending-bg: rgba(255, 167, 38, 0.16);
+      --pending-fg: #FFC066;
+      --sample-bg: rgba(111, 168, 255, 0.14);
+      --sample-fg: #9EC4FF;
+      --star-off: rgba(255, 255, 255, 0.16);
+    }
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg-1: #F3FAF5;
+      --bg-2: #E6F2EA;
+      --text: #0F241A;
+      --text-muted: #4B6659;
+      --accent: #0E9463;
+      --accent-strong: #0C7E54;
+      --gold: #B5690A;
+      --gold-fg: #B5690A;
+      --link: #0C7E54;
+      --border-soft: rgba(15, 36, 26, 0.08);
+      --card-bg: rgba(15, 36, 26, 0.03);
+      --card-border: rgba(15, 36, 26, 0.10);
+      --card-shadow: rgba(15, 36, 26, 0.12);
+      --input-bg: #FFFFFF;
+      --input-border: rgba(15, 36, 26, 0.18);
+      --chip-bg: rgba(14, 148, 99, 0.10);
+      --chip-border: rgba(14, 148, 99, 0.35);
+      --pending-bg: rgba(255, 167, 38, 0.18);
+      --pending-fg: #8A4B00;
+      --sample-bg: rgba(29, 99, 214, 0.10);
+      --sample-fg: #1D63D6;
+      --star-off: rgba(15, 36, 26, 0.16);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      overflow-x: hidden;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(180deg, var(--bg-1), var(--bg-2) 60%, var(--bg-1));
+      color: var(--text);
+      transition: background-color .2s ease, color .2s ease;
+    }
+    .page { max-width: 1120px; margin: 0 auto; padding: 20px 20px 70px; }
+    a { color: var(--link); }
+    button { font: inherit; }
+
+    /* ---- Top bar ---- */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; row-gap: 12px;
+      padding: 6px 0 20px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; }
+    .brand img { width: 40px; height: 40px; border-radius: 11px; object-fit: cover; box-shadow: 0 4px 16px rgba(30, 190, 130, 0.35); }
+    .brand h1 { font-size: 17px; margin: 0; line-height: 1.25; }
+    .brand .tag { font-size: 12px; color: var(--text-muted); }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; }
+    .icon-btn {
+      width: 38px; height: 38px; border-radius: 999px; display: grid; place-items: center;
+      background: var(--card-bg); border: 1px solid var(--card-border); color: var(--text);
+      cursor: pointer;
+    }
+    .icon-btn svg { width: 17px; height: 17px; }
+
+    /* ---- Hero carousel ---- */
+    .carousel {
+      position: relative; border-radius: 22px; overflow: hidden;
+      border: 1px solid var(--card-border); background: var(--card-bg);
+      box-shadow: 0 18px 40px var(--card-shadow);
+    }
+    .carousel-track { display: flex; transition: transform .5s cubic-bezier(.65,0,.35,1); }
+    .slide {
+      min-width: 100%; padding: 34px 30px; display: flex; align-items: center; gap: 26px;
+      flex-wrap: wrap;
+    }
+    .slide-badge {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 800;
+      letter-spacing: .5px; text-transform: uppercase; padding: 5px 11px; border-radius: 999px;
+      background: var(--chip-bg); border: 1px solid var(--chip-border); color: var(--accent);
+      margin-bottom: 10px;
+    }
+    .slide-icon {
+      width: 76px; height: 76px; border-radius: 20px; flex: none; object-fit: cover;
+      box-shadow: 0 8px 20px rgba(0,0,0,.3);
+    }
+    .slide-icon.mark {
+      display: grid; place-items: center; font-size: 30px; font-weight: 800; color: #fff;
+      background: linear-gradient(160deg, var(--accent), var(--accent-strong));
+    }
+    .slide-copy { flex: 1; min-width: 220px; }
+    .slide-copy h2 { font-size: 22px; margin: 0 0 6px; }
+    .slide-copy p { margin: 0; color: var(--text-muted); font-size: 14.5px; line-height: 1.55; max-width: 56ch; }
+    .slide-cta {
+      margin-top: 14px; display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 18px; border-radius: 999px; border: none; cursor: pointer;
+      background: var(--accent); color: #06231A; font-weight: 700; font-size: 13.5px;
+      text-decoration: none;
+    }
+    .carousel-nav {
+      position: absolute; top: 50%; transform: translateY(-50%); width: 36px; height: 36px;
+      border-radius: 999px; border: 1px solid var(--card-border); background: rgba(0,0,0,.28);
+      color: #fff; display: grid; place-items: center; cursor: pointer;
+    }
+    :root[data-theme="light"] .carousel-nav { background: rgba(255,255,255,.7); color: var(--text); }
+    .carousel-nav.prev { left: 12px; } .carousel-nav.next { right: 12px; }
+    .carousel-nav svg { width: 16px; height: 16px; }
+    .carousel-dots { display: flex; justify-content: center; gap: 7px; padding: 12px 0 16px; }
+    .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--card-border); border: none; cursor: pointer; padding: 0; }
+    .dot.active { background: var(--accent); width: 20px; transition: width .2s ease; }
+
+    /* ---- Section headers ---- */
+    .section { margin-top: 44px; }
+    .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
+    .section-head h3 { font-size: 19px; margin: 0; }
+    .section-hint { color: var(--text-muted); font-size: 13px; margin: 0 0 16px; line-height: 1.5; }
+
+    /* ---- App grid ---- */
+    .app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+    .app-card {
+      text-align: left; cursor: pointer; border-radius: 18px; padding: 16px;
+      background: var(--card-bg); border: 1px solid var(--card-border);
+      display: flex; flex-direction: column; gap: 10px; color: inherit;
+      transition: transform .15s ease, border-color .15s ease;
+    }
+    .app-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+    .app-card-top { display: flex; align-items: center; gap: 12px; }
+    .app-icon { width: 52px; height: 52px; border-radius: 14px; object-fit: cover; flex: none; }
+    .app-icon.mark { display: grid; place-items: center; font-size: 20px; font-weight: 800; color: #fff;
+      background: linear-gradient(160deg, var(--accent), var(--accent-strong)); }
+    .app-card h4 { margin: 0; font-size: 15px; }
+    .app-card .dev { margin: 2px 0 0; font-size: 11.5px; color: var(--text-muted); }
+    .app-card .tagline { font-size: 12.5px; color: var(--text-muted); line-height: 1.45; flex: 1; margin: 0; }
+    .app-card .meta-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .stars { display: inline-flex; align-items: center; gap: 3px; color: var(--gold-fg); font-size: 12.5px; font-weight: 700; }
+    .stars svg { width: 13px; height: 13px; }
+    .stars .count { color: var(--text-muted); font-weight: 500; }
+    .pill { display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 800; letter-spacing: .3px;
+      text-transform: uppercase; padding: 3px 9px; border-radius: 999px; }
+    .pill.coming { background: var(--pending-bg); color: var(--pending-fg); }
+    .pill.sample { background: var(--sample-bg); color: var(--sample-fg); }
+    .install-btn {
+      margin-top: 2px; width: 100%; padding: 9px; border-radius: 12px; border: none;
+      background: var(--accent); color: #06231A; font-weight: 700; font-size: 13px; cursor: pointer;
+    }
+    .install-btn.disabled { background: var(--card-border); color: var(--text-muted); cursor: default; }
+
+    /* ---- News grid ---- */
+    .news-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+    .news-card { border-radius: 18px; padding: 16px; background: var(--card-bg); border: 1px solid var(--card-border); }
+    .news-card .date { font-size: 11.5px; color: var(--text-muted); margin: 8px 0 4px; }
+    .news-card h4 { margin: 0; font-size: 14.5px; line-height: 1.4; }
+    .news-card p { margin: 6px 0 0; font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
+
+    footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border-soft);
+      color: var(--text-muted); font-size: 12.5px; display: flex; justify-content: space-between;
+      flex-wrap: wrap; gap: 8px; }
+
+    /* ---- Detail modal ---- */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(3, 10, 7, .6); backdrop-filter: blur(3px);
+      display: none; align-items: flex-end; justify-content: center; z-index: 50; padding: 0;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      width: 100%; max-width: 640px; max-height: 92vh; overflow-y: auto;
+      background: var(--bg-1); border: 1px solid var(--card-border);
+      border-radius: 22px 22px 0 0; padding: 22px 22px 34px;
+      animation: slideUp .22s ease;
+    }
+    @media (min-width: 700px) {
+      .modal-backdrop { align-items: center; }
+      .modal { border-radius: 22px; }
+    }
+    @keyframes slideUp { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .modal-close { float: right; }
+    .modal-head { display: flex; gap: 14px; align-items: center; }
+    .modal-head img, .modal-head .app-icon.mark { width: 64px; height: 64px; border-radius: 16px; }
+    .modal-head h2 { margin: 0; font-size: 19px; }
+    .modal-head .dev { margin: 3px 0 0; font-size: 12.5px; color: var(--text-muted); }
+    .modal-stats { display: flex; gap: 22px; margin: 18px 0; flex-wrap: wrap; }
+    .modal-stat { }
+    .modal-stat .num { font-size: 17px; font-weight: 800; display: block; }
+    .modal-stat .lbl { font-size: 11px; color: var(--text-muted); }
+    .modal-install { width: 100%; padding: 13px; border-radius: 14px; border: none; background: var(--accent);
+      color: #06231A; font-weight: 800; font-size: 14.5px; cursor: pointer; margin-bottom: 18px; }
+    .modal-desc { font-size: 13.5px; line-height: 1.6; color: var(--text); }
+    .modal-desc h5 { font-size: 12.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted); margin: 18px 0 6px; }
+    .modal-section { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border-soft); }
+
+    .review-form { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+    .star-picker { display: flex; gap: 4px; }
+    .star-picker button { background: none; border: none; cursor: pointer; padding: 2px; color: var(--star-off); }
+    .star-picker button svg { width: 24px; height: 24px; }
+    .star-picker button.active { color: var(--gold-fg); }
+    input.field, textarea.field {
+      width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--input-border);
+      background: var(--input-bg); color: var(--text); font-size: 13.5px;
+    }
+    textarea.field { min-height: 70px; resize: vertical; }
+    .review-submit { align-self: flex-start; padding: 9px 18px; border-radius: 999px; border: none;
+      background: var(--accent); color: #06231A; font-weight: 700; font-size: 13px; cursor: pointer; }
+    .review-msg { font-size: 12.5px; margin-top: 2px; }
+    .review-msg.ok { color: var(--accent); }
+    .review-msg.err { color: #FF9E9A; }
+
+    .review-item { padding: 12px 0; border-bottom: 1px solid var(--border-soft); }
+    .review-item:last-child { border-bottom: none; }
+    .review-item .row1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .review-item .name { font-weight: 700; font-size: 13px; }
+    .review-item .when { font-size: 11px; color: var(--text-muted); }
+    .review-item .comment { font-size: 13px; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
+    .empty-reviews { font-size: 13px; color: var(--text-muted); padding: 10px 0; }
+
+    @media (max-width: 480px) {
+      .page { padding: 14px 14px 50px; }
+      .slide { padding: 24px 18px; }
+      .slide-copy h2 { font-size: 19px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <a class="brand" href="#top">
+        <img src="municipal-logo.png" alt="Municipality of Bongabong seal">
+        <div>
+          <h1>eBongabong</h1>
+          <div class="tag">Official apps · Municipality of Bongabong</div>
+        </div>
+      </a>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="theme-toggle-btn" title="Switch to light mode" aria-label="Switch to light mode"></button>
+      </div>
+    </div>
+
+    <!-- ---- Hero carousel ---- -->
+    <div class="carousel" id="top">
+      <button class="carousel-nav prev" id="carousel-prev" aria-label="Previous">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <button class="carousel-nav next" id="carousel-next" aria-label="Next">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+      <div class="carousel-track" id="carousel-track">
+        <div class="slide">
+          <img class="slide-icon" src="ecalendar-icon.png" alt="eCalendar icon">
+          <div class="slide-copy">
+            <div class="slide-badge">Featured app</div>
+            <h2>eCalendar — the barangay events calendar</h2>
+            <p>Public announcements, group events, and your own personal calendar in one place, with reminders sent straight to your phone.</p>
+            <button class="slide-cta" onclick="openApp('ecalendar')">View app</button>
+          </div>
+        </div>
+        <div class="slide">
+          <div class="slide-icon mark">?</div>
+          <div class="slide-copy">
+            <div class="slide-badge" style="color:var(--pending-fg); background:var(--pending-bg); border-color:transparent;">Upcoming</div>
+            <h2>More eBongabong apps are on the way</h2>
+            <p>eBongabong Main, eHiram, and ePalengke are in development. They'll show up here — with full details, the moment they're ready.</p>
+            <a class="slide-cta" href="#apps">See what's coming</a>
+          </div>
+        </div>
+        <div class="slide">
+          <img class="slide-icon" src="ecalendar-icon.png" alt="eCalendar icon">
+          <div class="slide-copy">
+            <div class="slide-badge">Latest release</div>
+            <h2 id="release-slide-title">Checking for the latest eCalendar release…</h2>
+            <p id="release-slide-body">One moment.</p>
+            <button class="slide-cta" onclick="openApp('ecalendar')">Get it</button>
+          </div>
+        </div>
+        <div class="slide">
+          <div class="slide-icon mark" style="background:linear-gradient(160deg,#6FE0B4,#1D63D6);">📰</div>
+          <div class="slide-copy">
+            <div class="slide-badge" style="color:var(--sample-fg); background:var(--sample-bg); border-color:transparent;">Sample · News</div>
+            <h2>Municipal news &amp; accomplishments</h2>
+            <p>A running feed of announcements from the Municipality of Bongabong will live here — see the News section below for how it'll look.</p>
+            <a class="slide-cta" href="#news">Browse news</a>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="carousel-dots" id="carousel-dots"></div>
+
+    <!-- ---- Apps ---- -->
+    <div class="section" id="apps">
+      <div class="section-head"><h3>All apps</h3></div>
+      <p class="section-hint">Everything the Municipality of Bongabong publishes, in one place — no account needed to browse, install, or leave a review.</p>
+      <div class="app-grid">
+        <div class="app-card" onclick="openApp('ecalendar')">
+          <div class="app-card-top">
+            <img class="app-icon" src="ecalendar-icon.png" alt="eCalendar icon">
+            <div>
+              <h4>eCalendar</h4>
+              <p class="dev">Municipality of Bongabong</p>
+            </div>
+          </div>
+          <p class="tagline">Barangay events, group calendars, and reminders — the municipality's official calendar app.</p>
+          <div class="meta-row">
+            <span class="stars" id="card-stars-ecalendar">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01z"/></svg>
+              <span>—</span>
+            </span>
+          </div>
+          <button class="install-btn" onclick="event.stopPropagation(); installEcalendar();">Install</button>
+        </div>
+
+        <div class="app-card" onclick="openApp('ebongabong-main')">
+          <div class="app-card-top">
+            <div class="app-icon mark">eB</div>
+            <div>
+              <h4>eBongabong</h4>
+              <p class="dev">Municipality of Bongabong</p>
+            </div>
+          </div>
+          <p class="tagline">The main municipal services app — the hub this store page will eventually live inside.</p>
+          <div class="meta-row"><span class="pill coming">Coming soon</span></div>
+          <button class="install-btn disabled" disabled>Coming soon</button>
+        </div>
+
+        <div class="app-card" onclick="openApp('ehiram')">
+          <div class="app-card-top">
+            <div class="app-icon mark">eH</div>
+            <div>
+              <h4>eHiram</h4>
+              <p class="dev">Municipality of Bongabong</p>
+            </div>
+          </div>
+          <p class="tagline">Borrowing/lending of municipal tools, equipment, and facilities.</p>
+          <div class="meta-row"><span class="pill coming">Coming soon</span></div>
+          <button class="install-btn disabled" disabled>Coming soon</button>
+        </div>
+
+        <div class="app-card" onclick="openApp('epalengke')">
+          <div class="app-card-top">
+            <div class="app-icon mark">eP</div>
+            <div>
+              <h4>ePalengke</h4>
+              <p class="dev">Municipality of Bongabong</p>
+            </div>
+          </div>
+          <p class="tagline">The public market, online — vendor listings and daily price watch.</p>
+          <div class="meta-row"><span class="pill coming">Coming soon</span></div>
+          <button class="install-btn disabled" disabled>Coming soon</button>
+        </div>
+
+        <div class="app-card" onclick="openApp('more')">
+          <div class="app-card-top">
+            <div class="app-icon mark">+</div>
+            <div>
+              <h4>More apps</h4>
+              <p class="dev">Municipality of Bongabong</p>
+            </div>
+          </div>
+          <p class="tagline">More eBongabong apps are being planned. This spot's reserved for what's next.</p>
+          <div class="meta-row"><span class="pill coming">Coming soon</span></div>
+          <button class="install-btn disabled" disabled>Coming soon</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- News ---- -->
+    <div class="section" id="news">
+      <div class="section-head"><h3>News &amp; accomplishments</h3></div>
+      <p class="section-hint">Sample entries showing how this section will look — replace with real municipal announcements before this goes live.</p>
+      <div class="news-grid">
+        <div class="news-card">
+          <span class="pill sample">Sample</span>
+          <div class="date">Placeholder date</div>
+          <h4>Municipal announcement headline goes here</h4>
+          <p>A short summary of the announcement or accomplishment appears in this space, two to three lines long.</p>
+        </div>
+        <div class="news-card">
+          <span class="pill sample">Sample</span>
+          <div class="date">Placeholder date</div>
+          <h4>Another sample headline for a completed project</h4>
+          <p>Swap this card's text for a real accomplishment once content is ready to publish.</p>
+        </div>
+        <div class="news-card">
+          <span class="pill sample">Sample</span>
+          <div class="date">Placeholder date</div>
+          <h4>Sample entry for an upcoming community event</h4>
+          <p>News cards can link out to a full article or stay self-contained, like these do.</p>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <span>Municipality of Bongabong, Oriental Mindoro, Philippines</span>
+      <a href="https://github.com/Vincentjhon31/barangay-events" target="_blank" rel="noopener">View eCalendar on GitHub</a>
+    </footer>
+  </div>
+
+  <!-- ---- App detail modal ---- -->
+  <div class="modal-backdrop" id="modal-backdrop" onclick="if(event.target===this) closeApp();">
+    <div class="modal" id="modal">
+      <button class="icon-btn modal-close" onclick="closeApp()" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script>
+    // Same public project URL + anon (publishable) key the Flutter app ships
+    // with (lib/main.dart) — safe to expose client-side, security is
+    // enforced by Postgres RLS (app_reviews: anyone can read/insert, no
+    // update/delete — see barangay_events.sql's "App store reviews" block).
+    var supabaseClient = window.supabase.createClient(
+      'https://xuxnoydakqembrytdbyz.supabase.co',
+      'sb_publishable_XnqlZ-m2efmbasNuZ7fyVg_74qTnghA'
+    );
+
+    var GH_REPO = 'Vincentjhon31/barangay-events';
+    var INSTALL_URL = 'https://vincentjhon31.github.io/barangay-events/';
+
+    // ---- Light / dark mode toggle (same pattern as docs/lgu-admin) ----
+    var THEME_STORAGE_KEY = 'ebongabong-store-theme';
+    var themeToggleBtn = document.getElementById('theme-toggle-btn');
+    var sunIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle>' +
+      '<path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2' +
+      'M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg>';
+    var moonIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 ' +
+      '0 0 9.79 9.79z"></path></svg>';
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      var label = theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode';
+      themeToggleBtn.innerHTML = theme === 'light' ? sunIcon : moonIcon;
+      themeToggleBtn.title = label;
+      themeToggleBtn.setAttribute('aria-label', label);
+    }
+    themeToggleBtn.addEventListener('click', function () {
+      var current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+      var next = current === 'light' ? 'dark' : 'light';
+      applyTheme(next);
+      try { localStorage.setItem(THEME_STORAGE_KEY, next); } catch (e) {}
+    });
+    (function initTheme() {
+      var stored = null;
+      try { stored = localStorage.getItem(THEME_STORAGE_KEY); } catch (e) {}
+      var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+      applyTheme(stored || (prefersLight ? 'light' : 'dark'));
+    })();
+
+    // ---- Carousel ----
+    var track = document.getElementById('carousel-track');
+    var dotsWrap = document.getElementById('carousel-dots');
+    var slideCount = track.children.length;
+    var currentSlide = 0;
+    var autoTimer = null;
+
+    for (var i = 0; i < slideCount; i++) {
+      var dot = document.createElement('button');
+      dot.className = 'dot' + (i === 0 ? ' active' : '');
+      dot.setAttribute('aria-label', 'Go to slide ' + (i + 1));
+      dot.addEventListener('click', (function (idx) { return function () { goToSlide(idx); }; })(i));
+      dotsWrap.appendChild(dot);
+    }
+
+    function goToSlide(index) {
+      currentSlide = (index + slideCount) % slideCount;
+      track.style.transform = 'translateX(-' + (currentSlide * 100) + '%)';
+      var dots = dotsWrap.children;
+      for (var d = 0; d < dots.length; d++) dots[d].classList.toggle('active', d === currentSlide);
+    }
+    function armAutoAdvance() {
+      clearInterval(autoTimer);
+      autoTimer = setInterval(function () { goToSlide(currentSlide + 1); }, 6000);
+    }
+    document.getElementById('carousel-prev').addEventListener('click', function () { goToSlide(currentSlide - 1); armAutoAdvance(); });
+    document.getElementById('carousel-next').addEventListener('click', function () { goToSlide(currentSlide + 1); armAutoAdvance(); });
+    armAutoAdvance();
+
+    // ---- GitHub release data (latest release info + all-time download count) ----
+    function escapeHtml(str) {
+      var div = document.createElement('div');
+      div.textContent = str == null ? '' : String(str);
+      return div.innerHTML;
+    }
+
+    var releaseInfo = { version: null, notes: '', url: 'https://github.com/' + GH_REPO + '/releases/latest' };
+    var totalDownloads = null;
+
+    fetch('https://api.github.com/repos/' + GH_REPO + '/releases/latest')
+      .then(function (r) { return r.json(); })
+      .then(function (release) {
+        releaseInfo.version = release.tag_name || null;
+        releaseInfo.notes = (release.body || '').split('\n')[0] || 'No release notes provided.';
+        releaseInfo.url = release.html_url || releaseInfo.url;
+        document.getElementById('release-slide-title').textContent =
+          releaseInfo.version ? ('eCalendar ' + releaseInfo.version + ' is out now') : 'Latest eCalendar release';
+        document.getElementById('release-slide-body').textContent = releaseInfo.notes;
+      })
+      .catch(function () {
+        document.getElementById('release-slide-title').textContent = 'eCalendar releases';
+        document.getElementById('release-slide-body').textContent = 'See the latest release on GitHub.';
+      });
+
+    fetch('https://api.github.com/repos/' + GH_REPO + '/releases?per_page=100')
+      .then(function (r) { return r.json(); })
+      .then(function (releases) {
+        var total = 0;
+        (releases || []).forEach(function (rel) {
+          (rel.assets || []).forEach(function (asset) { total += asset.download_count || 0; });
+        });
+        totalDownloads = total;
+        var el = document.getElementById('modal-stat-downloads');
+        if (el) el.textContent = formatCount(total);
+      })
+      .catch(function () { totalDownloads = null; });
+
+    function formatCount(n) {
+      if (n == null) return '—';
+      if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k';
+      return String(n);
+    }
+
+    function starsSvg(filled) {
+      return '<svg viewBox="0 0 24 24" fill="' + (filled ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="1.6">' +
+        '<path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01z"/></svg>';
+    }
+
+    // ---- Reviews (app_reviews table — anonymous read + insert) ----
+    var reviewsCache = { ecalendar: null };
+
+    function loadReviews(appId, onDone) {
+      supabaseClient
+        .from('app_reviews')
+        .select('rating, reviewer_name, comment, created_at')
+        .eq('app_id', appId)
+        .order('created_at', { ascending: false })
+        .then(function (res) {
+          var rows = (res && res.data) || [];
+          reviewsCache[appId] = rows;
+          onDone(rows);
+        });
+    }
+
+    function renderCardStars(appId, rows) {
+      var el = document.getElementById('card-stars-' + appId);
+      if (!el) return;
+      if (!rows || rows.length === 0) {
+        el.innerHTML = starsSvg(false) + '<span class="count">No ratings yet</span>';
+        return;
+      }
+      var avg = rows.reduce(function (sum, r) { return sum + r.rating; }, 0) / rows.length;
+      el.innerHTML = starsSvg(true) + '<span>' + avg.toFixed(1) + '</span>' +
+        '<span class="count">(' + rows.length + ')</span>';
+    }
+
+    loadReviews('ecalendar', function (rows) { renderCardStars('ecalendar', rows); });
+
+    // ---- App catalog ----
+    var APPS = {
+      ecalendar: {
+        name: 'eCalendar', dev: 'Municipality of Bongabong', icon: 'ecalendar-icon.png',
+        category: 'Productivity · Local Government', live: true,
+        description: 'eCalendar is the official municipal events calendar for Bongabong. See public announcements ' +
+          'from the LGU, join a group calendar for your barangay, purok, or office, and keep a private personal ' +
+          'calendar — all in one app, with reminders sent to your phone before an event starts.'
+      },
+      'ebongabong-main': { name: 'eBongabong', dev: 'Municipality of Bongabong', mark: 'eB',
+        description: 'The main eBongabong app will bring the municipality\'s services together in one place. In development.' },
+      ehiram: { name: 'eHiram', dev: 'Municipality of Bongabong', mark: 'eH',
+        description: 'eHiram will let residents request to borrow municipal tools, equipment, and facilities online. In development.' },
+      epalengke: { name: 'ePalengke', dev: 'Municipality of Bongabong', mark: 'eP',
+        description: 'ePalengke will bring the public market online — vendor listings and a daily price watch. In development.' },
+      more: { name: 'More apps', dev: 'Municipality of Bongabong', mark: '+',
+        description: 'More eBongabong apps are being planned. Check back here for what\'s next.' }
+    };
+
+    function installEcalendar() { window.location.href = INSTALL_URL; }
+
+    function openApp(appId) {
+      var app = APPS[appId];
+      if (!app) return;
+      var body = document.getElementById('modal-body');
+
+      var iconHtml = app.icon
+        ? '<img src="' + app.icon + '" alt="">'
+        : '<div class="app-icon mark">' + escapeHtml(app.mark) + '</div>';
+
+      if (app.live) {
+        body.innerHTML =
+          '<div class="modal-head">' + iconHtml +
+          '<div><h2>' + escapeHtml(app.name) + '</h2><p class="dev">' + escapeHtml(app.dev) + '</p>' +
+          '<span class="pill" style="background:var(--chip-bg); color:var(--accent); border:1px solid var(--chip-border); margin-top:6px;">' +
+          escapeHtml(app.category) + '</span></div></div>' +
+          '<div class="modal-stats">' +
+          '<div class="modal-stat"><span class="num" id="modal-stat-rating">—</span><span class="lbl">Rating</span></div>' +
+          '<div class="modal-stat"><span class="num" id="modal-stat-reviews">—</span><span class="lbl">Reviews</span></div>' +
+          '<div class="modal-stat"><span class="num" id="modal-stat-downloads">' + formatCount(totalDownloads) + '</span><span class="lbl">Downloads</span></div>' +
+          '</div>' +
+          '<button class="modal-install" onclick="installEcalendar()">Install</button>' +
+          '<div class="modal-desc"><h5>About this app</h5><p>' + escapeHtml(app.description) + '</p></div>' +
+          '<div class="modal-section">' +
+          '<h5 style="text-transform:uppercase; font-size:12.5px; color:var(--text-muted); letter-spacing:.4px; margin:0 0 10px;">Rate &amp; review</h5>' +
+          '<div class="star-picker" id="review-star-picker"></div>' +
+          '<div class="review-form">' +
+          '<input class="field" id="review-name" type="text" placeholder="Your name (optional)" maxlength="60">' +
+          '<textarea class="field" id="review-comment" placeholder="Share your experience with this app…" maxlength="500"></textarea>' +
+          '<button class="review-submit" id="review-submit-btn">Submit review</button>' +
+          '<div class="review-msg" id="review-msg"></div>' +
+          '</div>' +
+          '</div>' +
+          '<div class="modal-section"><div id="review-list"></div></div>';
+
+        buildStarPicker();
+        renderReviewList(reviewsCache.ecalendar || []);
+        loadReviews('ecalendar', function (rows) {
+          renderReviewList(rows);
+          renderCardStars('ecalendar', rows);
+        });
+        document.getElementById('review-submit-btn').addEventListener('click', submitReview);
+      } else {
+        body.innerHTML =
+          '<div class="modal-head">' + iconHtml +
+          '<div><h2>' + escapeHtml(app.name) + '</h2><p class="dev">' + escapeHtml(app.dev) + '</p>' +
+          '<span class="pill coming" style="margin-top:6px;">Coming soon</span></div></div>' +
+          '<div class="modal-desc" style="margin-top:18px;"><p>' + escapeHtml(app.description) + '</p>' +
+          '<p style="margin-top:10px; color:var(--text-muted);">There\'s nothing to install yet — check back once this app is announced.</p></div>';
+      }
+
+      document.getElementById('modal-backdrop').classList.add('open');
+    }
+
+    function closeApp() {
+      document.getElementById('modal-backdrop').classList.remove('open');
+    }
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeApp(); });
+
+    var pickedRating = 0;
+    function buildStarPicker() {
+      pickedRating = 0;
+      var wrap = document.getElementById('review-star-picker');
+      wrap.innerHTML = '';
+      for (var i = 1; i <= 5; i++) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.innerHTML = starsSvg(false);
+        btn.dataset.value = i;
+        btn.addEventListener('click', (function (val, btnEl) {
+          return function () { setPickedRating(val); };
+        })(i, btn));
+        wrap.appendChild(btn);
+      }
+    }
+    function setPickedRating(value) {
+      pickedRating = value;
+      var buttons = document.querySelectorAll('#review-star-picker button');
+      buttons.forEach(function (btn, idx) {
+        var on = idx < value;
+        btn.classList.toggle('active', on);
+        btn.innerHTML = starsSvg(on);
+      });
+    }
+
+    function renderReviewList(rows) {
+      var el = document.getElementById('review-list');
+      if (!el) return;
+      el.innerHTML = '';
+      var heading = document.createElement('div');
+      heading.style.cssText = 'text-transform:uppercase;font-size:12.5px;color:var(--text-muted);letter-spacing:.4px;margin-bottom:10px;';
+      heading.textContent = rows.length ? (rows.length + ' review' + (rows.length === 1 ? '' : 's')) : 'Reviews';
+      el.appendChild(heading);
+
+      if (!rows.length) {
+        var empty = document.createElement('div');
+        empty.className = 'empty-reviews';
+        empty.textContent = 'No reviews yet — be the first to share what you think.';
+        el.appendChild(empty);
+        document.getElementById('modal-stat-rating').textContent = '—';
+        document.getElementById('modal-stat-reviews').textContent = '0';
+        return;
+      }
+
+      var avg = rows.reduce(function (s, r) { return s + r.rating; }, 0) / rows.length;
+      document.getElementById('modal-stat-rating').textContent = avg.toFixed(1);
+      document.getElementById('modal-stat-reviews').textContent = String(rows.length);
+
+      rows.forEach(function (r) {
+        var item = document.createElement('div');
+        item.className = 'review-item';
+
+        var row1 = document.createElement('div');
+        row1.className = 'row1';
+
+        var starsWrap = document.createElement('span');
+        starsWrap.className = 'stars';
+        starsWrap.innerHTML = starsSvg(true);
+        var ratingText = document.createElement('span');
+        ratingText.textContent = String(r.rating);
+        starsWrap.appendChild(ratingText);
+
+        var nameWrap = document.createElement('span');
+        nameWrap.className = 'name';
+        nameWrap.textContent = (r.reviewer_name && r.reviewer_name.trim()) ? r.reviewer_name.trim() : 'Anonymous';
+
+        var when = document.createElement('span');
+        when.className = 'when';
+        try {
+          when.textContent = new Date(r.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+        } catch (e) { when.textContent = ''; }
+
+        var left = document.createElement('div');
+        left.style.cssText = 'display:flex; align-items:center; gap:8px;';
+        left.appendChild(starsWrap);
+        left.appendChild(nameWrap);
+
+        row1.appendChild(left);
+        row1.appendChild(when);
+        item.appendChild(row1);
+
+        if (r.comment && r.comment.trim()) {
+          var comment = document.createElement('div');
+          comment.className = 'comment';
+          comment.textContent = r.comment.trim();
+          item.appendChild(comment);
+        }
+
+        el.appendChild(item);
+      });
+    }
+
+    function submitReview() {
+      var msg = document.getElementById('review-msg');
+      var btn = document.getElementById('review-submit-btn');
+      if (!pickedRating) {
+        msg.textContent = 'Pick a star rating first.';
+        msg.className = 'review-msg err';
+        return;
+      }
+      var name = document.getElementById('review-name').value.trim().slice(0, 60);
+      var comment = document.getElementById('review-comment').value.trim().slice(0, 500);
+
+      btn.disabled = true;
+      msg.textContent = 'Submitting…';
+      msg.className = 'review-msg';
+
+      supabaseClient.from('app_reviews').insert({
+        app_id: 'ecalendar',
+        rating: pickedRating,
+        reviewer_name: name || null,
+        comment: comment || null
+      }).then(function (res) {
+        btn.disabled = false;
+        if (res.error) {
+          msg.textContent = 'Something went wrong — please try again.';
+          msg.className = 'review-msg err';
+          return;
+        }
+        msg.textContent = 'Thanks for your review!';
+        msg.className = 'review-msg ok';
+        document.getElementById('review-name').value = '';
+        document.getElementById('review-comment').value = '';
+        buildStarPicker();
+        loadReviews('ecalendar', function (rows) {
+          renderReviewList(rows);
+          renderCardStars('ecalendar', rows);
+        });
+      });
+    }
+  </script>
+</body>
+</html>

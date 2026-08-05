@@ -448,6 +448,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 20v-1.5A3.5 3.5 0 0 0 9.5 15h-3A3.5 3.5 0 0 0 3 18.5V20"></path><circle cx="8" cy="7.5" r="3.5"></circle><path d="M19 8v6M22 11h-6"></path></svg>
             Add Account
           </button>
+          <button class="nav-item" type="button" data-panel="locations">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.5-7-11.5A7 7 0 0 1 19 9.5C19 14.5 12 21 12 21z"></path><circle cx="12" cy="9.5" r="2.5"></circle></svg>
+            Locations
+          </button>
         </nav>
 
         <div class="dashboard-main">
@@ -548,6 +552,37 @@
                 <button class="primary" type="submit">Create account</button>
               </form>
               <div id="add-account-msg"></div>
+            </div>
+          </section>
+
+          <section class="panel hidden" data-panel-content="locations">
+            <div class="card">
+              <h2>Locations</h2>
+              <p class="hint">
+                Quick-pick venues offered in the eBongabong Calendar app's Add
+                Event Location field, so most events don't need free-text
+                typing. Anyone signed in sees this list; only a superadmin
+                can add or remove entries.
+              </p>
+              <form id="add-location-form">
+                <label for="new-location-name">Location name</label>
+                <input id="new-location-name" type="text" placeholder="e.g. Barangay Hall" required autocomplete="off">
+                <button class="primary" type="submit">Add location</button>
+              </form>
+              <div id="locations-msg"></div>
+              <div class="table-wrap">
+                <table class="applicants">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="locations-list">
+                    <tr><td class="hint" colspan="2">Loading…</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </section>
         </div>
@@ -939,7 +974,10 @@
               : '') +
           '</td>' +
           '<td class="meta">' + formatDate(u.created_at) + '</td>' +
-          '<td class="actions"><button class="ghost small" data-view="' + u.user_id + '">View</button></td>';
+          '<td class="actions">' +
+            '<button class="ghost small" data-view="' + u.user_id + '">View</button>' +
+            '<button class="ghost small reset-password" data-user-id="' + u.user_id + '" data-email="' + u.email + '" style="margin-left:6px;">Reset password</button>' +
+          '</td>';
         list.appendChild(tr);
 
         if (expandedUserId === u.user_id) {
@@ -967,6 +1005,11 @@
           var id = btn.getAttribute('data-view');
           expandedUserId = expandedUserId === id ? null : id;
           renderUsers();
+        });
+      });
+      list.querySelectorAll('button.reset-password').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          resetAccountPassword(btn, btn.getAttribute('data-user-id'), btn.getAttribute('data-email'));
         });
       });
     }
@@ -1012,6 +1055,40 @@
         });
     }
 
+    // Force-resets an account's real sign-in password to a freshly
+    // generated one (via the admin-reset-password Edge Function, since
+    // this needs the service role key) — the fallback for someone who
+    // registered with a made-up/inaccessible email and so can't complete
+    // the self-service "Forgot password?" flow the app itself offers.
+    // The new password is shown here exactly once for the admin to copy
+    // and relay to the user — it's never stored anywhere after this.
+    function resetAccountPassword(btnEl, userId, email) {
+      var confirmed = window.confirm(
+        'Reset the sign-in password for ' + email + '? A new password will be generated — ' +
+        'you\'ll need to copy it and send it to them yourself.'
+      );
+      if (!confirmed) return;
+      showMessage(usersMsg, '', '');
+      setBusy(btnEl, true, 'Resetting…');
+      supabaseClient.functions.invoke('admin-reset-password', { body: { userId: userId } })
+        .then(function (res) {
+          if (res.error) throw res.error;
+          var newPassword = res.data && res.data.newPassword;
+          showMessage(
+            usersMsg,
+            'New password for ' + email + ': <code>' + newPassword + '</code> — copy this now, ' +
+            'it will not be shown again.',
+            'success'
+          );
+        })
+        .catch(function (err) {
+          return functionErrorMessage(err).then(function (text) {
+            showMessage(usersMsg, text, 'error');
+          });
+        })
+        .then(function () { setBusy(btnEl, false); });
+    }
+
     function changeRole(selectEl, userId, newRole) {
       var previousValue = selectEl.getAttribute('data-previous') || '';
 
@@ -1048,6 +1125,82 @@
 
     usersSearch.addEventListener('input', renderUsers);
     usersRoleFilter.addEventListener('change', renderUsers);
+
+    // ---- Locations (quick-pick venues for the app's Add Event Location
+    // field — see lib/manage_locations_page.dart for the in-app equivalent
+    // of this same CRUD, both over the lgu_locations table) ----
+    var locationsMsg = document.getElementById('locations-msg');
+    var locationsList = document.getElementById('locations-list');
+    var addLocationForm = document.getElementById('add-location-form');
+
+    function loadLocations() {
+      return supabaseClient.from('lgu_locations').select('id, name').order('name')
+        .then(function (res) {
+          if (res.error) throw res.error;
+          renderLocations(res.data || []);
+        });
+    }
+
+    function renderLocations(rows) {
+      if (!rows || rows.length === 0) {
+        locationsList.innerHTML = '<tr><td class="hint" colspan="2">No locations yet. Add one above.</td></tr>';
+        return;
+      }
+      locationsList.innerHTML = '';
+      rows.forEach(function (row) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td class="name">' + row.name + '</td>' +
+          '<td class="actions">' +
+          '<button class="ghost small" data-delete-location="' + row.id + '">Delete</button>' +
+          '</td>';
+        locationsList.appendChild(tr);
+      });
+      locationsList.querySelectorAll('[data-delete-location]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          deleteLocation(btn, btn.getAttribute('data-delete-location'));
+        });
+      });
+    }
+
+    function deleteLocation(btnEl, id) {
+      var confirmed = window.confirm('Remove this location from the quick-pick list?');
+      if (!confirmed) return;
+      showMessage(locationsMsg, '', '');
+      btnEl.disabled = true;
+      supabaseClient.from('lgu_locations').delete().eq('id', id)
+        .then(function (res) {
+          if (res.error) throw res.error;
+          return loadLocations();
+        })
+        .catch(function (err) {
+          showMessage(locationsMsg, friendlyError(err), 'error');
+          btnEl.disabled = false;
+        });
+    }
+
+    addLocationForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var nameField = document.getElementById('new-location-name');
+      var name = nameField.value.trim();
+      if (!name) return;
+
+      var button = addLocationForm.querySelector('button.primary');
+      showMessage(locationsMsg, '', '');
+      setBusy(button, true, 'Adding…');
+      supabaseClient.from('lgu_locations').insert({ name: name })
+        .then(function (res) {
+          if (res.error) throw res.error;
+          showMessage(locationsMsg, 'Added "' + name + '".', 'success');
+          addLocationForm.reset();
+          setBusy(button, false);
+          return loadLocations();
+        })
+        .catch(function (err) {
+          showMessage(locationsMsg, friendlyError(err), 'error');
+          setBusy(button, false);
+        });
+    });
 
     // ---- Add account (superadmin creates an LGU member or another
     // superadmin directly, instead of them self-registering + waiting for
@@ -1147,7 +1300,7 @@
             if (role === 'superadmin') {
               statusCard.classList.add('hidden');
               adminSection.classList.remove('hidden');
-              return Promise.all([loadPendingApplications(), loadAllUsers()]);
+              return Promise.all([loadPendingApplications(), loadAllUsers(), loadLocations()]);
             }
 
             adminSection.classList.add('hidden');

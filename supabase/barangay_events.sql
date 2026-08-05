@@ -1278,7 +1278,15 @@ end $$;
 --
 -- One-time setup this SQL block genuinely can't do for you (Postgres has
 -- no way to set its own secrets from inside a migration):
---   1. supabase functions deploy send-event-reminders --use-api
+--   1. supabase functions deploy send-event-reminders --use-api --no-verify-jwt
+--      The --no-verify-jwt is REQUIRED, not optional. This function is called
+--      by pg_cron with 'Bearer <reminder_cron_secret>' — a random string, not
+--      a JWT. Left verify_jwt on, Supabase's gateway rejects that with 401
+--      before the function's own auth check (index.ts) ever runs, and every
+--      reminder silently fails. Confirmed August 2026: the live deployment had
+--      verify_jwt=true because this line was missing the flag, which is why no
+--      reminder had ever been delivered. Verify after deploying with
+--      `supabase functions list` — this slug must show "verify_jwt":false.
 --   2. supabase secrets set "REMINDER_CRON_SECRET=<a random string>"
 --      (reuses the same FCM_SERVICE_ACCOUNT_JSON_B64 secret already set
 --      up for send-event-notification — no separate Firebase credential
@@ -1601,5 +1609,119 @@ do $$ begin
     alter table public.barangay_events add constraint barangay_events_color_key_check
       check (color_key is null or color_key in
         ('tomato', 'tangerine', 'banana', 'basil', 'peacock', 'blueberry', 'grape', 'graphite'));
+  end if;
+end $$;
+
+-- ============================================================
+-- LGU locations (July 2026). A superadmin-curated list of common venues
+-- ("Barangay Hall", "Covered Court", ...) offered as quick picks in Add
+-- Event's Location field, so most events don't need free-text typing —
+-- picking "Other" (or there being no locations yet at all) still falls
+-- back to the existing plain text field. Anyone signed in can read the
+-- list (they need it to see the dropdown); only a superadmin can add or
+-- remove entries — managed from either the LGU admin web portal or the
+-- in-app "Manage Locations" screen (Profile tab, superadmin-only), both
+-- thin CRUD UIs over this same table.
+-- ============================================================
+
+create table if not exists public.lgu_locations (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  created_at timestamptz not null default now(),
+  created_by uuid references public.profiles(id)
+);
+alter table public.lgu_locations enable row level security;
+
+do $$ begin
+  if not exists (select 1 from pg_policies where tablename = 'lgu_locations' and policyname = 'Anyone signed in can read lgu_locations') then
+    create policy "Anyone signed in can read lgu_locations" on public.lgu_locations
+      for select using (auth.uid() is not null);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'lgu_locations' and policyname = 'Superadmin can manage lgu_locations') then
+    create policy "Superadmin can manage lgu_locations" on public.lgu_locations
+      for all using (
+        exists (select 1 from profiles where id = auth.uid() and role = 'superadmin')
+      ) with check (
+        exists (select 1 from profiles where id = auth.uid() and role = 'superadmin')
+      );
+  end if;
+end $$;
+
+-- ============================================================
+-- Event contact number (July 2026). An optional phone number shown
+-- alongside "Posted By" on an event's detail page, with a Call button
+-- (see lib/main.dart's _DetailInfoRow trailing slot). Pre-filled from the
+-- poster's own profile.phone_number in Add Event, but stored per-event
+-- (not read live off the profile) so it can be edited/cleared for a
+-- specific event without touching the poster's actual profile.
+-- ============================================================
+
+alter table public.barangay_events add column if not exists contact_number text;
+
+-- ============================================================
+-- Event attachments (July 2026). Multiple files per event (pubmats,
+-- photos, PDFs, etc.), replacing the old hasAttachment/attachmentType
+-- columns on barangay_events, which the Flutter client never actually had
+-- a real upload path for (every event ever created hard-coded
+-- has_attachment = false) — see lib/event_store.dart's removal of those
+-- two fields. has_attachment/attachment_type are left in place here
+-- (dropping columns is a data-loss-risk step outside what this migration
+-- should do unprompted) but are no longer read or written by the app;
+-- drop them yourself later if you want.
+--
+-- Visibility piggybacks on barangay_events' own RLS: the exists()
+-- subquery below runs under the calling role, so it only matches if that
+-- role could already see the event itself (public/own-group/own-personal)
+-- — no separate visibility rules to keep in sync as barangay_events'
+-- own policies evolve.
+-- ============================================================
+
+insert into storage.buckets (id, name, public)
+  values ('event-attachments', 'event-attachments', false)
+  on conflict (id) do nothing;
+
+create table if not exists public.event_attachments (
+  id uuid primary key default gen_random_uuid(),
+  event_id text not null references public.barangay_events(id) on delete cascade,
+  storage_path text not null,
+  file_name text not null,
+  mime_type text,
+  size_bytes bigint,
+  uploaded_by uuid references public.profiles(id),
+  created_at timestamptz not null default now()
+);
+alter table public.event_attachments enable row level security;
+
+do $$ begin
+  if not exists (select 1 from pg_policies where tablename = 'event_attachments' and policyname = 'read attachments for visible events') then
+    create policy "read attachments for visible events" on public.event_attachments for select
+      using (exists (select 1 from barangay_events be where be.id = event_attachments.event_id));
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'event_attachments' and policyname = 'creator can add attachments') then
+    create policy "creator can add attachments" on public.event_attachments for insert
+      with check (exists (select 1 from barangay_events be where be.id = event_attachments.event_id and be.created_by_id = auth.uid()));
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'event_attachments' and policyname = 'creator can delete their attachments') then
+    create policy "creator can delete their attachments" on public.event_attachments for delete
+      using (exists (select 1 from barangay_events be where be.id = event_attachments.event_id and be.created_by_id = auth.uid()));
+  end if;
+end $$;
+
+-- storage.objects policies for the bucket itself — path convention is
+-- '<event_id>/<uuid>-<filename>'.
+do $$ begin
+  if not exists (select 1 from pg_policies where tablename = 'objects' and schemaname = 'storage' and policyname = 'read event attachment files') then
+    create policy "read event attachment files" on storage.objects for select
+      using (bucket_id = 'event-attachments' and exists (
+        select 1 from public.event_attachments ea where ea.storage_path = storage.objects.name
+      ));
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'objects' and schemaname = 'storage' and policyname = 'upload event attachment files') then
+    create policy "upload event attachment files" on storage.objects for insert
+      with check (bucket_id = 'event-attachments' and auth.uid() is not null);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'objects' and schemaname = 'storage' and policyname = 'delete own event attachment files') then
+    create policy "delete own event attachment files" on storage.objects for delete
+      using (bucket_id = 'event-attachments' and owner = auth.uid());
   end if;
 end $$;

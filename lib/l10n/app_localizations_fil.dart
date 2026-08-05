@@ -78,6 +78,46 @@ class AppLocalizationsFil extends AppLocalizations {
   String get authFailedGeneric => 'Nabigo ang pag-verify.';
 
   @override
+  String get forgotPasswordLink => 'Nakalimutan ang password?';
+
+  @override
+  String get forgotPasswordTitle => 'I-reset ang iyong password';
+
+  @override
+  String get forgotPasswordSubtitle =>
+      'I-type ang email ng iyong account at magpapadala kami ng link para makapaglagay ka ng bagong password.';
+
+  @override
+  String get forgotPasswordSendButton => 'Ipadala ang reset link';
+
+  @override
+  String get forgotPasswordSent =>
+      'Tingnan ang iyong email para sa reset link. Hindi natanggap? Maaari mo itong ipadala ulit.';
+
+  @override
+  String get resetPasswordTitle => 'Maglagay ng bagong password';
+
+  @override
+  String get resetPasswordSubtitle =>
+      'Pumili ng bagong password para sa iyong account.';
+
+  @override
+  String get resetPasswordNewLabel => 'Bagong password';
+
+  @override
+  String get resetPasswordConfirmLabel => 'Kumpirmahin ang bagong password';
+
+  @override
+  String get resetPasswordSaveButton => 'I-save ang bagong password';
+
+  @override
+  String get resetPasswordSuccess =>
+      'Na-update na ang password. Naka-sign in ka na.';
+
+  @override
+  String get resetPasswordMismatch => 'Hindi magkatugma ang mga password.';
+
+  @override
   String get tabCalendar => 'Kalendaryo';
 
   @override
@@ -100,6 +140,9 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get edit => 'I-edit';
+
+  @override
+  String get addButton => 'Idagdag';
 
   @override
   String get settingsTitle => 'Mga Setting';
@@ -546,6 +589,81 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get locationHint => 'hal. Barangay Hall';
+
+  @override
+  String get locationOtherOption => 'Iba pa (i-type nang manwal)';
+
+  @override
+  String get locationCustomLabel => 'Pasadyang lokasyon';
+
+  @override
+  String get contactNumberLabel => 'Contact number (opsyonal)';
+
+  @override
+  String get contactNumberHint => 'hal. 0912 345 6789';
+
+  @override
+  String get detailContact => 'Contact';
+
+  @override
+  String get callButtonTooltip => 'Tumawag';
+
+  @override
+  String get callLinkError => 'Hindi mabuksan ang phone dialer.';
+
+  @override
+  String get addToGoogleCalendar => 'Idagdag sa Google Calendar';
+
+  @override
+  String get googleCalendarError => 'Hindi mabuksan ang Google Calendar.';
+
+  @override
+  String get attachmentsSectionTitle => 'Mga Attachment';
+
+  @override
+  String get attachmentOpenError => 'Hindi mabuksan ang attachment na ito.';
+
+  @override
+  String get addAttachmentButton => 'Magdagdag ng larawan o file';
+
+  @override
+  String attachmentTooLarge(String name) {
+    return 'Masyadong malaki ang \"$name\" (max 20 MB).';
+  }
+
+  @override
+  String attachmentLimitReached(int max) {
+    return 'Hanggang $max na file lang ang maaaring i-attach sa bawat kaganapan.';
+  }
+
+  @override
+  String attachmentUploadError(String name) {
+    return 'Hindi na-upload ang \"$name\".';
+  }
+
+  @override
+  String get attachmentPickError =>
+      'Hindi mabuksan ang file picker. Pakisubukan ulit.';
+
+  @override
+  String get manageLocationsTile => 'Pamahalaan ang mga Lokasyon';
+
+  @override
+  String get manageLocationsTileCaption =>
+      'Mga LGU venue na iminumungkahi sa Magdagdag ng Kaganapan';
+
+  @override
+  String get manageLocationsTitle => 'Pamahalaan ang mga Lokasyon';
+
+  @override
+  String get manageLocationsSubtitle =>
+      'Superadmin lang. Makikita bilang mabilisang pagpipilian sa Lokasyon ng Magdagdag ng Kaganapan para sa lahat ng account.';
+
+  @override
+  String get manageLocationsEmpty => 'Wala pang lokasyon. Magdagdag sa itaas.';
+
+  @override
+  String get locationNameLabel => 'Pangalan ng lokasyon';
 
   @override
   String get additionalDetailsLabel => 'Karagdagang Detalye (opsyonal)';

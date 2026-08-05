@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 
+import 'attachment_image_viewer.dart';
 import 'auth_service.dart' show AppUserProfile;
 import 'event_colors.dart';
 import 'event_store.dart';
@@ -28,10 +31,17 @@ class AddEventPage extends StatefulWidget {
     required this.findOverlappingEvents,
     required this.suggestFreeSlot,
     this.existingEvent,
+    this.lguLocations = const [],
   });
 
   final EventRepository eventRepository;
   final List<BarangayGroup> myGroups;
+
+  /// Superadmin-curated quick picks for the Location field (see
+  /// EventRepository.listLguLocations) — empty just means "no admin
+  /// locations set up yet", in which case Location falls back to a plain
+  /// text field exactly as before this existed.
+  final List<LguLocation> lguLocations;
 
   /// Pre-clamped by the caller so it's never in the past. Ignored (in
   /// favor of [existingEvent]'s own dates) when editing.
@@ -61,6 +71,12 @@ class _AddEventPageState extends State<AddEventPage> {
   final _titleController = TextEditingController();
   final _locationController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _contactNumberController = TextEditingController();
+
+  /// Sentinel dropdown value meaning "not one of the quick picks — type it
+  /// manually below" (also the default when nothing's been chosen yet).
+  static const _customLocationOption = '__custom__';
+  String _selectedLocationOption = _customLocationOption;
 
   late DateTime _startDate;
   late DateTime _endDate;
@@ -80,6 +96,31 @@ class _AddEventPageState extends State<AddEventPage> {
   /// from this map uses the default [_startTime]/[_endTime] uniformly,
   /// same as an event that's never had any overrides set.
   final Map<DateTime, ({TimeOfDay start, TimeOfDay end})> _perDayOverrides = {};
+
+  static const _maxAttachments = 5;
+  static const _maxAttachmentBytes = 20 * 1024 * 1024;
+
+  /// Already-uploaded attachments — only ever non-empty when editing
+  /// (fetched in [initState]), since a brand-new event has no id yet for
+  /// [EventRepository.listEventAttachments] to look up.
+  List<EventAttachment> _existingAttachments = const [];
+
+  /// Picked-but-not-yet-uploaded files for a brand-new event, held here
+  /// until [_save] gets a real event id back — an existing event uploads
+  /// immediately on pick instead (see [_pickAttachments]), since it
+  /// already has one.
+  final List<PlatformFile> _pendingAttachments = [];
+
+  bool _pickingAttachments = false;
+  final Set<String> _busyAttachmentIds = {};
+
+  /// Thumbnails for [_existingAttachments], fetched in the background as
+  /// soon as each one's metadata loads (see [_loadExistingAttachments]) —
+  /// a pending file needs no equivalent map, since [PlatformFile.bytes]
+  /// is already available locally the moment it's picked.
+  final Map<String, Uint8List> _existingAttachmentThumbnails = {};
+
+  int get _attachmentCount => _existingAttachments.length + _pendingAttachments.length;
 
   bool get _isEditing => widget.existingEvent != null;
 
@@ -114,6 +155,9 @@ class _AddEventPageState extends State<AddEventPage> {
     if (existing != null) {
       _titleController.text = existing.title;
       _locationController.text = existing.location;
+      _selectedLocationOption = widget.lguLocations.any((loc) => loc.name == existing.location)
+          ? existing.location
+          : _customLocationOption;
       _descriptionController.text = existing.description;
       _startDate = DateTime(existing.startTime.year, existing.startTime.month, existing.startTime.day);
       _endDate = DateTime(existing.endTime.year, existing.endTime.month, existing.endTime.day);
@@ -121,6 +165,7 @@ class _AddEventPageState extends State<AddEventPage> {
       _endTime = TimeOfDay.fromDateTime(existing.endTime);
       _eventType = existing.eventType;
       _colorKey = existing.colorKey;
+      _contactNumberController.text = existing.contactNumber ?? '';
       _isMultiDay = existing.isMultiDay;
       for (final group in widget.myGroups) {
         if (group.id == existing.groupId) {
@@ -134,11 +179,13 @@ class _AddEventPageState extends State<AddEventPage> {
           end: TimeOfDay(hour: override.endMinutes ~/ 60, minute: override.endMinutes % 60),
         );
       }
+      unawaited(_loadExistingAttachments(existing.id));
     } else {
       _startDate = widget.initialDate;
       _endDate = widget.initialDate;
       _eventType = _allowedEventTypes.first;
       _selectedGroup = widget.myGroups.isNotEmpty ? widget.myGroups.first : null;
+      _contactNumberController.text = widget.creatorProfile?.phoneNumber ?? '';
     }
     _recomputeConflicts();
   }
@@ -148,6 +195,7 @@ class _AddEventPageState extends State<AddEventPage> {
     _titleController.dispose();
     _locationController.dispose();
     _descriptionController.dispose();
+    _contactNumberController.dispose();
     super.dispose();
   }
 
@@ -363,6 +411,7 @@ class _AddEventPageState extends State<AddEventPage> {
     final title = _titleController.text.trim();
     final location = _locationController.text.trim();
     final description = _descriptionController.text.trim();
+    final contactNumber = _contactNumberController.text.trim();
 
     if (title.isEmpty || location.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -421,25 +470,25 @@ class _AddEventPageState extends State<AddEventPage> {
     ];
 
     setState(() => _saving = true);
+    final existing = widget.existingEvent;
+    final eventId = existing?.id ?? DateTime.now().microsecondsSinceEpoch.toString();
     try {
-      final existing = widget.existingEvent;
       if (existing != null) {
         await widget.eventRepository.updateEvent(
           BarangayEvent(
-            id: existing.id,
+            id: eventId,
             title: title,
             location: location,
             startTime: _startDateTime,
             endTime: _endDateTime,
             description: description,
-            hasAttachment: existing.hasAttachment,
-            attachmentType: existing.attachmentType,
             createdAt: existing.createdAt,
             createdByName: existing.createdByName,
             createdByDepartment: existing.createdByDepartment,
             createdById: existing.createdById,
             eventType: _eventType,
             colorKey: _colorKey,
+            contactNumber: contactNumber.isEmpty ? null : contactNumber,
             groupId: group?.id,
             groupName: group?.name,
             dailyOverrides: dailyOverrides,
@@ -448,19 +497,19 @@ class _AddEventPageState extends State<AddEventPage> {
       } else {
         await widget.eventRepository.addEvent(
           BarangayEvent(
-            id: DateTime.now().microsecondsSinceEpoch.toString(),
+            id: eventId,
             title: title,
             location: location,
             startTime: _startDateTime,
             endTime: _endDateTime,
             description: description,
-            hasAttachment: false,
             createdAt: DateTime.now(),
             createdByName: widget.creatorProfile?.displayName,
             createdByDepartment: widget.creatorProfile?.department,
             createdById: widget.creatorProfile?.id,
             eventType: _eventType,
             colorKey: _colorKey,
+            contactNumber: contactNumber.isEmpty ? null : contactNumber,
             groupId: group?.id,
             groupName: group?.name,
             dailyOverrides: dailyOverrides,
@@ -479,12 +528,195 @@ class _AddEventPageState extends State<AddEventPage> {
       return;
     }
 
+    // Uploaded now that the event has a real id — a brand-new event's id
+    // was only ever a locally-generated placeholder until addEvent above
+    // actually succeeded. A failed upload here doesn't undo the
+    // already-saved event; the user can just re-add the file via Edit.
+    for (final file in _pendingAttachments) {
+      final bytes = file.bytes;
+      if (bytes == null) continue;
+      try {
+        await widget.eventRepository.uploadEventAttachment(
+          eventId,
+          file.name,
+          bytes,
+          mimeType: _mimeTypeForExtension(file.extension),
+        );
+      } catch (_) {
+        // See comment above — non-fatal.
+      }
+    }
+
     if (!mounted) return;
     Navigator.of(context).pop<AddEventResult>((
       date: DateTime.utc(_startDate.year, _startDate.month, _startDate.day),
       title: title,
       groupName: group?.name,
     ));
+  }
+
+  Future<void> _loadExistingAttachments(String eventId) async {
+    try {
+      final attachments = await widget.eventRepository.listEventAttachments(eventId);
+      if (!mounted) return;
+      setState(() => _existingAttachments = attachments);
+      for (final attachment in attachments) {
+        if (attachment.isImage) unawaited(_loadExistingThumbnail(attachment));
+      }
+    } catch (_) {
+      // Section just stays empty — same "fail quiet" treatment as the
+      // detail-page attachments list.
+    }
+  }
+
+  Future<void> _loadExistingThumbnail(EventAttachment attachment) async {
+    try {
+      final bytes = await widget.eventRepository.downloadEventAttachmentBytes(attachment);
+      if (!mounted) return;
+      setState(() => _existingAttachmentThumbnails[attachment.id] = bytes);
+    } catch (_) {
+      // Falls back to the generic file icon just for this one attachment.
+    }
+  }
+
+  Future<void> _viewImage(Uint8List bytes, String fileName) {
+    return Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AttachmentImageViewer(bytes: bytes, fileName: fileName),
+      ),
+    );
+  }
+
+  String? _mimeTypeForExtension(String? extension) {
+    switch (extension?.toLowerCase()) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'pdf':
+        return 'application/pdf';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'xls':
+        return 'application/vnd.ms-excel';
+      case 'xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case 'ppt':
+        return 'application/vnd.ms-powerpoint';
+      case 'pptx':
+        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      default:
+        return null;
+    }
+  }
+
+  Future<void> _pickAttachments() async {
+    final l10n = AppLocalizations.of(context)!;
+    if (_attachmentCount >= _maxAttachments) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.attachmentLimitReached(_maxAttachments))),
+      );
+      return;
+    }
+
+    setState(() => _pickingAttachments = true);
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        withData: true,
+        type: FileType.custom,
+        allowedExtensions: const [
+          'jpg', 'jpeg', 'png', 'gif', 'webp',
+          'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+        ],
+      );
+      final picked = result?.files ?? const [];
+      final existing = widget.existingEvent;
+
+      for (final file in picked) {
+        if (_attachmentCount >= _maxAttachments) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(l10n.attachmentLimitReached(_maxAttachments))),
+            );
+          }
+          break;
+        }
+        if (file.size > _maxAttachmentBytes) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(l10n.attachmentTooLarge(file.name))),
+            );
+          }
+          continue;
+        }
+        final bytes = file.bytes;
+        if (bytes == null) continue;
+
+        if (existing != null) {
+          // Already has a real id — upload right away instead of holding
+          // it in _pendingAttachments, which only exists to bridge the
+          // "no id yet" gap for a brand-new event.
+          try {
+            await widget.eventRepository.uploadEventAttachment(
+              existing.id,
+              file.name,
+              bytes,
+              mimeType: _mimeTypeForExtension(file.extension),
+            );
+            await _loadExistingAttachments(existing.id);
+          } catch (_) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(l10n.attachmentUploadError(file.name))),
+              );
+            }
+          }
+        } else {
+          setState(() => _pendingAttachments.add(file));
+        }
+      }
+    } catch (_) {
+      // Covers the file picker call itself failing (e.g. the browser
+      // blocked/cancelled it) — everything past that point already has
+      // its own narrower catch, but nothing previously guarded this, so
+      // a picker-level failure surfaced as an uncaught error instead of
+      // this snackbar.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.attachmentPickError)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _pickingAttachments = false);
+    }
+  }
+
+  Future<void> _removeExistingAttachment(EventAttachment attachment) async {
+    setState(() => _busyAttachmentIds.add(attachment.id));
+    try {
+      await widget.eventRepository.deleteEventAttachment(attachment);
+      if (!mounted) return;
+      setState(() {
+        _existingAttachments =
+            _existingAttachments.where((a) => a.id != attachment.id).toList();
+        _busyAttachmentIds.remove(attachment.id);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _busyAttachmentIds.remove(attachment.id));
+    }
+  }
+
+  void _removePendingAttachment(PlatformFile file) {
+    setState(() => _pendingAttachments.remove(file));
   }
 
   Widget _buildPickerRow({
@@ -747,12 +979,53 @@ class _AddEventPageState extends State<AddEventPage> {
                 ),
               ),
               const SizedBox(height: 12),
+              if (widget.lguLocations.isNotEmpty) ...[
+                DropdownButtonFormField<String>(
+                  initialValue: _selectedLocationOption,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: l10n.detailLocation,
+                    prefixIcon: glassFieldIcon(FontAwesomeIcons.locationDot, size: 14),
+                    prefixIconConstraints: glassFieldIconConstraints,
+                  ),
+                  items: [
+                    for (final location in widget.lguLocations)
+                      DropdownMenuItem(
+                        value: location.name,
+                        child: Text(location.name, overflow: TextOverflow.ellipsis),
+                      ),
+                    DropdownMenuItem(
+                      value: _customLocationOption,
+                      child: Text(l10n.locationOtherOption, overflow: TextOverflow.ellipsis),
+                    ),
+                  ],
+                  onChanged: (value) => setState(() {
+                    _selectedLocationOption = value ?? _customLocationOption;
+                    if (_selectedLocationOption != _customLocationOption) {
+                      _locationController.text = _selectedLocationOption;
+                    }
+                  }),
+                ),
+                if (_selectedLocationOption == _customLocationOption) const SizedBox(height: 12),
+              ],
+              if (widget.lguLocations.isEmpty || _selectedLocationOption == _customLocationOption)
+                TextField(
+                  controller: _locationController,
+                  decoration: InputDecoration(
+                    labelText: widget.lguLocations.isEmpty ? l10n.detailLocation : l10n.locationCustomLabel,
+                    hintText: l10n.locationHint,
+                    prefixIcon: glassFieldIcon(FontAwesomeIcons.locationDot, size: 14),
+                    prefixIconConstraints: glassFieldIconConstraints,
+                  ),
+                ),
+              const SizedBox(height: 12),
               TextField(
-                controller: _locationController,
+                controller: _contactNumberController,
+                keyboardType: TextInputType.phone,
                 decoration: InputDecoration(
-                  labelText: l10n.detailLocation,
-                  hintText: l10n.locationHint,
-                  prefixIcon: glassFieldIcon(FontAwesomeIcons.locationDot, size: 14),
+                  labelText: l10n.contactNumberLabel,
+                  hintText: l10n.contactNumberHint,
+                  prefixIcon: glassFieldIcon(FontAwesomeIcons.phone, size: 14),
                   prefixIconConstraints: glassFieldIconConstraints,
                 ),
               ),
@@ -767,6 +1040,69 @@ class _AddEventPageState extends State<AddEventPage> {
                   prefixIconConstraints: glassFieldIconConstraints,
                 ),
               ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        GlassPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                l10n.attachmentsSectionTitle,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const Key('add-event-attachment-button'),
+                  onPressed: _pickingAttachments ? null : () => unawaited(_pickAttachments()),
+                  icon: _pickingAttachments
+                      ? const SizedBox(
+                          height: 14,
+                          width: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const FaIcon(FontAwesomeIcons.paperclip, size: 14),
+                  label: Text(l10n.addAttachmentButton),
+                ),
+              ),
+              if (_existingAttachments.isNotEmpty || _pendingAttachments.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                for (final attachment in _existingAttachments)
+                  _AttachmentRow(
+                    key: Key('existing-attachment-${attachment.id}'),
+                    fileName: attachment.fileName,
+                    busy: _busyAttachmentIds.contains(attachment.id),
+                    onRemove: () => unawaited(_removeExistingAttachment(attachment)),
+                    thumbnailBytes: _existingAttachmentThumbnails[attachment.id],
+                    onTap: _existingAttachmentThumbnails[attachment.id] == null
+                        ? null
+                        : () => unawaited(_viewImage(
+                              _existingAttachmentThumbnails[attachment.id]!,
+                              attachment.fileName,
+                            )),
+                  ),
+                for (final file in _pendingAttachments)
+                  _AttachmentRow(
+                    key: Key('pending-attachment-${file.name}'),
+                    fileName: file.name,
+                    busy: false,
+                    onRemove: () => _removePendingAttachment(file),
+                    thumbnailBytes:
+                        _mimeTypeForExtension(file.extension)?.startsWith('image/') == true
+                            ? file.bytes
+                            : null,
+                    onTap: (_mimeTypeForExtension(file.extension)?.startsWith('image/') == true &&
+                            file.bytes != null)
+                        ? () => unawaited(_viewImage(file.bytes!, file.name))
+                        : null,
+                  ),
+              ],
             ],
           ),
         ),
@@ -1006,6 +1342,89 @@ class _ColorSwatch extends StatelessWidget {
           child: selected
               ? const Icon(Icons.check, color: Colors.white, size: 18)
               : null,
+        ),
+      ),
+    );
+  }
+}
+
+/// One file in the attachments picker — already-uploaded (real
+/// [EventAttachment]) or still-pending (a locally-held [PlatformFile]),
+/// both rendered identically since the only difference is what removing
+/// it actually does (see [AddEventPage]'s _removeExistingAttachment vs.
+/// _removePendingAttachment).
+/// One file in the attachments picker — already-uploaded (real
+/// [EventAttachment]) or still-pending (a locally-held [PlatformFile]),
+/// both rendered identically since the caller (see [AddEventPage])
+/// already normalized them down to a filename, an optional thumbnail,
+/// and what removing/tapping each one actually does.
+class _AttachmentRow extends StatelessWidget {
+  const _AttachmentRow({
+    super.key,
+    required this.fileName,
+    required this.busy,
+    required this.onRemove,
+    this.thumbnailBytes,
+    this.onTap,
+  });
+
+  final String fileName;
+  final bool busy;
+  final VoidCallback onRemove;
+
+  /// Non-null only for an image whose bytes have already loaded — see
+  /// [AddEventPage]'s _existingAttachmentThumbnails/PlatformFile.bytes.
+  /// A `null` here (whether it's not an image, or its thumbnail just
+  /// hasn't loaded yet) falls back to the generic paperclip icon.
+  final Uint8List? thumbnailBytes;
+
+  /// Opens the full-screen viewer — only set when [thumbnailBytes] is
+  /// available, so tapping a not-yet-loaded or non-image row does nothing.
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final colorScheme = Theme.of(context).colorScheme;
+    final bytes = thumbnailBytes;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            if (bytes != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.memory(bytes, width: 28, height: 28, fit: BoxFit.cover),
+              )
+            else
+              FaIcon(FontAwesomeIcons.paperclip, size: 14, color: colorScheme.onSurfaceVariant),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                fileName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+            if (busy)
+              const SizedBox(
+                height: 16,
+                width: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              IconButton(
+                onPressed: onRemove,
+                icon: FaIcon(FontAwesomeIcons.xmark, size: 14, color: colorScheme.error),
+                tooltip: l10n.removeButton,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                padding: EdgeInsets.zero,
+              ),
+          ],
         ),
       ),
     );

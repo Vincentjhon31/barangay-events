@@ -29,6 +29,18 @@ flutter build apk --release
 
 The APK is written to `build/app/outputs/flutter-apk/app-release.apk`.
 
+## Web Build (calendar.bongabong.gov.ph, hosted on Hostinger)
+
+```powershell
+flutter build web --no-tree-shake-icons
+```
+
+`--no-tree-shake-icons` is required — Flutter's icon tree-shaker misdetects
+which `font_awesome_flutter` glyphs are actually used (it wrongly stripped
+`shieldHalved`, `userShield`, and `mapLocationDot` down to 33 surviving
+glyphs out of 2000+, showing as broken-glyph boxes in the app). Upload the
+contents of `build/web` to the Hostinger site root.
+
 ## Update-Safe Releases
 
 The app checks the latest GitHub Release for this repository and shows an update prompt when a newer APK is available.

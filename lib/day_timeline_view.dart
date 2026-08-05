@@ -29,14 +29,34 @@ class DayTimelineView extends StatelessWidget {
   final ValueChanged<BarangayEvent> onEventTap;
   final double hourHeight;
 
-  static const _hoursInDay = 24;
   static const _gutterWidth = 52.0;
+
+  /// The hour the grid starts/ends at — the earliest event's start hour
+  /// minus one hour of padding through the latest event's end hour plus
+  /// one, clamped to a real day. A day with no events at all falls back
+  /// to a plain 8 AM-6 PM "typical work day" window rather than either
+  /// the full 24 hours (mostly empty scrolling) or nothing at all.
+  ({int start, int end}) get _hourRange {
+    if (events.isEmpty) return (start: 8, end: 18);
+    var earliest = 24 * 60;
+    var latest = 0;
+    for (final event in events) {
+      final window = event.minutesWindowForDay(day);
+      if (window.startMinutes < earliest) earliest = window.startMinutes;
+      if (window.endMinutes > latest) latest = window.endMinutes;
+    }
+    final start = ((earliest ~/ 60) - 1).clamp(0, 23);
+    final end = ((latest + 59) ~/ 60 + 1).clamp(start + 1, 24);
+    return (start: start, end: end);
+  }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final totalHeight = hourHeight * _hoursInDay;
-    final placed = _layout();
+    final range = _hourRange;
+    final hourCount = range.end - range.start;
+    final totalHeight = hourHeight * hourCount;
+    final placed = _layout(range.start);
 
     return SizedBox(
       height: totalHeight,
@@ -48,9 +68,9 @@ class DayTimelineView extends StatelessWidget {
             height: totalHeight,
             child: Stack(
               children: [
-                for (var hour = 0; hour < _hoursInDay; hour++)
+                for (var hour = range.start; hour < range.end; hour++)
                   Positioned(
-                    top: hour * hourHeight - 7,
+                    top: (hour - range.start) * hourHeight - 7,
                     left: 0,
                     right: 8,
                     child: Text(
@@ -67,15 +87,16 @@ class DayTimelineView extends StatelessWidget {
           Expanded(
             child: Stack(
               children: [
-                for (var hour = 0; hour <= _hoursInDay; hour++)
+                for (var hour = range.start; hour <= range.end; hour++)
                   Positioned(
-                    top: hour * hourHeight,
+                    top: (hour - range.start) * hourHeight,
                     left: 0,
                     right: 0,
                     child: Divider(
                       height: 1,
                       thickness: 1,
-                      color: colorScheme.onSurface.withValues(alpha: hour == 0 || hour == _hoursInDay ? 0.0 : 0.08),
+                      color: colorScheme.onSurface
+                          .withValues(alpha: hour == range.start || hour == range.end ? 0.0 : 0.08),
                     ),
                   ),
                 LayoutBuilder(
@@ -120,7 +141,8 @@ class DayTimelineView extends StatelessWidget {
   /// column via greedy interval coloring, so a cluster of 3 overlapping
   /// events becomes 3 equal side-by-side columns while a lone event still
   /// spans the full width.
-  List<_PlacedEvent> _layout() {
+  List<_PlacedEvent> _layout(int startHour) {
+    final startOffsetMinutes = startHour * 60;
     const minDurationMinutes = 30;
     final minPxHeight = hourHeight * minDurationMinutes / 60;
 
@@ -166,7 +188,7 @@ class DayTimelineView extends StatelessWidget {
         final item = cluster[i];
         placed.add(_PlacedEvent(
           event: item.event,
-          top: hourHeight * item.start / 60,
+          top: hourHeight * (item.start - startOffsetMinutes) / 60,
           height: (hourHeight * (item.end - item.start) / 60).clamp(minPxHeight, double.infinity),
           columnIndex: columnOf[i],
           columnCount: columnCount,

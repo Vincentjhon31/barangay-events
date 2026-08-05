@@ -1,0 +1,14 @@
+# Flutter Web ships the app's actual code in main.dart.js and manages its
+# own update-check logic through flutter_service_worker.js — both keep the
+# SAME filename across every rebuild (unlike content-hashed bundlers), so a
+# browser that's cached them for its default TTL won't see a new deploy
+# until that cache expires, even on a plain refresh. Force these "shell"
+# files to always be re-validated, while leaving large/rarely-changing
+# assets (canvaskit/, assets/, icons/) to cache normally.
+<IfModule mod_headers.c>
+  <FilesMatch "^(index\.html|main\.dart\.js|flutter\.js|flutter_bootstrap\.js|flutter_service_worker\.js|version\.json|manifest\.json)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </FilesMatch>
+</IfModule>

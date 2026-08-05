@@ -14,6 +14,7 @@ import 'group_members_page.dart';
 import 'join_group_page.dart';
 import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
+import 'manage_locations_page.dart';
 import 'privacy_policy_page.dart';
 import 'responsive_scale.dart';
 import 'security_page.dart';
@@ -28,11 +29,17 @@ class ProfileTab extends StatefulWidget {
     required this.themeController,
     this.onProfileSaved,
     this.updateService,
+    this.eventRepository,
   });
 
   final AppAuthService authService;
   final ThemeController themeController;
   final VoidCallback? onProfileSaved;
+
+  /// Needed only for the superadmin-only "Manage Locations" tile — null
+  /// just hides that tile (e.g. in a host build with no repository wired
+  /// up yet).
+  final EventRepository? eventRepository;
 
   /// Null when the host build has no update checking wired up (e.g. widget
   /// tests) — passed straight through to [AboutPage].
@@ -114,6 +121,16 @@ class _ProfileTabState extends State<ProfileTab> {
   void _openPrivacyPolicy() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PrivacyPolicyPage()),
+    );
+  }
+
+  void _openManageLocations() {
+    final eventRepository = widget.eventRepository;
+    if (eventRepository == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ManageLocationsPage(eventRepository: eventRepository),
+      ),
     );
   }
 
@@ -319,6 +336,19 @@ class _ProfileTabState extends State<ProfileTab> {
                 subtitle: l10n.privacyPolicyTileCaption,
                 onTap: _openPrivacyPolicy,
               ),
+              if (_profile?.isSuperadmin == true && widget.eventRepository != null) ...[
+                Divider(
+                  height: 8,
+                  color: colorScheme.onSurface.withValues(alpha: 0.08),
+                ),
+                QuickActionTile(
+                  key: const Key('profile-manage-locations-tile'),
+                  icon: FontAwesomeIcons.mapLocationDot,
+                  title: l10n.manageLocationsTile,
+                  subtitle: l10n.manageLocationsTileCaption,
+                  onTap: _openManageLocations,
+                ),
+              ],
               Divider(
                 height: 8,
                 color: colorScheme.onSurface.withValues(alpha: 0.08),

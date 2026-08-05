@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -53,9 +54,7 @@ class BarangayEvent {
     required this.startTime,
     required this.endTime,
     required this.description,
-    required this.hasAttachment,
     required this.createdAt,
-    this.attachmentType,
     this.attendanceStatus,
     this.createdByName,
     this.createdByDepartment,
@@ -65,6 +64,7 @@ class BarangayEvent {
     this.groupName,
     this.dailyOverrides = const [],
     this.colorKey,
+    this.contactNumber,
   });
 
   final String id;
@@ -73,8 +73,6 @@ class BarangayEvent {
   final DateTime startTime;
   final DateTime endTime;
   final String description;
-  final bool hasAttachment;
-  final String? attachmentType;
   final String? attendanceStatus;
   final DateTime createdAt;
   final String? createdByName;
@@ -97,6 +95,12 @@ class BarangayEvent {
   /// before this feature shipped falls back to the existing
   /// keyword-guessed tint (`_getEventTint`) wherever this is null.
   final String? colorKey;
+
+  /// Optional per-event contact phone number, shown next to "Posted By"
+  /// with a Call button — pre-filled from the poster's own profile at
+  /// creation time but editable/clearable per event; null shows no
+  /// contact row at all. See `contact_number` on `barangay_events`.
+  final String? contactNumber;
 
   /// "Name • Department", or whichever half is available; null when neither is.
   String? get creatorLabel {
@@ -153,8 +157,6 @@ class BarangayEvent {
       startTime: startTime,
       endTime: endTime,
       description: description,
-      hasAttachment: hasAttachment,
-      attachmentType: attachmentType,
       attendanceStatus: attendanceStatus ?? this.attendanceStatus,
       createdAt: createdAt,
       createdByName: createdByName,
@@ -175,8 +177,6 @@ class BarangayEvent {
       'startTime': startTime.toIso8601String(),
       'endTime': endTime.toIso8601String(),
       'description': description,
-      'hasAttachment': hasAttachment,
-      'attachmentType': attachmentType,
       'attendanceStatus': attendanceStatus,
       'createdAt': createdAt.toIso8601String(),
       'createdByName': createdByName,
@@ -187,6 +187,7 @@ class BarangayEvent {
       'groupName': groupName,
       'dailyOverrides': dailyOverrides.map((o) => o.toJson()).toList(),
       'colorKey': colorKey,
+      'contactNumber': contactNumber,
     };
   }
 
@@ -199,8 +200,6 @@ class BarangayEvent {
       'end_time': endTime.toIso8601String(),
       'day_key': dayKey.toIso8601String(),
       'description': description,
-      'has_attachment': hasAttachment,
-      'attachment_type': attachmentType,
       'attendance_status': attendanceStatus,
       'created_at': createdAt.toIso8601String(),
       'created_by_name': createdByName,
@@ -211,6 +210,7 @@ class BarangayEvent {
       'group_name': groupName,
       'daily_overrides': dailyOverrides.map((o) => o.toJson()).toList(),
       'color_key': colorKey,
+      'contact_number': contactNumber,
     };
   }
 
@@ -222,8 +222,6 @@ class BarangayEvent {
       startTime: DateTime.tryParse(json['startTime'] as String? ?? '') ?? DateTime.now(),
       endTime: DateTime.tryParse(json['endTime'] as String? ?? '') ?? DateTime.now(),
       description: json['description'] as String? ?? '',
-      hasAttachment: json['hasAttachment'] as bool? ?? false,
-      attachmentType: json['attachmentType'] as String?,
       attendanceStatus: json['attendanceStatus'] as String?,
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
       createdByName: json['createdByName'] as String?,
@@ -237,6 +235,7 @@ class BarangayEvent {
               .toList() ??
           const [],
       colorKey: json['colorKey'] as String?,
+      contactNumber: json['contactNumber'] as String?,
     );
   }
 
@@ -248,8 +247,6 @@ class BarangayEvent {
       startTime: _readDateTime(row['start_time']) ?? DateTime.now(),
       endTime: _readDateTime(row['end_time']) ?? DateTime.now(),
       description: row['description'] as String? ?? '',
-      hasAttachment: row['has_attachment'] as bool? ?? false,
-      attachmentType: row['attachment_type'] as String?,
       attendanceStatus: row['attendance_status'] as String?,
       createdAt: _readDateTime(row['created_at']) ?? DateTime.now(),
       createdByName: row['created_by_name'] as String?,
@@ -263,6 +260,7 @@ class BarangayEvent {
               .toList() ??
           const [],
       colorKey: row['color_key'] as String?,
+      contactNumber: row['contact_number'] as String?,
     );
   }
 
@@ -426,6 +424,60 @@ class GroupJoinResult {
   final GroupJoinStatus status;
 }
 
+/// A superadmin-curated venue (e.g. "Barangay Hall", "Covered Court")
+/// offered as a quick pick in Add Event's Location field — see
+/// [EventRepository.listLguLocations]. Anyone signed in can read the
+/// list; only a superadmin can add or remove entries.
+class LguLocation {
+  const LguLocation({required this.id, required this.name});
+
+  final String id;
+  final String name;
+}
+
+/// One uploaded file attached to an event (a pubmat, photo, PDF, etc.) —
+/// see [EventRepository.listEventAttachments]. An event can have several;
+/// each is stored in the private `event-attachments` Storage bucket at
+/// [storagePath], and only readable by whoever could already see the
+/// event itself (see the `event_attachments` RLS policy).
+class EventAttachment {
+  const EventAttachment({
+    required this.id,
+    required this.eventId,
+    required this.storagePath,
+    required this.fileName,
+    this.mimeType,
+    this.sizeBytes,
+  });
+
+  final String id;
+  final String eventId;
+  final String storagePath;
+  final String fileName;
+  final String? mimeType;
+  final int? sizeBytes;
+
+  /// Whether this can be shown as an inline in-app preview — see
+  /// [EventRepository.downloadEventAttachmentBytes].
+  bool get isImage => mimeType?.startsWith('image/') == true;
+
+  factory EventAttachment.fromSupabase(Map<String, dynamic> row) {
+    return EventAttachment(
+      id: row['id'] as String,
+      eventId: row['event_id'] as String,
+      storagePath: row['storage_path'] as String,
+      fileName: row['file_name'] as String,
+      mimeType: row['mime_type'] as String?,
+      // PostgREST serializes a bigint (size_bytes' column type) as a JSON
+      // *string*, not a number — precision loss protection for values a
+      // JS double can't represent exactly. `as int?` would throw here;
+      // parsing via .toString() handles either shape PostgREST might hand
+      // back.
+      sizeBytes: row['size_bytes'] == null ? null : int.parse(row['size_bytes'].toString()),
+    );
+  }
+}
+
 abstract class EventRepository {
   Stream<List<BarangayEvent>> watchAllEvents();
 
@@ -437,6 +489,14 @@ abstract class EventRepository {
   /// newly-visible historical events for that group, which a long-lived
   /// realtime stream never backfills on its own.
   Stream<void> watchMyGroupMemberships(String userId);
+
+  /// Direct by-id lookup, independent of whatever [watchAllEvents] has
+  /// emitted so far — used for opening a specific event from a tapped
+  /// push notification, which can arrive before the live stream's first
+  /// emission (cold start) or reference an event not yet in the locally
+  /// cached list. Null if the event doesn't exist or isn't visible to
+  /// the caller (same RLS rules as [watchAllEvents]).
+  Future<BarangayEvent?> getEventById(String id);
 
   Future<void> addEvent(BarangayEvent event);
 
@@ -519,6 +579,51 @@ abstract class EventRepository {
   /// as a fallback for an abandoned group.
   Future<void> transferGroupOwnership(String groupId, String newOwnerUserId);
 
+  /// Quick-pick venues for Add Event's Location field, alphabetical.
+  /// Readable by anyone signed in.
+  Future<List<LguLocation>> listLguLocations();
+
+  /// Superadmin-only server-side (see lgu_locations RLS policy).
+  Future<void> addLguLocation(String name);
+
+  /// Superadmin-only server-side.
+  Future<void> deleteLguLocation(String id);
+
+  /// Every file attached to [eventId] — visible to anyone who could
+  /// already see the event itself (see the `event_attachments` RLS
+  /// policy), regardless of who uploaded it.
+  Future<List<EventAttachment>> listEventAttachments(String eventId);
+
+  /// Uploads [bytes] to the private `event-attachments` Storage bucket
+  /// and records it against [eventId] — creator-only server-side (see the
+  /// `event_attachments` insert policy). [mimeType] is best-effort,
+  /// derived from the picked file's extension by the caller.
+  Future<void> uploadEventAttachment(
+    String eventId,
+    String fileName,
+    Uint8List bytes, {
+    String? mimeType,
+  });
+
+  /// Removes [attachment] from both Storage and the `event_attachments`
+  /// row — creator-only server-side.
+  Future<void> deleteEventAttachment(EventAttachment attachment);
+
+  /// A time-limited URL to actually view/download [attachment] — the
+  /// bucket is private, so a plain public URL never works. Used only for
+  /// non-image attachments, opened externally via `launchUrl`; an image
+  /// is shown in-app instead (see [downloadEventAttachmentBytes]) so no
+  /// Storage URL — signed or not — is ever surfaced to the user.
+  Future<String> getAttachmentDownloadUrl(EventAttachment attachment);
+
+  /// Raw bytes for [attachment], fetched through the same authenticated
+  /// client (and the same RLS policy) as [listEventAttachments] — used to
+  /// render an image inline/full-screen without ever generating or
+  /// showing a Storage URL. Only meant for [EventAttachment.isImage]
+  /// attachments; a large document should go through
+  /// [getAttachmentDownloadUrl] instead.
+  Future<Uint8List> downloadEventAttachmentBytes(EventAttachment attachment);
+
   Future<void> dispose();
 }
 
@@ -534,6 +639,16 @@ class MemoryEventRepository implements EventRepository {
   final StreamController<void> _membershipChanges =
       StreamController<void>.broadcast();
   List<BarangayEvent> _events;
+  final List<LguLocation> _lguLocations = [
+    const LguLocation(id: 'loc-1', name: 'Barangay Hall'),
+    const LguLocation(id: 'loc-2', name: 'Covered Court'),
+    const LguLocation(id: 'loc-3', name: 'Barangay Health Center'),
+    const LguLocation(id: 'loc-4', name: 'Conference Room'),
+  ];
+  int _locationCounter = 0;
+  final List<EventAttachment> _attachments = [];
+  final Map<String, Uint8List> _attachmentBytes = {};
+  int _attachmentCounter = 0;
 
   Future<void> initialize() async {}
 
@@ -545,6 +660,14 @@ class MemoryEventRepository implements EventRepository {
 
   @override
   Stream<void> watchMyGroupMemberships(String userId) => _membershipChanges.stream;
+
+  @override
+  Future<BarangayEvent?> getEventById(String id) async {
+    for (final event in _events) {
+      if (event.id == id) return event;
+    }
+    return null;
+  }
 
   @override
   Future<void> addEvent(BarangayEvent event) async {
@@ -912,6 +1035,66 @@ class MemoryEventRepository implements EventRepository {
   }
 
   @override
+  Future<List<LguLocation>> listLguLocations() async {
+    final sorted = [..._lguLocations]..sort((a, b) => a.name.compareTo(b.name));
+    return sorted;
+  }
+
+  @override
+  Future<void> addLguLocation(String name) async {
+    _locationCounter++;
+    _lguLocations.add(LguLocation(id: 'loc-new-$_locationCounter', name: name));
+  }
+
+  @override
+  Future<void> deleteLguLocation(String id) async {
+    _lguLocations.removeWhere((location) => location.id == id);
+  }
+
+  @override
+  Future<List<EventAttachment>> listEventAttachments(String eventId) async {
+    return _attachments.where((a) => a.eventId == eventId).toList();
+  }
+
+  @override
+  Future<void> uploadEventAttachment(
+    String eventId,
+    String fileName,
+    Uint8List bytes, {
+    String? mimeType,
+  }) async {
+    _attachmentCounter++;
+    final id = 'attachment-$_attachmentCounter';
+    _attachments.add(EventAttachment(
+      id: id,
+      eventId: eventId,
+      storagePath: '$eventId/$_attachmentCounter-$fileName',
+      fileName: fileName,
+      mimeType: mimeType,
+      sizeBytes: bytes.length,
+    ));
+    _attachmentBytes[id] = bytes;
+  }
+
+  @override
+  Future<void> deleteEventAttachment(EventAttachment attachment) async {
+    _attachments.removeWhere((a) => a.id == attachment.id);
+    _attachmentBytes.remove(attachment.id);
+  }
+
+  @override
+  Future<String> getAttachmentDownloadUrl(EventAttachment attachment) async {
+    return 'https://example.invalid/${attachment.storagePath}';
+  }
+
+  @override
+  Future<Uint8List> downloadEventAttachmentBytes(EventAttachment attachment) async {
+    final bytes = _attachmentBytes[attachment.id];
+    if (bytes == null) throw Exception('Attachment bytes not found');
+    return bytes;
+  }
+
+  @override
   Future<void> dispose() async {
     await _updates.close();
     await _membershipChanges.close();
@@ -963,6 +1146,13 @@ class SupabaseEventRepository implements EventRepository {
       }
       return true;
     });
+  }
+
+  @override
+  Future<BarangayEvent?> getEventById(String id) async {
+    final row = await _client.from(tableName).select().eq('id', id).maybeSingle();
+    if (row == null) return null;
+    return BarangayEvent.fromSupabase(row);
   }
 
   @override
@@ -1269,6 +1459,69 @@ class SupabaseEventRepository implements EventRepository {
   }
 
   @override
+  Future<List<LguLocation>> listLguLocations() async {
+    final rows = await _client.from('lgu_locations').select('id, name').order('name');
+    return rows
+        .map((row) => LguLocation(id: row['id'] as String, name: row['name'] as String))
+        .toList();
+  }
+
+  @override
+  Future<void> addLguLocation(String name) async {
+    await _client.from('lgu_locations').insert({'name': name});
+  }
+
+  @override
+  Future<void> deleteLguLocation(String id) async {
+    await _client.from('lgu_locations').delete().eq('id', id);
+  }
+
+  @override
+  Future<List<EventAttachment>> listEventAttachments(String eventId) async {
+    final rows = await _client
+        .from('event_attachments')
+        .select()
+        .eq('event_id', eventId)
+        .order('created_at');
+    return rows.map((row) => EventAttachment.fromSupabase(row)).toList();
+  }
+
+  @override
+  Future<void> uploadEventAttachment(
+    String eventId,
+    String fileName,
+    Uint8List bytes, {
+    String? mimeType,
+  }) async {
+    final storagePath = '$eventId/${DateTime.now().microsecondsSinceEpoch}-$fileName';
+    await _client.storage.from('event-attachments').uploadBinary(storagePath, bytes);
+    await _client.from('event_attachments').insert({
+      'event_id': eventId,
+      'storage_path': storagePath,
+      'file_name': fileName,
+      'mime_type': mimeType,
+      'size_bytes': bytes.length,
+      'uploaded_by': _client.auth.currentUser?.id,
+    });
+  }
+
+  @override
+  Future<void> deleteEventAttachment(EventAttachment attachment) async {
+    await _client.storage.from('event-attachments').remove([attachment.storagePath]);
+    await _client.from('event_attachments').delete().eq('id', attachment.id);
+  }
+
+  @override
+  Future<String> getAttachmentDownloadUrl(EventAttachment attachment) async {
+    return _client.storage.from('event-attachments').createSignedUrl(attachment.storagePath, 3600);
+  }
+
+  @override
+  Future<Uint8List> downloadEventAttachmentBytes(EventAttachment attachment) {
+    return _client.storage.from('event-attachments').download(attachment.storagePath);
+  }
+
+  @override
   Future<void> dispose() async {
   }
 }
@@ -1292,8 +1545,6 @@ List<BarangayEvent> _seedEvents() {
       startTime: DateTime(2026, 6, 29, 15, 0),
       endTime: DateTime(2026, 6, 29, 17, 0),
       description: 'Monthly barangay assembly to discuss fiesta preparations',
-      hasAttachment: true,
-      attachmentType: 'application/pdf',
       createdAt: DateTime(2026, 6, 1),
       createdByName: 'Juan Dela Cruz',
       createdByDepartment: "Mayor's Office",
@@ -1307,8 +1558,6 @@ List<BarangayEvent> _seedEvents() {
       startTime: DateTime(2026, 6, 29, 8, 0),
       endTime: DateTime(2026, 6, 29, 12, 0),
       description: 'Inter-purok basketball tournament - bring your own ball',
-      hasAttachment: true,
-      attachmentType: 'image/jpeg',
       createdAt: DateTime(2026, 6, 1),
     ),
     BarangayEvent(
@@ -1318,7 +1567,6 @@ List<BarangayEvent> _seedEvents() {
       startTime: DateTime(2026, 6, 30, 9, 0),
       endTime: DateTime(2026, 6, 30, 12, 0),
       description: 'Free blood pressure and glucose monitoring',
-      hasAttachment: false,
       createdAt: DateTime(2026, 6, 1),
       createdByName: 'Maria Santos',
       createdByDepartment: 'HRMO',
@@ -1339,7 +1587,6 @@ List<BarangayEvent> _seedEvents() {
       startTime: DateTime(today.year, today.month, today.day, 10, 0),
       endTime: DateTime(today.year, today.month, today.day, 11, 0),
       description: 'Weekly coordination meeting with department heads',
-      hasAttachment: false,
       createdAt: DateTime(2026, 7, 8),
       createdByName: 'Juan Dela Cruz',
       createdByDepartment: "Mayor's Office",
@@ -1355,8 +1602,6 @@ List<BarangayEvent> _seedEvents() {
       startTime: DateTime(2026, 7, 5, 16, 0),
       endTime: DateTime(2026, 7, 5, 18, 0),
       description: 'Practice for upcoming barangay fiesta parade',
-      hasAttachment: true,
-      attachmentType: 'video/mp4',
       createdAt: DateTime(2026, 6, 1),
     ),
   ];

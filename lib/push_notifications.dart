@@ -50,9 +50,17 @@ abstract class PushNotificationService {
   /// (see send-event-reminders), passing the reminded-about event's id —
   /// the caller uses it to show an in-app toast on top of the system
   /// notification, matching the existing "new event posted" toast.
+  ///
+  /// [onNotificationTapped] fires with the tapped notification's event id
+  /// when the user actually taps a system notification — whether the app
+  /// was backgrounded (`onMessageOpenedApp`) or fully cold-started from it
+  /// (`getInitialMessage`), unlike [onEventReminder]/[onAppUpdateAvailable]
+  /// which only fire for a push arriving while already in the foreground.
+  /// The caller uses it to open that event's detail sheet directly.
   Future<void> initialize({
     void Function()? onAppUpdateAvailable,
     void Function(String eventId)? onEventReminder,
+    void Function(String eventId)? onNotificationTapped,
   });
 
   /// Subscribes to [publicEventsTopic] plus one topic per id in [groupIds],
@@ -95,14 +103,17 @@ class FirebasePushNotificationService implements PushNotificationService {
   String? _subscribedUserId;
   void Function()? _onAppUpdateAvailable;
   void Function(String eventId)? _onEventReminder;
+  void Function(String eventId)? _onNotificationTapped;
 
   @override
   Future<void> initialize({
     void Function()? onAppUpdateAvailable,
     void Function(String eventId)? onEventReminder,
+    void Function(String eventId)? onNotificationTapped,
   }) async {
     _onAppUpdateAvailable = onAppUpdateAvailable;
     _onEventReminder = onEventReminder;
+    _onNotificationTapped = onNotificationTapped;
     if (_initialized) return;
     _initialized = true;
 
@@ -125,6 +136,22 @@ class FirebasePushNotificationService implements PushNotificationService {
     // app is in front. The subscription is intentionally left unowned: it
     // should live for as long as the process does, same as this service.
     FirebaseMessaging.onMessage.listen(_showForegroundNotification);
+
+    // Tapping a notification while the app is backgrounded (not fully
+    // killed) fires this — the payload's `data` survives the tap same as
+    // it does in the foreground.
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+
+    // A tap that cold-starts the app (process wasn't running at all)
+    // doesn't go through onMessageOpenedApp — this is the one-shot way to
+    // recover that same tap after initialize() runs.
+    final initialMessage = await _messaging.getInitialMessage();
+    if (initialMessage != null) _handleNotificationTap(initialMessage);
+  }
+
+  void _handleNotificationTap(RemoteMessage message) {
+    final eventId = message.data['eventId'] as String?;
+    if (eventId != null) _onNotificationTapped?.call(eventId);
   }
 
   Future<void> _showForegroundNotification(RemoteMessage message) async {
@@ -188,6 +215,7 @@ class NoopPushNotificationService implements PushNotificationService {
   Future<void> initialize({
     void Function()? onAppUpdateAvailable,
     void Function(String eventId)? onEventReminder,
+    void Function(String eventId)? onNotificationTapped,
   }) async {}
 
   @override

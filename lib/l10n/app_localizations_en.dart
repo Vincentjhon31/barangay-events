@@ -77,6 +77,44 @@ class AppLocalizationsEn extends AppLocalizations {
   String get authFailedGeneric => 'Authentication failed.';
 
   @override
+  String get forgotPasswordLink => 'Forgot password?';
+
+  @override
+  String get forgotPasswordTitle => 'Reset your password';
+
+  @override
+  String get forgotPasswordSubtitle =>
+      'Enter your account\'s email and we\'ll send you a link to set a new password.';
+
+  @override
+  String get forgotPasswordSendButton => 'Send reset link';
+
+  @override
+  String get forgotPasswordSent =>
+      'Check your email for the reset link. Didn\'t get it? You can send it again.';
+
+  @override
+  String get resetPasswordTitle => 'Set a new password';
+
+  @override
+  String get resetPasswordSubtitle => 'Choose a new password for your account.';
+
+  @override
+  String get resetPasswordNewLabel => 'New password';
+
+  @override
+  String get resetPasswordConfirmLabel => 'Confirm new password';
+
+  @override
+  String get resetPasswordSaveButton => 'Save new password';
+
+  @override
+  String get resetPasswordSuccess => 'Password updated. You\'re signed in.';
+
+  @override
+  String get resetPasswordMismatch => 'Passwords do not match.';
+
+  @override
   String get tabCalendar => 'Calendar';
 
   @override
@@ -99,6 +137,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get edit => 'Edit';
+
+  @override
+  String get addButton => 'Add';
 
   @override
   String get settingsTitle => 'Settings';
@@ -542,6 +583,81 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get locationHint => 'e.g. Barangay Hall';
+
+  @override
+  String get locationOtherOption => 'Other (type manually)';
+
+  @override
+  String get locationCustomLabel => 'Custom location';
+
+  @override
+  String get contactNumberLabel => 'Contact number (optional)';
+
+  @override
+  String get contactNumberHint => 'e.g. 0912 345 6789';
+
+  @override
+  String get detailContact => 'Contact';
+
+  @override
+  String get callButtonTooltip => 'Call';
+
+  @override
+  String get callLinkError => 'Could not open the phone dialer.';
+
+  @override
+  String get addToGoogleCalendar => 'Add to Google Calendar';
+
+  @override
+  String get googleCalendarError => 'Could not open Google Calendar.';
+
+  @override
+  String get attachmentsSectionTitle => 'Attachments';
+
+  @override
+  String get attachmentOpenError => 'Could not open this attachment.';
+
+  @override
+  String get addAttachmentButton => 'Add photos or files';
+
+  @override
+  String attachmentTooLarge(String name) {
+    return '\"$name\" is too large (max 20 MB).';
+  }
+
+  @override
+  String attachmentLimitReached(int max) {
+    return 'You can attach up to $max files per event.';
+  }
+
+  @override
+  String attachmentUploadError(String name) {
+    return 'Could not upload \"$name\".';
+  }
+
+  @override
+  String get attachmentPickError =>
+      'Could not open the file picker. Please try again.';
+
+  @override
+  String get manageLocationsTile => 'Manage Locations';
+
+  @override
+  String get manageLocationsTileCaption =>
+      'LGU venues offered as quick picks in Add Event';
+
+  @override
+  String get manageLocationsTitle => 'Manage Locations';
+
+  @override
+  String get manageLocationsSubtitle =>
+      'Superadmin-only. Shown as quick picks in Add Event\'s Location field for every account.';
+
+  @override
+  String get manageLocationsEmpty => 'No locations yet. Add one above.';
+
+  @override
+  String get locationNameLabel => 'Location name';
 
   @override
   String get additionalDetailsLabel => 'Additional Details (optional)';

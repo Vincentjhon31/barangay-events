@@ -1,5 +1,6 @@
 ﻿import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:typed_data';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -16,6 +17,8 @@ import 'package:window_manager/window_manager.dart';
 
 import 'add_event_page.dart';
 import 'app_update_service.dart';
+import 'app_update_service_factory.dart';
+import 'attachment_image_viewer.dart';
 import 'auth_service.dart';
 import 'day_detail_page.dart';
 import 'day_timeline_view.dart';
@@ -27,6 +30,7 @@ import 'liquid_glass_components.dart';
 import 'numeric_keypad.dart';
 import 'profile_pages.dart';
 import 'push_notifications.dart';
+import 'reset_password_page.dart';
 import 'responsive_scale.dart';
 import 'theme_controller.dart';
 
@@ -65,7 +69,10 @@ Future<void> main() async {
   runApp(
     BarangayCalendarApp(
       themeController: themeController,
-      updateService: GitHubReleaseUpdateService(
+      // Resolves to the GitHub-release checker on io platforms and to null on
+      // web, where there's no app binary to update (and no dart:io to check
+      // with). Every updateService call site is already null-safe.
+      updateService: createDefaultUpdateService(
         repositoryOwner: 'Vincentjhon31',
         repositoryName: 'barangay-events',
       ),
@@ -126,6 +133,15 @@ class _BarangayCalendarAppState extends State<BarangayCalendarApp> {
   late final Future<AppAuthService> _authServiceFuture;
   AppAuthService? _resolvedAuthService;
   _PreAuthChoice _preAuthChoice = _PreAuthChoice.pending;
+  StreamSubscription<void>? _recoverySubscription;
+
+  /// True from the moment a "Forgot password?" reset link's
+  /// AuthChangeEvent.passwordRecovery fires (see
+  /// AppAuthService.passwordRecoveryEvents) until ResetPasswordPage's own
+  /// save succeeds — overrides the normal signed-in/signed-out routing
+  /// below regardless of [authStateChanges], since a recovery session
+  /// still reads as "signed in" there.
+  bool _inPasswordRecovery = false;
 
   @override
   void initState() {
@@ -133,14 +149,17 @@ class _BarangayCalendarAppState extends State<BarangayCalendarApp> {
     _authServiceFuture = widget.authServiceFactory?.call() ??
         Future.value(SupabaseAuthService(Supabase.instance.client));
     unawaited(_authServiceFuture.then((authService) {
-      if (mounted) {
-        _resolvedAuthService = authService;
-      }
+      if (!mounted) return;
+      _resolvedAuthService = authService;
+      _recoverySubscription = authService.passwordRecoveryEvents.listen((_) {
+        if (mounted) setState(() => _inPasswordRecovery = true);
+      });
     }));
   }
 
   @override
   void dispose() {
+    unawaited(_recoverySubscription?.cancel());
     unawaited(_resolvedAuthService?.dispose());
     super.dispose();
   }
@@ -184,6 +203,13 @@ class _BarangayCalendarAppState extends State<BarangayCalendarApp> {
               if (authService == null) {
                 return const Scaffold(
                   body: Center(child: Text('Could not load authentication.')),
+                );
+              }
+
+              if (_inPasswordRecovery) {
+                return ResetPasswordPage(
+                  authService: authService,
+                  onDone: () => setState(() => _inPasswordRecovery = false),
                 );
               }
 
@@ -525,6 +551,77 @@ class _SignInScreenState extends State<SignInScreen> {
     }
   }
 
+  /// A small self-contained dialog (its own busy/sent state, independent
+  /// of [_isSubmitting]) rather than a dedicated page — "type an email,
+  /// send a link" doesn't need its own navigation stack entry. Re-tappable
+  /// as-is for a resend: the dialog doesn't auto-close after sending, so
+  /// tapping "Send reset link" again just re-sends.
+  Future<void> _openForgotPasswordDialog() async {
+    final emailController = TextEditingController(text: _emailController.text.trim());
+    var sending = false;
+    var sent = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          final l10n = AppLocalizations.of(dialogContext)!;
+          return AlertDialog(
+            title: Text(l10n.forgotPasswordTitle),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(l10n.forgotPasswordSubtitle),
+                const SizedBox(height: 14),
+                TextField(
+                  key: const Key('forgot-password-email-field'),
+                  controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(labelText: l10n.emailLabel),
+                ),
+                if (sent) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    l10n.forgotPasswordSent,
+                    style: TextStyle(color: Theme.of(dialogContext).colorScheme.primary),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text(l10n.cancel),
+              ),
+              FilledButton(
+                key: const Key('forgot-password-send-button'),
+                onPressed: sending
+                    ? null
+                    : () async {
+                        final email = emailController.text.trim();
+                        if (email.isEmpty) return;
+                        setDialogState(() => sending = true);
+                        try {
+                          await widget.authService.sendPasswordResetEmail(email);
+                          setDialogState(() {
+                            sending = false;
+                            sent = true;
+                          });
+                        } catch (_) {
+                          setDialogState(() => sending = false);
+                        }
+                      },
+                child: Text(sending ? l10n.pleaseWait : l10n.forgotPasswordSendButton),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    emailController.dispose();
+  }
+
   Widget _buildGlassField({
     required TextEditingController controller,
     required String label,
@@ -573,24 +670,6 @@ class _SignInScreenState extends State<SignInScreen> {
       body: Stack(
         children: [
           const Positioned.fill(child: LiquidGlassBackdrop()),
-          if (widget.onBack != null)
-            Positioned(
-              top: 8,
-              left: 8,
-              child: SafeArea(
-                child: InkWell(
-                  key: const Key('signin-back-to-welcome'),
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: widget.onBack,
-                  child: IconBadge(
-                    icon: FontAwesomeIcons.chevronLeft,
-                    tint: colorScheme.primary,
-                    size: 44,
-                    iconSize: 16,
-                  ),
-                ),
-              ),
-            ),
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
@@ -678,6 +757,19 @@ class _SignInScreenState extends State<SignInScreen> {
                               icon: FontAwesomeIcons.lock,
                               obscureText: true,
                             ),
+                            if (!_isSignUpMode)
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  TextButton(
+                                    key: const Key('signin-forgot-password'),
+                                    onPressed: _isSubmitting
+                                        ? null
+                                        : () => unawaited(_openForgotPasswordDialog()),
+                                    child: Text(l10n.forgotPasswordLink),
+                                  ),
+                                ],
+                              ),
                             if (_isSignUpMode) ...[
                               const SizedBox(height: 14),
                               _buildGlassField(
@@ -729,6 +821,30 @@ class _SignInScreenState extends State<SignInScreen> {
               ),
             ),
           ),
+          // Painted after (on top of) the scrollable form above, so it
+          // stays reliably tappable regardless of that content's height —
+          // a Positioned overlay button ordered *before* a same-Stack
+          // Scrollable can end up shadowed by the Scrollable's own
+          // full-bounds hit-testable area once its content grows taller
+          // than the viewport.
+          if (widget.onBack != null)
+            Positioned(
+              top: 8,
+              left: 8,
+              child: SafeArea(
+                child: InkWell(
+                  key: const Key('signin-back-to-welcome'),
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: widget.onBack,
+                  child: IconBadge(
+                    icon: FontAwesomeIcons.chevronLeft,
+                    tint: colorScheme.primary,
+                    size: 44,
+                    iconSize: 16,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -1204,6 +1320,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       await widget.pushNotificationService.initialize(
         onAppUpdateAvailable: () => unawaited(_checkForUpdates()),
         onEventReminder: _handleReminderPush,
+        onNotificationTapped: (eventId) => unawaited(_openEventById(eventId)),
       );
     } catch (_) {
       // Firebase not configured yet, or the user denied the permission —
@@ -1309,6 +1426,25 @@ class _CalendarScreenState extends State<CalendarScreen> {
       }
     }
     _enqueueNewEventNotice(_NewEventNotice.reminder(event));
+  }
+
+  /// Opens [eventId]'s detail sheet in response to a tapped push
+  /// notification (see PushNotificationService.onNotificationTapped) —
+  /// checks the already-loaded [_events] list first (the common case,
+  /// no round-trip needed), then falls back to a direct repository fetch
+  /// for an event not yet in that list (e.g. a cold-started app whose
+  /// event stream hasn't emitted yet).
+  Future<void> _openEventById(String eventId) async {
+    BarangayEvent? event;
+    for (final candidate in _events) {
+      if (candidate.id == eventId) {
+        event = candidate;
+        break;
+      }
+    }
+    event ??= await widget.eventRepository.getEventById(eventId);
+    if (event == null || !mounted) return;
+    await _showEventDetails(event);
   }
 
   void _enqueueNewEventNotice(_NewEventNotice notice) {
@@ -1486,6 +1622,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
     if (!launched && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open the update link.')),
+      );
+    }
+  }
+
+  Future<void> _callNumber(String number) async {
+    final l10n = AppLocalizations.of(context)!;
+    final uri = Uri.parse('tel:$number');
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.callLinkError)),
       );
     }
   }
@@ -1675,6 +1822,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           themeController: widget.themeController,
                           onProfileSaved: () => unawaited(_loadUserProfile()),
                           updateService: widget.updateService,
+                          eventRepository: widget.eventRepository,
                         )
                       else
                         const SizedBox.shrink(),
@@ -1733,6 +1881,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           // and guest are separate, independent flags (see
           // _isReadOnlySession).
           kiosk: _isReadOnlySession,
+          eventFilter: (event) => _passesTypeFilter(event) && _passesCalendarSearch(event),
         ),
       ),
     );
@@ -1760,6 +1909,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
       // Groups unavailable (e.g. migration not run) — Add Event still works
       // for public/personal events.
     }
+    List<LguLocation> lguLocations = const [];
+    try {
+      lguLocations = await widget.eventRepository.listLguLocations();
+    } catch (_) {
+      // Falls back to a plain text field — see AddEventPage.lguLocations.
+    }
     if (!mounted) return;
 
     final result = await Navigator.of(context).push<AddEventResult>(
@@ -1767,6 +1922,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         builder: (_) => AddEventPage(
           eventRepository: widget.eventRepository,
           myGroups: myGroups,
+          lguLocations: lguLocations,
           initialDate: initialDate,
           creatorProfile: _userProfile ?? widget.authService?.currentUser,
           findOverlappingEvents: (date, start, end) =>
@@ -1805,6 +1961,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
       // Groups unavailable (e.g. migration not run) — editing a
       // Public/Personal event still works.
     }
+    List<LguLocation> lguLocations = const [];
+    try {
+      lguLocations = await widget.eventRepository.listLguLocations();
+    } catch (_) {
+      // Falls back to a plain text field — see AddEventPage.lguLocations.
+    }
     if (!mounted) return;
 
     final result = await Navigator.of(context).push<AddEventResult>(
@@ -1812,6 +1974,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         builder: (_) => AddEventPage(
           eventRepository: widget.eventRepository,
           myGroups: myGroups,
+          lguLocations: lguLocations,
           initialDate: event.startTime,
           existingEvent: event,
           creatorProfile: _userProfile ?? widget.authService?.currentUser,
@@ -3389,6 +3552,40 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  /// Hands the event to Google Calendar's "create event" template, which opens
+  /// pre-filled and lets the user confirm before saving. Deliberately a plain
+  /// URL rather than an OAuth/API integration — it needs no Google sign-in on
+  /// our side, no stored tokens, and works on Android (opens the Google
+  /// Calendar app), web, and desktop alike.
+  Future<void> _addToGoogleCalendar(BarangayEvent event) async {
+    final l10n = AppLocalizations.of(context)!;
+    // Google wants UTC "basic" ISO-8601 for both ends, e.g. 20260812T010000Z.
+    String stamp(DateTime t) =>
+        DateFormat("yyyyMMdd'T'HHmmss'Z'").format(t.toUtc());
+    final details = [
+      if (event.description.isNotEmpty) event.description,
+      if (event.creatorLabel != null)
+        '${l10n.detailPostedBy}: ${event.creatorLabel}',
+      if (event.contactNumber != null && event.contactNumber!.trim().isNotEmpty)
+        '${l10n.detailContact}: ${event.contactNumber}',
+    ].join('\n\n');
+    // Uri.https percent-encodes the values for us — titles/locations here
+    // routinely contain spaces, "&", and Filipino accented characters.
+    final uri = Uri.https('calendar.google.com', '/calendar/render', {
+      'action': 'TEMPLATE',
+      'text': event.title,
+      'dates': '${stamp(event.startTime)}/${stamp(event.endTime)}',
+      if (details.isNotEmpty) 'details': details,
+      if (event.location.isNotEmpty) 'location': event.location,
+    });
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.googleCalendarError)),
+      );
+    }
+  }
+
   Future<void> _showEventDetails(BarangayEvent event) async {
     final l10n = AppLocalizations.of(context)!;
     final startTime = event.startTime;
@@ -3420,6 +3617,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
           tint: eventTint,
           label: l10n.detailPostedBy,
           value: event.creatorLabel!,
+        ),
+      if (event.contactNumber != null && event.contactNumber!.trim().isNotEmpty)
+        _DetailInfoRow(
+          icon: FontAwesomeIcons.phone,
+          tint: eventTint,
+          label: l10n.detailContact,
+          value: event.contactNumber!,
+          trailing: IconButton(
+            tooltip: l10n.callButtonTooltip,
+            onPressed: () => unawaited(_callNumber(event.contactNumber!)),
+            icon: FaIcon(FontAwesomeIcons.phoneVolume, size: 16, color: eventTint),
+          ),
         ),
       if (event.eventType == EventType.shared)
         _GroupInfoSection(
@@ -3461,12 +3670,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   onPressed: () => Navigator.pop(context),
                 ),
                 actions: [
-                  if (!_kioskModeActive)
+                  // Both hand off to another app, so both stay behind the same
+                  // kiosk guard that keeps a shared device inside this app.
+                  if (!_kioskModeActive) ...[
+                    IconButton(
+                      tooltip: l10n.addToGoogleCalendar,
+                      icon: const FaIcon(FontAwesomeIcons.calendarPlus, size: 18),
+                      onPressed: () => unawaited(_addToGoogleCalendar(event)),
+                    ),
                     IconButton(
                       tooltip: l10n.shareEvent,
                       icon: const FaIcon(FontAwesomeIcons.shareNodes, size: 18),
                       onPressed: () => unawaited(_shareEvent(event)),
                     ),
+                  ],
                 ],
               ),
               // Event details content
@@ -3567,68 +3784,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         const SizedBox(height: 16),
                       ],
 
-                      // Attachment section (if available)
-                      if (event.hasAttachment) ...[
-                        GlassPanel(
-                          padding: const EdgeInsets.all(16),
-                          tint: eventTint,
-                          tintAlpha: 0.12,
-                          child: Row(
-                            children: [
-                              IconBadge(
-                                icon: _getFileIcon(event.attachmentType ??
-                                    'application/octet-stream'),
-                                tint: eventTint,
-                                size: 38,
-                                iconSize: 15,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      l10n.detailAttachment,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelSmall
-                                          ?.copyWith(
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .onSurfaceVariant,
-                                          ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      _getFileTypeName(event.attachmentType ??
-                                          'application/octet-stream'),
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              // Real download isn't built yet — an honestly
-                              // disabled button beats one that pretends to
-                              // work.
-                              OutlinedButton.icon(
-                                onPressed: null,
-                                icon: const FaIcon(
-                                  FontAwesomeIcons.download,
-                                  size: 14,
-                                ),
-                                label: Text(l10n.comingSoon),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                      ],
+                      // Attachments (loaded on demand — see
+                      // _EventAttachmentsSection).
+                      _EventAttachmentsSection(
+                        eventId: event.id,
+                        repository: widget.eventRepository,
+                        tint: eventTint,
+                        iconFor: _getFileIcon,
+                      ),
 
                       // Edit (creator, or an admin of the event's group)
                       // and Delete (creator only) — Edit is the far more
@@ -3691,20 +3854,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
       ),
     );
-  }
-
-  String _getFileTypeName(String mimeType) {
-    final l10n = AppLocalizations.of(context)!;
-    if (mimeType.contains('pdf')) return l10n.fileTypePdf;
-    if (mimeType.contains('image')) return l10n.fileTypeImage;
-    if (mimeType.contains('video')) return l10n.fileTypeVideo;
-    if (mimeType.contains('word') || mimeType.contains('document')) {
-      return l10n.fileTypeWord;
-    }
-    if (mimeType.contains('sheet') || mimeType.contains('spreadsheet')) {
-      return l10n.fileTypeSpreadsheet;
-    }
-    return l10n.detailAttachment;
   }
 
   Widget _buildEventCard(BarangayEvent event) {
@@ -3826,31 +3975,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       style: Theme.of(context).textTheme.bodySmall,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                  if (event.hasAttachment) ...[
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        FaIcon(
-                          _getFileIcon(event.attachmentType ??
-                              'application/octet-stream'),
-                          size: 14,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            l10n.attachmentAvailable,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
-                        ),
-                      ],
                     ),
                   ],
                 ],
@@ -4140,6 +4264,7 @@ class _DetailInfoRow extends StatelessWidget {
     required this.label,
     required this.value,
     this.subtitle,
+    this.trailing,
   });
 
   final FaIconData icon;
@@ -4150,6 +4275,10 @@ class _DetailInfoRow extends StatelessWidget {
   /// content — see [_GroupInfoSection] — never shifts the layout once it
   /// resolves.
   final String? subtitle;
+
+  /// Optional trailing action, e.g. a Call button on the Contact row —
+  /// null for every other row.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -4191,6 +4320,210 @@ class _DetailInfoRow extends StatelessWidget {
             ],
           ),
         ),
+        if (trailing != null) trailing!,
+      ],
+    );
+  }
+}
+
+/// Loads and shows [eventId]'s attached files on demand (not part of the
+/// already-fetched event list, since most events have none and fetching
+/// eagerly for every card would be wasted work) — tapping one opens a
+/// signed download URL the same way the Contact row's Call button
+/// launches a `tel:` URL. Stays hidden entirely while empty/loading,
+/// same "fail quiet" treatment as [_GroupInfoSection]'s member count.
+class _EventAttachmentsSection extends StatefulWidget {
+  const _EventAttachmentsSection({
+    required this.eventId,
+    required this.repository,
+    required this.tint,
+    required this.iconFor,
+  });
+
+  final String eventId;
+  final EventRepository repository;
+  final Color tint;
+  final FaIconData Function(String mimeType) iconFor;
+
+  @override
+  State<_EventAttachmentsSection> createState() => _EventAttachmentsSectionState();
+}
+
+class _EventAttachmentsSectionState extends State<_EventAttachmentsSection> {
+  List<EventAttachment>? _attachments;
+  String? _openingId;
+
+  /// Populated eagerly for every image attachment as soon as the list
+  /// loads (see [_load]) — so a thumbnail is already on screen by the
+  /// time the user looks, and tapping to open the full-screen viewer
+  /// needs no further fetch. Never used for non-image attachments, which
+  /// still open externally via [EventRepository.getAttachmentDownloadUrl].
+  final Map<String, Uint8List> _imageBytes = {};
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final attachments = await widget.repository.listEventAttachments(widget.eventId);
+      if (!mounted) return;
+      setState(() => _attachments = attachments);
+      for (final attachment in attachments) {
+        if (attachment.isImage) unawaited(_loadThumbnail(attachment));
+      }
+    } catch (_) {
+      // Section just stays hidden on failure.
+    }
+  }
+
+  Future<void> _loadThumbnail(EventAttachment attachment) async {
+    try {
+      final bytes = await widget.repository.downloadEventAttachmentBytes(attachment);
+      if (!mounted) return;
+      setState(() => _imageBytes[attachment.id] = bytes);
+    } catch (_) {
+      // Falls back to the generic file icon just for this one attachment.
+    }
+  }
+
+  Future<void> _open(EventAttachment attachment) async {
+    final l10n = AppLocalizations.of(context)!;
+
+    if (attachment.isImage) {
+      setState(() => _openingId = attachment.id);
+      try {
+        final bytes =
+            _imageBytes[attachment.id] ?? await widget.repository.downloadEventAttachmentBytes(attachment);
+        _imageBytes[attachment.id] = bytes;
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => AttachmentImageViewer(bytes: bytes, fileName: attachment.fileName),
+          ),
+        );
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.attachmentOpenError)));
+        }
+      } finally {
+        if (mounted) setState(() => _openingId = null);
+      }
+      return;
+    }
+
+    // Non-image: no in-app viewer for arbitrary documents, so this still
+    // hands off to whatever the OS/browser opens PDFs/Office files with —
+    // via a short-lived signed URL, not a public one.
+    setState(() => _openingId = attachment.id);
+    try {
+      final url = await widget.repository.getAttachmentDownloadUrl(attachment);
+      final launched = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.attachmentOpenError)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.attachmentOpenError)));
+      }
+    } finally {
+      if (mounted) setState(() => _openingId = null);
+    }
+  }
+
+  /// A real thumbnail once [_imageBytes] has this attachment (see
+  /// [_loadThumbnail]) — the same generic file-type badge as before for
+  /// everything else, including an image whose thumbnail hasn't loaded
+  /// yet.
+  Widget _buildAttachmentLeading(EventAttachment attachment) {
+    final bytes = _imageBytes[attachment.id];
+    if (attachment.isImage && bytes != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(9),
+        child: Image.memory(bytes, width: 34, height: 34, fit: BoxFit.cover),
+      );
+    }
+    return IconBadge(
+      icon: attachment.isImage
+          ? FontAwesomeIcons.image
+          : widget.iconFor(attachment.mimeType ?? 'application/octet-stream'),
+      tint: widget.tint,
+      size: 34,
+      iconSize: 14,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final colorScheme = Theme.of(context).colorScheme;
+    final attachments = _attachments;
+    if (attachments == null || attachments.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.attachmentsSectionTitle,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 8),
+        GlassPanel(
+          borderRadius: 16,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Column(
+            children: [
+              for (final attachment in attachments) ...[
+                InkWell(
+                  key: Key('event-attachment-${attachment.id}'),
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: _openingId == null ? () => unawaited(_open(attachment)) : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                    child: Row(
+                      children: [
+                        _buildAttachmentLeading(attachment),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            attachment.fileName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                        if (_openingId == attachment.id)
+                          const SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        else
+                          FaIcon(
+                            attachment.isImage
+                                ? FontAwesomeIcons.magnifyingGlassPlus
+                                : FontAwesomeIcons.arrowUpRightFromSquare,
+                            size: 13,
+                            color: widget.tint,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (attachment != attachments.last)
+                  Divider(height: 1, color: colorScheme.onSurface.withValues(alpha: 0.08)),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
       ],
     );
   }

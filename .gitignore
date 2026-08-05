@@ -39,9 +39,13 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
-# Android signing secrets
-*.jks
-*.keystore
+# Android signing secrets.
+# The trailing * matters: a renamed/backup key like
+# "upload-keystore.jks.old-unknown-password" does NOT match a bare "*.jks"
+# glob (that requires the name to END in .jks), and this repo is public —
+# so a plain `git add -A` would have published a signing key permanently.
+*.jks*
+*.keystore*
 key.properties
 .release/
 

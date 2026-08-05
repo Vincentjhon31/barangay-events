@@ -24,11 +24,21 @@ class DayDetailPage extends StatefulWidget {
     required this.creatorProfile,
     required this.buildEventCard,
     this.kiosk = false,
+    this.eventFilter,
   });
 
   final DateTime date;
   final EventRepository eventRepository;
   final AppUserProfile? creatorProfile;
+
+  /// Same type/group/search filters active on the Calendar tab this page
+  /// was opened from — without this, the page's own independent
+  /// [EventRepository.watchAllEvents] subscription (see below) shows
+  /// every event for the day regardless of what's currently filtered out
+  /// on the calendar (e.g. Public events still appearing after narrowing
+  /// the Group filter down to specific groups). Null means "no filter",
+  /// i.e. show everything.
+  final bool Function(BarangayEvent event)? eventFilter;
 
   /// Renders a single event's card — reused from the calendar screen
   /// (`_CalendarScreenState._buildEventCard`) rather than duplicated here,
@@ -74,7 +84,11 @@ class _DayDetailPageState extends State<DayDetailPage> {
   }
 
   List<BarangayEvent> get _dayEvents {
-    final events = _allEvents.where((event) => event.occursOnDay(widget.date)).toList()
+    final filter = widget.eventFilter;
+    final events = _allEvents
+        .where((event) => event.occursOnDay(widget.date))
+        .where((event) => filter == null || filter(event))
+        .toList()
       ..sort((a, b) => a.startTime.compareTo(b.startTime));
     return events;
   }
@@ -98,6 +112,12 @@ class _DayDetailPageState extends State<DayDetailPage> {
       // Groups unavailable (e.g. migration not run) — Add Event still works
       // for public/personal events.
     }
+    List<LguLocation> lguLocations = const [];
+    try {
+      lguLocations = await widget.eventRepository.listLguLocations();
+    } catch (_) {
+      // Falls back to a plain text field — see AddEventPage.lguLocations.
+    }
     if (!mounted) return;
 
     final result = await Navigator.of(context).push<AddEventResult>(
@@ -105,6 +125,7 @@ class _DayDetailPageState extends State<DayDetailPage> {
         builder: (_) => AddEventPage(
           eventRepository: widget.eventRepository,
           myGroups: myGroups,
+          lguLocations: lguLocations,
           initialDate: widget.date,
           creatorProfile: widget.creatorProfile,
           findOverlappingEvents: (date, start, end) =>

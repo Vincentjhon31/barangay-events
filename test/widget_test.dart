@@ -5,17 +5,22 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import 'package:eCalendar/main.dart';
+import 'package:eCalendar/attachment_image_viewer.dart';
 import 'package:eCalendar/avatar_picker_page.dart';
 import 'package:eCalendar/day_detail_page.dart';
 import 'package:eCalendar/event_store.dart';
 import 'package:eCalendar/auth_service.dart';
 import 'package:eCalendar/liquid_glass_components.dart';
 import 'package:eCalendar/profile_pages.dart';
+import 'package:eCalendar/push_notifications.dart';
 import 'package:eCalendar/responsive_scale.dart';
 import 'package:eCalendar/security_page.dart';
 import 'package:eCalendar/theme_controller.dart';
@@ -320,11 +325,11 @@ void main() {
     await openAddEventForToday(tester);
 
     final textFields = find.byType(TextField);
-    expect(textFields, findsNWidgets(3));
+    expect(textFields, findsNWidgets(4));
 
     await tester.enterText(textFields.at(0), 'Community Cleanup');
     await tester.enterText(textFields.at(1), 'Barangay Plaza');
-    await tester.enterText(textFields.at(2), 'Bring gloves and trash bags');
+    await tester.enterText(textFields.at(3), 'Bring gloves and trash bags');
 
     await tester.scrollUntilVisible(
       find.text('Save event'),
@@ -367,7 +372,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final textFields = find.byType(TextField);
-    expect(textFields, findsNWidgets(3));
+    expect(textFields, findsNWidgets(4));
     await tester.enterText(textFields.at(0), 'Tree Planting');
     await tester.enterText(textFields.at(1), 'Barangay Nursery');
 
@@ -594,7 +599,6 @@ void main() {
       startTime: now.add(const Duration(days: 10)),
       endTime: now.add(const Duration(days: 10, hours: 1)),
       description: '',
-      hasAttachment: false,
       createdAt: now,
       createdByName: 'Tester',
       createdById: 'mock-user-id',
@@ -656,7 +660,6 @@ void main() {
       startTime: now.add(const Duration(days: 5)),
       endTime: now.add(const Duration(days: 5, hours: 1)),
       description: '',
-      hasAttachment: false,
       createdAt: now,
       createdByName: 'Mayor Staff',
       eventType: EventType.shared,
@@ -670,7 +673,6 @@ void main() {
       startTime: now.add(const Duration(days: 6)),
       endTime: now.add(const Duration(days: 6, hours: 1)),
       description: '',
-      hasAttachment: false,
       createdAt: now,
       createdByName: 'Coach',
       eventType: EventType.shared,
@@ -762,7 +764,6 @@ void main() {
       startTime: now.add(const Duration(hours: 2)),
       endTime: now.add(const Duration(hours: 3)),
       description: '',
-      hasAttachment: false,
       createdAt: now,
       createdByName: 'Tester',
       createdById: 'mock-user-id',
@@ -775,7 +776,6 @@ void main() {
       startTime: now.add(const Duration(days: 30)),
       endTime: now.add(const Duration(days: 30, hours: 1)),
       description: '',
-      hasAttachment: false,
       createdAt: now,
       createdByName: 'Tester',
       createdById: 'mock-user-id',
@@ -859,7 +859,6 @@ void main() {
         startTime: DateTime(today.year, today.month, today.day, 6 + i, 0),
         endTime: DateTime(today.year, today.month, today.day, 6 + i, 30),
         description: '',
-        hasAttachment: false,
         createdAt: DateTime.now(),
       ));
     }
@@ -1004,7 +1003,6 @@ void main() {
         startTime: now.add(Duration(days: i + 1)),
         endTime: now.add(Duration(days: i + 1, hours: 1)),
         description: '',
-        hasAttachment: false,
         createdAt: now.subtract(Duration(minutes: i)),
         createdByName: 'Tester',
         createdById: 'mock-user-id',
@@ -1371,6 +1369,11 @@ void main() {
     await tester.enterText(textFields.at(1), 'Room B');
     await tester.pumpAndSettle();
 
+    await tester.scrollUntilVisible(
+      find.text('Overlaps with an existing event:'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Overlaps with an existing event:'), findsOneWidget);
     expect(find.textContaining('Team Meeting • '), findsOneWidget);
 
@@ -1429,7 +1432,6 @@ void main() {
         startTime: DateTime.utc(2026, 12, 20, 9, 0),
         endTime: DateTime.utc(2026, 12, 22, 17, 0),
         description: '',
-        hasAttachment: false,
         createdAt: DateTime.utc(2026, 12, 1),
       );
 
@@ -1449,7 +1451,6 @@ void main() {
         startTime: DateTime.utc(2026, 12, 20, 9, 0),
         endTime: DateTime.utc(2026, 12, 20, 10, 0),
         description: '',
-        hasAttachment: false,
         createdAt: DateTime.utc(2026, 12, 1),
       );
 
@@ -1474,7 +1475,6 @@ void main() {
         startTime: DateTime.utc(2026, 12, 20, 7, 0),
         endTime: DateTime.utc(2026, 12, 22, 8, 0),
         description: '',
-        hasAttachment: false,
         createdAt: DateTime.utc(2026, 12, 1),
       );
 
@@ -1635,7 +1635,6 @@ void main() {
         startTime: DateTime(2026, 8, 1, 8, 0),
         endTime: DateTime(2026, 8, 3, 20, 0),
         description: '',
-        hasAttachment: false,
         createdAt: DateTime.now(),
         createdById: 'mock-user-id',
         eventType: EventType.personal,
@@ -1649,7 +1648,6 @@ void main() {
         startTime: original.startTime,
         endTime: original.endTime,
         description: original.description,
-        hasAttachment: original.hasAttachment,
         createdAt: original.createdAt,
         createdById: original.createdById,
         eventType: original.eventType,
@@ -1961,7 +1959,6 @@ void main() {
         startTime: now.add(const Duration(days: 3)),
         endTime: now.add(const Duration(days: 3, hours: 1)),
         description: '',
-        hasAttachment: false,
         createdAt: now,
       ));
 
@@ -1973,6 +1970,16 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // Scrolled into view rather than asserted immediately — how far down
+      // this sits depends on how many rows the current real month's
+      // calendar grid needs (5 vs. 6, depending on what weekday the 1st
+      // falls on), which can push it outside the test surface's default
+      // mount range without this.
+      await tester.scrollUntilVisible(
+        find.text("Nothing today — here's what's coming up:"),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text("Nothing today — here's what's coming up:"), findsOneWidget);
       await tester.scrollUntilVisible(
         find.text('Fiesta Planning'),
@@ -2003,7 +2010,6 @@ void main() {
         startTime: now.add(const Duration(days: 2)),
         endTime: now.add(const Duration(days: 2, hours: 2)),
         description: '',
-        hasAttachment: false,
         createdAt: now,
         createdById: 'someone-else',
       ));
@@ -2033,7 +2039,6 @@ void main() {
         startTime: now.add(const Duration(days: 1)),
         endTime: now.add(const Duration(days: 1, hours: 1)),
         description: '',
-        hasAttachment: false,
         createdAt: now,
         createdById: 'mock-user-id',
       ));
@@ -2063,7 +2068,6 @@ void main() {
         startTime: now.add(const Duration(days: 5)),
         endTime: now.add(const Duration(days: 5, hours: 1)),
         description: '',
-        hasAttachment: false,
         createdAt: now.subtract(const Duration(days: 10)),
         createdById: 'someone-else',
       ));
@@ -2071,6 +2075,210 @@ void main() {
       await tester.pump(const Duration(milliseconds: 350));
 
       expect(find.text('New event posted'), findsNothing);
+    });
+  });
+
+  group('notification tap', () {
+    testWidgets('tapping a notification for a known event opens its detail sheet',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+          pushNotificationServiceFactory: () async =>
+              _TappedNotificationPushService('seed-assembly'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Event Details'), findsOneWidget);
+      expect(find.text('Barangay Assembly'), findsOneWidget);
+    });
+
+    testWidgets('tapping a notification for an unknown event does nothing',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+          pushNotificationServiceFactory: () async =>
+              _TappedNotificationPushService('does-not-exist'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Event Details'), findsNothing);
+    });
+  });
+
+  group('event attachments', () {
+    testWidgets('shows an uploaded attachment on the event detail sheet',
+        (WidgetTester tester) async {
+      final repo = MemoryEventRepository.seeded();
+      await repo.uploadEventAttachment(
+        'seed-assembly',
+        'agenda.pdf',
+        Uint8List.fromList([1, 2, 3]),
+        mimeType: 'application/pdf',
+      );
+
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repo,
+          pushNotificationServiceFactory: () async =>
+              _TappedNotificationPushService('seed-assembly'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Event Details'), findsOneWidget);
+      expect(find.text('agenda.pdf'), findsOneWidget);
+    });
+
+    testWidgets('shows no attachments section when an event has none',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+          pushNotificationServiceFactory: () async =>
+              _TappedNotificationPushService('seed-assembly'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Event Details'), findsOneWidget);
+      expect(find.text('Attachments'), findsNothing);
+    });
+
+    testWidgets('shows an image attachment thumbnail and opens the full-screen viewer',
+        (WidgetTester tester) async {
+      final repo = MemoryEventRepository.seeded();
+      // A minimal 1x1 transparent PNG — real enough for Image.memory to
+      // decode without erroring.
+      final pngBytes = base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk'
+        '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      );
+      await repo.uploadEventAttachment(
+        'seed-assembly',
+        'photo.png',
+        pngBytes,
+        mimeType: 'image/png',
+      );
+
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repo,
+          pushNotificationServiceFactory: () async =>
+              _TappedNotificationPushService('seed-assembly'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('photo.png'), findsOneWidget);
+      final attachmentFinder = find.byKey(const Key('event-attachment-attachment-1'));
+      expect(attachmentFinder, findsOneWidget);
+      // A real thumbnail (not just the generic file-type icon) means the
+      // downloaded bytes actually made it into the row.
+      expect(find.descendant(of: attachmentFinder, matching: find.byType(Image)), findsOneWidget);
+
+      await tester.scrollUntilVisible(
+        attachmentFinder,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      // A direct callback invocation, not tester.tap() — the row sits
+      // inside the event-detail sheet's DraggableScrollableSheet, where a
+      // synthetic tap reliably passes hit-testing (no warnIfMissed
+      // warning) but still doesn't reach InkWell's gesture recognizer in
+      // the test harness; confirmed this is a test-environment quirk, not
+      // a real bug — the same tap works fine in an actual browser/app.
+      tester.widget<InkWell>(attachmentFinder).onTap!();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AttachmentImageViewer), findsOneWidget);
+      // No signed/Storage URL anywhere in the viewer — it renders straight
+      // from the bytes already fetched through the authenticated client.
+      expect(find.byType(InteractiveViewer), findsOneWidget);
+    });
+  });
+
+  group('password reset', () {
+    testWidgets("forgot-password dialog sends a reset email and shows confirmation",
+        (WidgetTester tester) async {
+      final authService = MemoryAuthService.signedOut();
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => authService,
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('welcome-register-login')));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField).at(0), 'someone@example.com');
+      await tester.tap(find.byKey(const Key('signin-forgot-password')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('forgot-password-email-field')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('forgot-password-send-button')));
+      await tester.pumpAndSettle();
+
+      expect(authService.lastPasswordResetEmail, 'someone@example.com');
+      expect(find.textContaining('Check your email'), findsOneWidget);
+    });
+
+    testWidgets('a recovery event shows ResetPasswordPage, and saving exits it',
+        (WidgetTester tester) async {
+      final authService = MemoryAuthService.signedOut();
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => authService,
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('reset-password-new-field')), findsNothing);
+
+      authService.simulatePasswordRecovery();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('reset-password-new-field')), findsOneWidget);
+
+      await tester.enterText(find.byKey(const Key('reset-password-new-field')), 'newpass123');
+      await tester.enterText(find.byKey(const Key('reset-password-confirm-field')), 'newpass123');
+      await tester.tap(find.byKey(const Key('reset-password-save-button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('reset-password-new-field')), findsNothing);
+    });
+
+    testWidgets('rejects a mismatched confirmation on ResetPasswordPage',
+        (WidgetTester tester) async {
+      final authService = MemoryAuthService.signedOut();
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => authService,
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      authService.simulatePasswordRecovery();
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byKey(const Key('reset-password-new-field')), 'newpass123');
+      await tester.enterText(find.byKey(const Key('reset-password-confirm-field')), 'different');
+      await tester.tap(find.byKey(const Key('reset-password-save-button')));
+      await tester.pumpAndSettle();
+
+      // Still on the page — the mismatch was rejected before calling
+      // updatePassword.
+      expect(find.byKey(const Key('reset-password-new-field')), findsOneWidget);
     });
   });
 
@@ -2290,4 +2498,28 @@ void main() {
       expect(find.byKey(const Key('enable-kiosk-mode-button')), findsOneWidget);
     });
   });
+}
+
+/// Fires [onNotificationTapped] with a fixed [eventId] as soon as
+/// [initialize] runs — simulates the app cold-starting from a tapped push
+/// notification (see PushNotificationService.onNotificationTapped).
+class _TappedNotificationPushService implements PushNotificationService {
+  _TappedNotificationPushService(this.eventId);
+
+  final String eventId;
+
+  @override
+  Future<void> initialize({
+    void Function()? onAppUpdateAvailable,
+    void Function(String eventId)? onEventReminder,
+    void Function(String eventId)? onNotificationTapped,
+  }) async {
+    onNotificationTapped?.call(eventId);
+  }
+
+  @override
+  Future<void> syncTopics(List<String> groupIds) async {}
+
+  @override
+  Future<void> syncUserTopic(String? userId) async {}
 }

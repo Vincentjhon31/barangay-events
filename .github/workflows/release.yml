@@ -59,7 +59,10 @@ jobs:
           EOF
 
       - name: Build release APK
-        run: flutter build apk --release
+        # --no-tree-shake-icons: Flutter's icon tree-shaker misdetects
+        # font_awesome_flutter's FaIconData-wrapped icons and silently
+        # strips glyphs that are actually used, leaving "tofu" boxes.
+        run: flutter build apk --release --no-tree-shake-icons
 
       - name: Rename APK to e-calendar-<version>.apk
         id: version
@@ -156,7 +159,10 @@ jobs:
           & $vsInstaller modify --installPath "$vsPath" --add Microsoft.VisualStudio.Component.VC.ATL --quiet --norestart | Out-Null
 
       - name: Build release Windows app
-        run: flutter build windows --release
+        # --no-tree-shake-icons: Flutter's icon tree-shaker misdetects
+        # font_awesome_flutter's FaIconData-wrapped icons and silently
+        # strips glyphs that are actually used, leaving "tofu" boxes.
+        run: flutter build windows --release --no-tree-shake-icons
 
       - name: Install Inno Setup
         # GitHub's windows-latest image is expected to already have this,

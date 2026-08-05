@@ -230,6 +230,78 @@ abstract class AppLocalizations {
   /// **'Authentication failed.'**
   String get authFailedGeneric;
 
+  /// No description provided for @forgotPasswordLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Forgot password?'**
+  String get forgotPasswordLink;
+
+  /// No description provided for @forgotPasswordTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset your password'**
+  String get forgotPasswordTitle;
+
+  /// No description provided for @forgotPasswordSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your account\'s email and we\'ll send you a link to set a new password.'**
+  String get forgotPasswordSubtitle;
+
+  /// No description provided for @forgotPasswordSendButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Send reset link'**
+  String get forgotPasswordSendButton;
+
+  /// No description provided for @forgotPasswordSent.
+  ///
+  /// In en, this message translates to:
+  /// **'Check your email for the reset link. Didn\'t get it? You can send it again.'**
+  String get forgotPasswordSent;
+
+  /// No description provided for @resetPasswordTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Set a new password'**
+  String get resetPasswordTitle;
+
+  /// No description provided for @resetPasswordSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a new password for your account.'**
+  String get resetPasswordSubtitle;
+
+  /// No description provided for @resetPasswordNewLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'New password'**
+  String get resetPasswordNewLabel;
+
+  /// No description provided for @resetPasswordConfirmLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm new password'**
+  String get resetPasswordConfirmLabel;
+
+  /// No description provided for @resetPasswordSaveButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Save new password'**
+  String get resetPasswordSaveButton;
+
+  /// No description provided for @resetPasswordSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Password updated. You\'re signed in.'**
+  String get resetPasswordSuccess;
+
+  /// No description provided for @resetPasswordMismatch.
+  ///
+  /// In en, this message translates to:
+  /// **'Passwords do not match.'**
+  String get resetPasswordMismatch;
+
   /// No description provided for @tabCalendar.
   ///
   /// In en, this message translates to:
@@ -277,6 +349,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Edit'**
   String get edit;
+
+  /// No description provided for @addButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Add'**
+  String get addButton;
 
   /// No description provided for @settingsTitle.
   ///
@@ -1057,6 +1135,138 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'e.g. Barangay Hall'**
   String get locationHint;
+
+  /// No description provided for @locationOtherOption.
+  ///
+  /// In en, this message translates to:
+  /// **'Other (type manually)'**
+  String get locationOtherOption;
+
+  /// No description provided for @locationCustomLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom location'**
+  String get locationCustomLabel;
+
+  /// No description provided for @contactNumberLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Contact number (optional)'**
+  String get contactNumberLabel;
+
+  /// No description provided for @contactNumberHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. 0912 345 6789'**
+  String get contactNumberHint;
+
+  /// No description provided for @detailContact.
+  ///
+  /// In en, this message translates to:
+  /// **'Contact'**
+  String get detailContact;
+
+  /// No description provided for @callButtonTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Call'**
+  String get callButtonTooltip;
+
+  /// No description provided for @callLinkError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open the phone dialer.'**
+  String get callLinkError;
+
+  /// No description provided for @addToGoogleCalendar.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to Google Calendar'**
+  String get addToGoogleCalendar;
+
+  /// No description provided for @googleCalendarError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open Google Calendar.'**
+  String get googleCalendarError;
+
+  /// No description provided for @attachmentsSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Attachments'**
+  String get attachmentsSectionTitle;
+
+  /// No description provided for @attachmentOpenError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open this attachment.'**
+  String get attachmentOpenError;
+
+  /// No description provided for @addAttachmentButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Add photos or files'**
+  String get addAttachmentButton;
+
+  /// No description provided for @attachmentTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{name}\" is too large (max 20 MB).'**
+  String attachmentTooLarge(String name);
+
+  /// No description provided for @attachmentLimitReached.
+  ///
+  /// In en, this message translates to:
+  /// **'You can attach up to {max} files per event.'**
+  String attachmentLimitReached(int max);
+
+  /// No description provided for @attachmentUploadError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not upload \"{name}\".'**
+  String attachmentUploadError(String name);
+
+  /// No description provided for @attachmentPickError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open the file picker. Please try again.'**
+  String get attachmentPickError;
+
+  /// No description provided for @manageLocationsTile.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage Locations'**
+  String get manageLocationsTile;
+
+  /// No description provided for @manageLocationsTileCaption.
+  ///
+  /// In en, this message translates to:
+  /// **'LGU venues offered as quick picks in Add Event'**
+  String get manageLocationsTileCaption;
+
+  /// No description provided for @manageLocationsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage Locations'**
+  String get manageLocationsTitle;
+
+  /// No description provided for @manageLocationsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Superadmin-only. Shown as quick picks in Add Event\'s Location field for every account.'**
+  String get manageLocationsSubtitle;
+
+  /// No description provided for @manageLocationsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No locations yet. Add one above.'**
+  String get manageLocationsEmpty;
+
+  /// No description provided for @locationNameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Location name'**
+  String get locationNameLabel;
 
   /// No description provided for @additionalDetailsLabel.
   ///
