@@ -73,6 +73,12 @@
   "settingsReminderOff": "Off",
   "settingsReminderOneHour": "1 hour before",
   "settingsReminderOneDay": "1 day before",
+  "settingsCalendarView": "Calendar",
+  "settingsCalendarViewHint": "How the Month and Week views show each day's events.",
+  "settingsCalendarDots": "Dots",
+  "settingsCalendarDotsSubtitle": "A small colored dot for each event.",
+  "settingsCalendarTitles": "Event titles",
+  "settingsCalendarTitlesSubtitle": "Each event's name inside the calendar, like Google Calendar.",
   "eventReminderNoticeLabel": "Event reminder",
   "eventReminderGenericTitle": "An event you're following is coming up soon",
 
@@ -178,6 +184,12 @@
   "eventTypeGroup": "Group",
   "eventTypePersonal": "Personal",
   "eventColorLabel": "Color label",
+  "randomColorTooltip": "Pick a random color",
+  "randomColorHint": "No color picked? A random one will be assigned when you save.",
+  "postedToGroupLabel": "Posted to {group}",
+  "@postedToGroupLabel": {
+    "placeholders": { "group": { "type": "String" } }
+  },
   "groupFilterPickerTitle": "Filter groups",
   "groupFilterPickerSubtitle": "Choose which of your groups' events show up as Group events.",
   "groupFilterPickerApply": "Apply",
@@ -230,7 +242,7 @@
   "postToGroupLabel": "Post to group",
   "eventTitleLabel": "Event title",
   "eventTitleHint": "e.g. Barangay Assembly",
-  "locationHint": "e.g. Barangay Hall",
+  "locationHint": "e.g. Barangay Hall — optional",
   "locationOtherOption": "Other (type manually)",
   "locationCustomLabel": "Custom location",
   "contactNumberLabel": "Contact number (optional)",
@@ -274,12 +286,12 @@
   "defaultEndTimeLabel": "Default end time",
   "endTimeLabel": "End time",
   "changeButton": "Change",
-  "overlapsWithOne": "Overlaps with an existing event:",
-  "overlapsWithMany": "Overlaps with {count} existing events:",
+  "overlapsWithOne": "Overlaps with an event at the same location:",
+  "overlapsWithMany": "Overlaps with {count} events at the same location:",
   "@overlapsWithMany": {
     "placeholders": { "count": { "type": "int" } }
   },
-  "adjustOverlapHint": "Adjust the time or date range to clear the overlap.",
+  "adjustOverlapHint": "Change the time, date, or location to clear the overlap.",
   "noFreeSlotHint": "No free slot left that day — try another date.",
   "freeSlotSuggestion": "Free slot: {start} – {end} · Tap to use",
   "@freeSlotSuggestion": {
@@ -288,17 +300,22 @@
       "end": { "type": "String" }
     }
   },
-  "overlapDialogTitleOne": "This overlaps with an existing event",
-  "overlapDialogTitleMany": "This overlaps with {count} existing events",
+  "overlapDialogTitleOne": "This overlaps with an event at the same location",
+  "overlapDialogTitleMany": "This overlaps with {count} events at the same location",
   "@overlapDialogTitleMany": {
     "placeholders": { "count": { "type": "int" } }
   },
-  "overlapDialogBody": "You can still save it, but people may see two events scheduled at the same time:",
+  "overlapDialogBody": "You can still save it, but this venue would have two events booked at the same time:",
   "proceedAnyway": "Proceed anyway",
   "savingButton": "Saving...",
   "saveChangesButton": "Save changes",
   "saveEventButton": "Save event",
   "titleLocationRequired": "Title and location are required.",
+  "titleRequired": "Please enter an event title.",
+  "locationOptionalHelper": "Optional — leave blank if you're not sure yet; it will be saved as \"Other\".",
+  "allDayEventLabel": "All-day event",
+  "allDayEventHint": "No specific start or end time.",
+  "defaultAllDaySuffix": "All day (default)",
   "pastDateError": "Events can't be added on a past date.",
   "endAfterStartMultiDay": "End must be after start.",
   "endAfterStartSingleDay": "End time must be after start time.",
@@ -496,6 +513,14 @@
   "requireApprovalEnabledMessage": "New members must now be approved to join.",
   "requireApprovalDisabledMessage": "Anyone can now join instantly.",
   "couldNotUpdateJoinSettingError": "Could not update this group's join settings. Please try again.",
+  "renameGroupButton": "Rename",
+  "renameGroupTitle": "Rename group",
+  "renameGroupHint": "Admins can change this group's name. Existing events will show the new name too.",
+  "groupRenamedMessage": "Group renamed to \"{name}\".",
+  "@groupRenamedMessage": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "couldNotRenameGroupError": "Could not rename this group. Please try again.",
   "requestToJoinButton": "Request to join",
   "approvalRequiredTag": "Approval required",
   "joinedGroupMessage": "You joined \"{name}\".",

@@ -12,6 +12,7 @@ const String _uiStylePrefKey = 'app_ui_style';
 const String _displayModePrefKey = 'app_display_mode';
 const String _languagePrefKey = 'app_language';
 const String _reminderPreferencePrefKey = 'app_reminder_preference';
+const String _calendarCellStylePrefKey = 'app_calendar_cell_style';
 
 /// Supported language codes — kept as a plain string (not an enum) since
 /// this maps directly onto both the `profiles.language` column and
@@ -66,6 +67,19 @@ ReminderPreference? _reminderPreferenceFromDbValue(String? value) => switch (val
       _ => null,
     };
 
+/// How the Month/Week grid shows a day's events: small colored [dots]
+/// (the original look), or Google-Calendar-style [titles] — a colored
+/// chip per event, with date-range events drawn as one bar across the
+/// days they span. Kept on this device only (not synced to the profile).
+enum CalendarCellStyle { dots, titles }
+
+CalendarCellStyle? _calendarCellStyleFromName(String? name) {
+  for (final value in CalendarCellStyle.values) {
+    if (value.name == name) return value;
+  }
+  return null;
+}
+
 /// Persists the user's chosen [ThemeMode] (light/dark/system) and
 /// [UiStyle] (liquid glass vs solid) across launches using
 /// [SharedPreferences] as a fast local cache, and — once
@@ -77,12 +91,16 @@ class ThemeController extends ChangeNotifier {
     UiStyle initialStyle = UiStyle.liquid,
     DisplayMode initialDisplayMode = DisplayMode.auto,
     String initialLanguage = 'en',
-    ReminderPreference initialReminderPreference = ReminderPreference.off,
+    // On by default: every event someone can see gets a reminder unless
+    // they turn it off (matches profiles.reminder_preference's default).
+    ReminderPreference initialReminderPreference = ReminderPreference.oneHour,
+    CalendarCellStyle initialCalendarCellStyle = CalendarCellStyle.dots,
   })  : _themeMode = initial,
         _uiStyle = initialStyle,
         _displayMode = initialDisplayMode,
         _language = _sanitizeLanguage(initialLanguage),
-        _reminderPreference = initialReminderPreference;
+        _reminderPreference = initialReminderPreference,
+        _calendarCellStyle = initialCalendarCellStyle;
 
   ThemeMode _themeMode;
   ThemeMode get themeMode => _themeMode;
@@ -104,6 +122,9 @@ class ThemeController extends ChangeNotifier {
 
   ReminderPreference _reminderPreference;
   ReminderPreference get reminderPreference => _reminderPreference;
+
+  CalendarCellStyle _calendarCellStyle;
+  CalendarCellStyle get calendarCellStyle => _calendarCellStyle;
 
   AppAuthService? _authService;
 
@@ -185,13 +206,16 @@ class ThemeController extends ChangeNotifier {
     );
     final storedLanguage = prefs.getString(_languagePrefKey);
     final storedReminderPreference = prefs.getString(_reminderPreferencePrefKey);
+    final storedCalendarCellStyle = prefs.getString(_calendarCellStylePrefKey);
     return ThemeController(
       initial: mode,
       initialStyle: style,
       initialDisplayMode: displayMode,
       initialLanguage: _sanitizeLanguage(storedLanguage),
       initialReminderPreference:
-          _reminderPreferenceFromDbValue(storedReminderPreference) ?? ReminderPreference.off,
+          _reminderPreferenceFromDbValue(storedReminderPreference) ?? ReminderPreference.oneHour,
+      initialCalendarCellStyle:
+          _calendarCellStyleFromName(storedCalendarCellStyle) ?? CalendarCellStyle.dots,
     );
   }
 
@@ -258,6 +282,16 @@ class ThemeController extends ChangeNotifier {
       displayMode: mode.name,
       reminderPreference: _reminderPreference.dbValue,
     ));
+  }
+
+  /// Local-only (see [CalendarCellStyle]) — no profile write.
+  Future<void> setCalendarCellStyle(CalendarCellStyle style) async {
+    if (style == _calendarCellStyle) return;
+    _calendarCellStyle = style;
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_calendarCellStylePrefKey, style.name);
   }
 
   Future<void> setReminderPreference(ReminderPreference preference) async {

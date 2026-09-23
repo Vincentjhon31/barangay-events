@@ -512,6 +512,42 @@ abstract class AppLocalizations {
   /// **'1 day before'**
   String get settingsReminderOneDay;
 
+  /// No description provided for @settingsCalendarView.
+  ///
+  /// In en, this message translates to:
+  /// **'Calendar'**
+  String get settingsCalendarView;
+
+  /// No description provided for @settingsCalendarViewHint.
+  ///
+  /// In en, this message translates to:
+  /// **'How the Month and Week views show each day\'s events.'**
+  String get settingsCalendarViewHint;
+
+  /// No description provided for @settingsCalendarDots.
+  ///
+  /// In en, this message translates to:
+  /// **'Dots'**
+  String get settingsCalendarDots;
+
+  /// No description provided for @settingsCalendarDotsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'A small colored dot for each event.'**
+  String get settingsCalendarDotsSubtitle;
+
+  /// No description provided for @settingsCalendarTitles.
+  ///
+  /// In en, this message translates to:
+  /// **'Event titles'**
+  String get settingsCalendarTitles;
+
+  /// No description provided for @settingsCalendarTitlesSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Each event\'s name inside the calendar, like Google Calendar.'**
+  String get settingsCalendarTitlesSubtitle;
+
   /// No description provided for @eventReminderNoticeLabel.
   ///
   /// In en, this message translates to:
@@ -908,6 +944,24 @@ abstract class AppLocalizations {
   /// **'Color label'**
   String get eventColorLabel;
 
+  /// No description provided for @randomColorTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a random color'**
+  String get randomColorTooltip;
+
+  /// No description provided for @randomColorHint.
+  ///
+  /// In en, this message translates to:
+  /// **'No color picked? A random one will be assigned when you save.'**
+  String get randomColorHint;
+
+  /// No description provided for @postedToGroupLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Posted to {group}'**
+  String postedToGroupLabel(String group);
+
   /// No description provided for @groupFilterPickerTitle.
   ///
   /// In en, this message translates to:
@@ -1133,7 +1187,7 @@ abstract class AppLocalizations {
   /// No description provided for @locationHint.
   ///
   /// In en, this message translates to:
-  /// **'e.g. Barangay Hall'**
+  /// **'e.g. Barangay Hall — optional'**
   String get locationHint;
 
   /// No description provided for @locationOtherOption.
@@ -1343,19 +1397,19 @@ abstract class AppLocalizations {
   /// No description provided for @overlapsWithOne.
   ///
   /// In en, this message translates to:
-  /// **'Overlaps with an existing event:'**
+  /// **'Overlaps with an event at the same location:'**
   String get overlapsWithOne;
 
   /// No description provided for @overlapsWithMany.
   ///
   /// In en, this message translates to:
-  /// **'Overlaps with {count} existing events:'**
+  /// **'Overlaps with {count} events at the same location:'**
   String overlapsWithMany(int count);
 
   /// No description provided for @adjustOverlapHint.
   ///
   /// In en, this message translates to:
-  /// **'Adjust the time or date range to clear the overlap.'**
+  /// **'Change the time, date, or location to clear the overlap.'**
   String get adjustOverlapHint;
 
   /// No description provided for @noFreeSlotHint.
@@ -1373,19 +1427,19 @@ abstract class AppLocalizations {
   /// No description provided for @overlapDialogTitleOne.
   ///
   /// In en, this message translates to:
-  /// **'This overlaps with an existing event'**
+  /// **'This overlaps with an event at the same location'**
   String get overlapDialogTitleOne;
 
   /// No description provided for @overlapDialogTitleMany.
   ///
   /// In en, this message translates to:
-  /// **'This overlaps with {count} existing events'**
+  /// **'This overlaps with {count} events at the same location'**
   String overlapDialogTitleMany(int count);
 
   /// No description provided for @overlapDialogBody.
   ///
   /// In en, this message translates to:
-  /// **'You can still save it, but people may see two events scheduled at the same time:'**
+  /// **'You can still save it, but this venue would have two events booked at the same time:'**
   String get overlapDialogBody;
 
   /// No description provided for @proceedAnyway.
@@ -1417,6 +1471,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Title and location are required.'**
   String get titleLocationRequired;
+
+  /// No description provided for @titleRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter an event title.'**
+  String get titleRequired;
+
+  /// No description provided for @locationOptionalHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional — leave blank if you\'re not sure yet; it will be saved as \"Other\".'**
+  String get locationOptionalHelper;
+
+  /// No description provided for @allDayEventLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'All-day event'**
+  String get allDayEventLabel;
+
+  /// No description provided for @allDayEventHint.
+  ///
+  /// In en, this message translates to:
+  /// **'No specific start or end time.'**
+  String get allDayEventHint;
+
+  /// No description provided for @defaultAllDaySuffix.
+  ///
+  /// In en, this message translates to:
+  /// **'All day (default)'**
+  String get defaultAllDaySuffix;
 
   /// No description provided for @pastDateError.
   ///
@@ -2179,6 +2263,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not update this group\'s join settings. Please try again.'**
   String get couldNotUpdateJoinSettingError;
+
+  /// No description provided for @renameGroupButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get renameGroupButton;
+
+  /// No description provided for @renameGroupTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename group'**
+  String get renameGroupTitle;
+
+  /// No description provided for @renameGroupHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Admins can change this group\'s name. Existing events will show the new name too.'**
+  String get renameGroupHint;
+
+  /// No description provided for @groupRenamedMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Group renamed to \"{name}\".'**
+  String groupRenamedMessage(String name);
+
+  /// No description provided for @couldNotRenameGroupError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not rename this group. Please try again.'**
+  String get couldNotRenameGroupError;
 
   /// No description provided for @requestToJoinButton.
   ///

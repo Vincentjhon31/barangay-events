@@ -224,6 +224,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsReminderOneDay => '1 day before';
 
   @override
+  String get settingsCalendarView => 'Calendar';
+
+  @override
+  String get settingsCalendarViewHint =>
+      'How the Month and Week views show each day\'s events.';
+
+  @override
+  String get settingsCalendarDots => 'Dots';
+
+  @override
+  String get settingsCalendarDotsSubtitle =>
+      'A small colored dot for each event.';
+
+  @override
+  String get settingsCalendarTitles => 'Event titles';
+
+  @override
+  String get settingsCalendarTitlesSubtitle =>
+      'Each event\'s name inside the calendar, like Google Calendar.';
+
+  @override
   String get eventReminderNoticeLabel => 'Event reminder';
 
   @override
@@ -461,6 +482,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get eventColorLabel => 'Color label';
 
   @override
+  String get randomColorTooltip => 'Pick a random color';
+
+  @override
+  String get randomColorHint =>
+      'No color picked? A random one will be assigned when you save.';
+
+  @override
+  String postedToGroupLabel(String group) {
+    return 'Posted to $group';
+  }
+
+  @override
   String get groupFilterPickerTitle => 'Filter groups';
 
   @override
@@ -582,7 +615,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get eventTitleHint => 'e.g. Barangay Assembly';
 
   @override
-  String get locationHint => 'e.g. Barangay Hall';
+  String get locationHint => 'e.g. Barangay Hall — optional';
 
   @override
   String get locationOtherOption => 'Other (type manually)';
@@ -697,16 +730,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get changeButton => 'Change';
 
   @override
-  String get overlapsWithOne => 'Overlaps with an existing event:';
+  String get overlapsWithOne => 'Overlaps with an event at the same location:';
 
   @override
   String overlapsWithMany(int count) {
-    return 'Overlaps with $count existing events:';
+    return 'Overlaps with $count events at the same location:';
   }
 
   @override
   String get adjustOverlapHint =>
-      'Adjust the time or date range to clear the overlap.';
+      'Change the time, date, or location to clear the overlap.';
 
   @override
   String get noFreeSlotHint => 'No free slot left that day — try another date.';
@@ -717,16 +750,17 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get overlapDialogTitleOne => 'This overlaps with an existing event';
+  String get overlapDialogTitleOne =>
+      'This overlaps with an event at the same location';
 
   @override
   String overlapDialogTitleMany(int count) {
-    return 'This overlaps with $count existing events';
+    return 'This overlaps with $count events at the same location';
   }
 
   @override
   String get overlapDialogBody =>
-      'You can still save it, but people may see two events scheduled at the same time:';
+      'You can still save it, but this venue would have two events booked at the same time:';
 
   @override
   String get proceedAnyway => 'Proceed anyway';
@@ -742,6 +776,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get titleLocationRequired => 'Title and location are required.';
+
+  @override
+  String get titleRequired => 'Please enter an event title.';
+
+  @override
+  String get locationOptionalHelper =>
+      'Optional — leave blank if you\'re not sure yet; it will be saved as \"Other\".';
+
+  @override
+  String get allDayEventLabel => 'All-day event';
+
+  @override
+  String get allDayEventHint => 'No specific start or end time.';
+
+  @override
+  String get defaultAllDaySuffix => 'All day (default)';
 
   @override
   String get pastDateError => 'Events can\'t be added on a past date.';
@@ -1185,6 +1235,25 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get couldNotUpdateJoinSettingError =>
       'Could not update this group\'s join settings. Please try again.';
+
+  @override
+  String get renameGroupButton => 'Rename';
+
+  @override
+  String get renameGroupTitle => 'Rename group';
+
+  @override
+  String get renameGroupHint =>
+      'Admins can change this group\'s name. Existing events will show the new name too.';
+
+  @override
+  String groupRenamedMessage(String name) {
+    return 'Group renamed to \"$name\".';
+  }
+
+  @override
+  String get couldNotRenameGroupError =>
+      'Could not rename this group. Please try again.';
 
   @override
   String get requestToJoinButton => 'Request to join';

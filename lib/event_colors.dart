@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 /// The fixed palette a user picks an event's color label from (like Google
@@ -37,3 +39,12 @@ const Map<String, String> eventColorNames = {
 /// doesn't know) — callers should fall back to the existing keyword-based
 /// tint in that case, exactly as for an event with no color chosen at all.
 Color? colorForKey(String? key) => key == null ? null : eventColorPalette[key];
+
+/// A random [eventColorPalette] key — used when someone saves a new event
+/// without choosing a color label, so the calendar still shows varied
+/// colors instead of every such event looking alike. [random] is
+/// injectable for deterministic tests.
+String randomEventColorKey({Random? random, String? excluding}) {
+  final keys = eventColorPalette.keys.where((key) => key != excluding).toList();
+  return keys[(random ?? Random()).nextInt(keys.length)];
+}

@@ -128,10 +128,10 @@ class _DayDetailPageState extends State<DayDetailPage> {
           lguLocations: lguLocations,
           initialDate: widget.date,
           creatorProfile: widget.creatorProfile,
-          findOverlappingEvents: (date, start, end) =>
-              findOverlappingEvents(_allEvents, date, start, end),
-          suggestFreeSlot: (date, start, end) =>
-              suggestFreeSlot(_allEvents, date, start, end),
+          findOverlappingEvents: (location, date, start, end) =>
+              findOverlappingEvents(_allEvents, location, date, start, end),
+          suggestFreeSlot: (location, date, start, end) =>
+              suggestFreeSlot(_allEvents, location, date, start, end),
         ),
       ),
     );

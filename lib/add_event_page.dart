@@ -53,11 +53,13 @@ class AddEventPage extends StatefulWidget {
   /// id/createdAt/creator fields never change regardless of what's edited.
   final BarangayEvent? existingEvent;
 
-  /// Same-day overlap check owned by the calendar screen (reads its live
-  /// `_events`) — passed in rather than duplicated here.
-  final List<BarangayEvent> Function(DateTime date, TimeOfDay start, TimeOfDay end)
+  /// Same-day, same-venue overlap check owned by the calendar screen
+  /// (reads its live `_events`) — passed in rather than duplicated here.
+  /// Only events at the given location can conflict (see `sameVenue`).
+  final List<BarangayEvent> Function(String location, DateTime date, TimeOfDay start, TimeOfDay end)
       findOverlappingEvents;
   final ({TimeOfDay start, TimeOfDay end})? Function(
+    String location,
     DateTime date,
     TimeOfDay desiredStart,
     TimeOfDay desiredEnd,
@@ -86,6 +88,12 @@ class _AddEventPageState extends State<AddEventPage> {
   String? _colorKey;
   BarangayGroup? _selectedGroup;
   bool _isMultiDay = false;
+
+  /// Hides the start/end time pickers and saves the event as 00:00–23:59
+  /// (see `isAllDayWindow`) — the same window the per-day "All day"
+  /// button uses. For a multi-day event this is the default window; a
+  /// specific day can still be customized in the per-day schedule.
+  bool _isAllDay = false;
   bool _saving = false;
 
   List<({BarangayEvent event, DateTime day})> _conflicts = const [];
@@ -154,7 +162,9 @@ class _AddEventPageState extends State<AddEventPage> {
     final existing = widget.existingEvent;
     if (existing != null) {
       _titleController.text = existing.title;
-      _locationController.text = existing.location;
+      // A blank "Other" location comes back as an empty field, not the
+      // literal placeholder text, so re-saving keeps it "Other".
+      _locationController.text = existing.location == unspecifiedLocation ? '' : existing.location;
       _selectedLocationOption = widget.lguLocations.any((loc) => loc.name == existing.location)
           ? existing.location
           : _customLocationOption;
@@ -167,6 +177,7 @@ class _AddEventPageState extends State<AddEventPage> {
       _colorKey = existing.colorKey;
       _contactNumberController.text = existing.contactNumber ?? '';
       _isMultiDay = existing.isMultiDay;
+      _isAllDay = existing.isAllDay;
       for (final group in widget.myGroups) {
         if (group.id == existing.groupId) {
           _selectedGroup = group;
@@ -181,8 +192,13 @@ class _AddEventPageState extends State<AddEventPage> {
       }
       unawaited(_loadExistingAttachments(existing.id));
     } else {
-      _startDate = widget.initialDate;
-      _endDate = widget.initialDate;
+      // Callers pass a UTC-midnight day key (e.g. DayDetailPage.date);
+      // re-read it as a plain local calendar date so the past-date check
+      // against local [_today] doesn't reject "today" on a device west of
+      // UTC, where UTC midnight is still yesterday evening.
+      final initial = widget.initialDate;
+      _startDate = DateTime(initial.year, initial.month, initial.day);
+      _endDate = _startDate;
       _eventType = _allowedEventTypes.first;
       _selectedGroup = widget.myGroups.isNotEmpty ? widget.myGroups.first : null;
       _contactNumberController.text = widget.creatorProfile?.phoneNumber ?? '';
@@ -201,30 +217,51 @@ class _AddEventPageState extends State<AddEventPage> {
 
   int _timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
 
+  static const _allDayStart = TimeOfDay(hour: allDayStartMinutes ~/ 60, minute: allDayStartMinutes % 60);
+  static const _allDayEnd = TimeOfDay(hour: allDayEndMinutes ~/ 60, minute: allDayEndMinutes % 60);
+
+  /// [_startTime]/[_endTime], or 00:00–23:59 while [_isAllDay] is on —
+  /// the pickers' own values are kept untouched underneath, so turning
+  /// All day back off restores whatever times were picked before.
+  TimeOfDay get _effectiveStartTime => _isAllDay ? _allDayStart : _startTime;
+  TimeOfDay get _effectiveEndTime => _isAllDay ? _allDayEnd : _endTime;
+
+  /// What the location will be saved as — blank means [unspecifiedLocation].
+  String get _effectiveLocation {
+    final typed = _locationController.text.trim();
+    return typed.isEmpty ? unspecifiedLocation : typed;
+  }
+
   String _formatClock(DateTime time) => formatDateTime12Hour(time);
+
+  /// "9:00 AM–10:00 AM", or "All day" for an all-day event.
+  String _eventTimeLabel(BarangayEvent event) => event.isAllDay
+      ? AppLocalizations.of(context)!.allDayButton
+      : '${_formatClock(event.startTime)}–${_formatClock(event.endTime)}';
 
   DateTime get _startDateTime => DateTime(
         _startDate.year,
         _startDate.month,
         _startDate.day,
-        _startTime.hour,
-        _startTime.minute,
+        _effectiveStartTime.hour,
+        _effectiveStartTime.minute,
       );
 
   DateTime get _endDateTime => DateTime(
         _endDate.year,
         _endDate.month,
         _endDate.day,
-        _endTime.hour,
-        _endTime.minute,
+        _effectiveEndTime.hour,
+        _effectiveEndTime.minute,
       );
 
   /// This form's own time-of-day window for [day] — the per-day override
   /// in [_perDayOverrides] if that specific day has been customized,
-  /// otherwise the default [_startTime]/[_endTime] applied uniformly.
+  /// otherwise the default window (see [_effectiveStartTime]) applied
+  /// uniformly.
   ({TimeOfDay start, TimeOfDay end}) _windowForFormDay(DateTime day) {
     final normalized = DateTime.utc(day.year, day.month, day.day);
-    return _perDayOverrides[normalized] ?? (start: _startTime, end: _endTime);
+    return _perDayOverrides[normalized] ?? (start: _effectiveStartTime, end: _effectiveEndTime);
   }
 
   /// Checks every day from [_startDate] to [_endDate] (just [_startDate]
@@ -241,7 +278,7 @@ class _AddEventPageState extends State<AddEventPage> {
     final entries = <({BarangayEvent event, DateTime day})>[];
     for (var day = _startDate; !day.isAfter(_endDate); day = day.add(const Duration(days: 1))) {
       final window = _windowForFormDay(day);
-      for (final event in widget.findOverlappingEvents(day, window.start, window.end)) {
+      for (final event in widget.findOverlappingEvents(_effectiveLocation, day, window.start, window.end)) {
         if (_isEditing && event.id == widget.existingEvent!.id) continue;
         if (seen.add(event.id)) {
           entries.add((event: event, day: day));
@@ -254,11 +291,19 @@ class _AddEventPageState extends State<AddEventPage> {
   void _recomputeConflicts() {
     _conflicts = _computeConflicts();
     // Suggesting a single replacement time slot only makes sense for a
-    // single-day event — which day/time it'd apply to for a multi-day
-    // range isn't well-defined, so it's left off there.
-    _suggestedSlot = (!_isMultiDay && _conflicts.isNotEmpty)
-        ? widget.suggestFreeSlot(_startDate, _startTime, _endTime)
+    // single-day, timed event — which day/time it'd apply to for a
+    // multi-day range isn't well-defined, and an all-day event has no
+    // shorter slot to move to.
+    _suggestedSlot = (!_isMultiDay && !_isAllDay && _conflicts.isNotEmpty)
+        ? widget.suggestFreeSlot(_effectiveLocation, _startDate, _startTime, _endTime)
         : null;
+  }
+
+  void _setAllDay(bool value) {
+    setState(() {
+      _isAllDay = value;
+      _recomputeConflicts();
+    });
   }
 
   void _setMultiDay(bool value) {
@@ -382,9 +427,8 @@ class _AddEventPageState extends State<AddEventPage> {
                   child: Text(
                     _isMultiDay
                         ? '• ${entry.event.title} • ${DateFormat('MMM d').format(entry.day)}, '
-                            '${_formatClock(entry.event.startTime)}–${_formatClock(entry.event.endTime)}'
-                        : '• ${entry.event.title} • ${_formatClock(entry.event.startTime)}–'
-                            '${_formatClock(entry.event.endTime)}',
+                            '${_eventTimeLabel(entry.event)}'
+                        : '• ${entry.event.title} • ${_eventTimeLabel(entry.event)}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
@@ -409,13 +453,13 @@ class _AddEventPageState extends State<AddEventPage> {
   Future<void> _save() async {
     final l10n = AppLocalizations.of(context)!;
     final title = _titleController.text.trim();
-    final location = _locationController.text.trim();
+    final location = _effectiveLocation;
     final description = _descriptionController.text.trim();
     final contactNumber = _contactNumberController.text.trim();
 
-    if (title.isEmpty || location.isEmpty) {
+    if (title.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.titleLocationRequired)),
+        SnackBar(content: Text(l10n.titleRequired)),
       );
       return;
     }
@@ -468,6 +512,13 @@ class _AddEventPageState extends State<AddEventPage> {
             endMinutes: _timeToMinutes(entry.value.end),
           ),
     ];
+
+    // Only for brand-new events: an older event being edited that never
+    // had a color keeps its existing fallback look rather than suddenly
+    // changing color just because someone fixed a typo in it.
+    if (_colorKey == null && !_isEditing) {
+      _colorKey = randomEventColorKey();
+    }
 
     setState(() => _saving = true);
     final existing = widget.existingEvent;
@@ -794,13 +845,12 @@ class _AddEventPageState extends State<AddEventPage> {
                 child: Text(
                   _isMultiDay
                       ? '${entry.event.title} • ${DateFormat('MMM d').format(entry.day)}, '
-                          '${_formatClock(entry.event.startTime)}–${_formatClock(entry.event.endTime)}'
-                      : '${entry.event.title} • ${_formatClock(entry.event.startTime)}–'
-                          '${_formatClock(entry.event.endTime)}',
+                          '${_eventTimeLabel(entry.event)}'
+                      : '${entry.event.title} • ${_eventTimeLabel(entry.event)}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
-            if (_isMultiDay)
+            if (_isMultiDay || _isAllDay)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(
@@ -937,8 +987,23 @@ class _AddEventPageState extends State<AddEventPage> {
                       selected: _colorKey == key,
                       onTap: () => setState(() => _colorKey = _colorKey == key ? null : key),
                     ),
+                  _RandomColorButton(
+                    tooltip: l10n.randomColorTooltip,
+                    // Always lands on a different color than the current
+                    // one, so each tap visibly changes something.
+                    onTap: () => setState(() => _colorKey = randomEventColorKey(excluding: _colorKey)),
+                  ),
                 ],
               ),
+              if (_colorKey == null && !_isEditing) ...[
+                const SizedBox(height: 6),
+                Text(
+                  l10n.randomColorHint,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
               if (_eventType == EventType.shared) ...[
                 const SizedBox(height: 12),
                 if (widget.myGroups.isEmpty)
@@ -1001,19 +1066,22 @@ class _AddEventPageState extends State<AddEventPage> {
                   ],
                   onChanged: (value) => setState(() {
                     _selectedLocationOption = value ?? _customLocationOption;
-                    if (_selectedLocationOption != _customLocationOption) {
-                      _locationController.text = _selectedLocationOption;
-                    }
+                    _locationController.text =
+                        _selectedLocationOption == _customLocationOption ? '' : _selectedLocationOption;
+                    _recomputeConflicts();
                   }),
                 ),
                 if (_selectedLocationOption == _customLocationOption) const SizedBox(height: 12),
               ],
               if (widget.lguLocations.isEmpty || _selectedLocationOption == _customLocationOption)
                 TextField(
+                  key: const Key('add-event-location-field'),
                   controller: _locationController,
+                  onChanged: (_) => setState(_recomputeConflicts),
                   decoration: InputDecoration(
                     labelText: widget.lguLocations.isEmpty ? l10n.detailLocation : l10n.locationCustomLabel,
                     hintText: l10n.locationHint,
+                    helperText: l10n.locationOptionalHelper,
                     prefixIcon: glassFieldIcon(FontAwesomeIcons.locationDot, size: 14),
                     prefixIconConstraints: glassFieldIconConstraints,
                   ),
@@ -1158,18 +1226,49 @@ class _AddEventPageState extends State<AddEventPage> {
                   value: DateFormat('EEEE, MMM d, yyyy').format(_startDate),
                   onTap: _pickDate,
                 ),
-              _buildPickerRow(
-                icon: FontAwesomeIcons.clock,
-                label: _isMultiDay ? l10n.defaultStartTimeLabel : l10n.startTimeLabel,
-                value: formatTimeOfDay12Hour(_startTime),
-                onTap: _pickStartTime,
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l10n.allDayEventLabel,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        Text(
+                          l10n.allDayEventHint,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    key: const Key('add-event-all-day-switch'),
+                    value: _isAllDay,
+                    onChanged: _setAllDay,
+                  ),
+                ],
               ),
-              _buildPickerRow(
-                icon: FontAwesomeIcons.hourglassStart,
-                label: _isMultiDay ? l10n.defaultEndTimeLabel : l10n.endTimeLabel,
-                value: formatTimeOfDay12Hour(_endTime),
-                onTap: _pickEndTime,
-              ),
+              if (!_isAllDay) ...[
+                _buildPickerRow(
+                  icon: FontAwesomeIcons.clock,
+                  label: _isMultiDay ? l10n.defaultStartTimeLabel : l10n.startTimeLabel,
+                  value: formatTimeOfDay12Hour(_startTime),
+                  onTap: _pickStartTime,
+                ),
+                _buildPickerRow(
+                  icon: FontAwesomeIcons.hourglassStart,
+                  label: _isMultiDay ? l10n.defaultEndTimeLabel : l10n.endTimeLabel,
+                  value: formatTimeOfDay12Hour(_endTime),
+                  onTap: _pickEndTime,
+                ),
+              ],
               if (_conflicts.isNotEmpty) _buildConflictWarning(),
             ],
           ),
@@ -1247,8 +1346,10 @@ class _AddEventPageState extends State<AddEventPage> {
                   isCustom
                       ? l10n.timeRange(
                           formatTimeOfDay12Hour(override.start), formatTimeOfDay12Hour(override.end))
-                      : l10n.defaultTimeRangeSuffix(
-                          formatTimeOfDay12Hour(_startTime), formatTimeOfDay12Hour(_endTime)),
+                      : _isAllDay
+                          ? l10n.defaultAllDaySuffix
+                          : l10n.defaultTimeRangeSuffix(
+                              formatTimeOfDay12Hour(_startTime), formatTimeOfDay12Hour(_endTime)),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
                 ),
               ],
@@ -1265,7 +1366,7 @@ class _AddEventPageState extends State<AddEventPage> {
           else
             TextButton(
               onPressed: () => setState(() {
-                _perDayOverrides[day] = (start: const TimeOfDay(hour: 0, minute: 0), end: const TimeOfDay(hour: 23, minute: 59));
+                _perDayOverrides[day] = (start: _allDayStart, end: _allDayEnd);
                 _recomputeConflicts();
               }),
               child: Text(l10n.allDayButton),
@@ -1348,11 +1449,39 @@ class _ColorSwatch extends StatelessWidget {
   }
 }
 
-/// One file in the attachments picker — already-uploaded (real
-/// [EventAttachment]) or still-pending (a locally-held [PlatformFile]),
-/// both rendered identically since the only difference is what removing
-/// it actually does (see [AddEventPage]'s _removeExistingAttachment vs.
-/// _removePendingAttachment).
+/// Picks a random color label — sits at the end of the swatch row,
+/// same size as a swatch, so it reads as one more option in the picker.
+class _RandomColorButton extends StatelessWidget {
+  const _RandomColorButton({required this.tooltip, required this.onTap});
+
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        key: const Key('add-event-random-color'),
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: colorScheme.onSurface.withValues(alpha: 0.06),
+            border: Border.all(color: colorScheme.outlineVariant, width: 1.5),
+          ),
+          alignment: Alignment.center,
+          child: FaIcon(FontAwesomeIcons.shuffle, size: 14, color: colorScheme.onSurfaceVariant),
+        ),
+      ),
+    );
+  }
+}
+
 /// One file in the attachments picker — already-uploaded (real
 /// [EventAttachment]) or still-pending (a locally-held [PlatformFile]),
 /// both rendered identically since the caller (see [AddEventPage])

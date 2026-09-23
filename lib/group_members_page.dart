@@ -47,9 +47,11 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
   late bool _isVerified = widget.group.isVerified;
   late String? _createdBy = widget.group.createdBy;
   late bool _requiresApproval = widget.group.requiresApproval;
+  late String _name = widget.group.name;
   bool _verifyBusy = false;
   bool _transferBusy = false;
   bool _joinPolicyBusy = false;
+  bool _renameBusy = false;
   bool _deleting = false;
 
   @override
@@ -206,6 +208,41 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
     }
   }
 
+  Future<void> _rename() async {
+    final l10n = AppLocalizations.of(context)!;
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (_) => _RenameGroupDialog(initialName: _name),
+    );
+    if (newName == null || !mounted) return;
+
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.enterGroupNameError)),
+      );
+      return;
+    }
+    if (trimmed == _name) return;
+
+    setState(() => _renameBusy = true);
+    try {
+      await widget.eventRepository.renameGroup(widget.group.id, trimmed);
+      if (!mounted) return;
+      setState(() => _name = trimmed);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.groupRenamedMessage(trimmed))),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.couldNotRenameGroupError)),
+      );
+    } finally {
+      if (mounted) setState(() => _renameBusy = false);
+    }
+  }
+
   Future<void> _transferOwnership() async {
     final l10n = AppLocalizations.of(context)!;
     final candidates = _members.where((member) => member.userId != _createdBy).toList();
@@ -274,7 +311,7 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.deleteGroupConfirmTitle(widget.group.name)),
+        title: Text(l10n.deleteGroupConfirmTitle(_name)),
         content: Text(l10n.deleteGroupConfirmBody),
         actions: [
           TextButton(
@@ -415,10 +452,12 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
     );
   }
 
-  /// Join-policy toggle (open vs. requires approval) — visible to any
-  /// admin of the group, independent of the owner-only settings above,
-  /// since this is an ordinary group setting rather than a trust signal.
-  Widget? _buildJoinSettingsPanel() {
+  /// Rename + join-policy toggle (open vs. requires approval) — visible
+  /// to any admin of the group, independent of the owner-only settings
+  /// above, since these are ordinary group settings rather than a trust
+  /// signal. The buttons are Flexible so a long label (e.g. in Filipino)
+  /// wraps instead of overflowing on a narrow phone.
+  Widget? _buildGroupSettingsPanel() {
     if (!_isAdmin) return null;
     final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
@@ -426,42 +465,87 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: GlassPanel(
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            FaIcon(
-              _requiresApproval ? FontAwesomeIcons.userClock : FontAwesomeIcons.doorOpen,
-              size: 16,
-              color: colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _requiresApproval ? l10n.joinPolicyApprovalRequired : l10n.joinPolicyOpen,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            Row(
+              children: [
+                FaIcon(FontAwesomeIcons.penToSquare, size: 16, color: colorScheme.onSurfaceVariant),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _name,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        l10n.renameGroupHint,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
                   ),
-                  Text(
-                    l10n.requiresApprovalHint,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                _renameBusy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Flexible(
+                        child: TextButton(
+                          onPressed: () => unawaited(_rename()),
+                          child: Text(l10n.renameGroupButton),
                         ),
-                  ),
-                ],
-              ),
+                      ),
+              ],
             ),
-            const SizedBox(width: 8),
-            _joinPolicyBusy
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : TextButton(
-                    onPressed: () => unawaited(_toggleRequiresApproval()),
-                    child: Text(_requiresApproval ? l10n.allowInstantJoinButton : l10n.requireApprovalButton),
+            const Divider(height: 20),
+            Row(
+              children: [
+                FaIcon(
+                  _requiresApproval ? FontAwesomeIcons.userClock : FontAwesomeIcons.doorOpen,
+                  size: 16,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _requiresApproval ? l10n.joinPolicyApprovalRequired : l10n.joinPolicyOpen,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      Text(
+                        l10n.requiresApprovalHint,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
                   ),
+                ),
+                const SizedBox(width: 8),
+                _joinPolicyBusy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Flexible(
+                        child: TextButton(
+                          onPressed: () => unawaited(_toggleRequiresApproval()),
+                          child: Text(_requiresApproval ? l10n.allowInstantJoinButton : l10n.requireApprovalButton),
+                        ),
+                      ),
+              ],
+            ),
           ],
         ),
       ),
@@ -574,15 +658,15 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     final ownerPanel = _buildOwnerPanel();
-    final joinSettingsPanel = _buildJoinSettingsPanel();
+    final groupSettingsPanel = _buildGroupSettingsPanel();
 
     return GlassSubPage(
-      title: widget.group.name,
+      title: _name,
       subtitle: '${_members.length} member${_members.length == 1 ? '' : 's'}'
           '${widget.group.isPrivate ? ' • Private' : ''}',
       children: [
         if (ownerPanel != null) ownerPanel,
-        if (joinSettingsPanel != null) joinSettingsPanel,
+        if (groupSettingsPanel != null) groupSettingsPanel,
         GlassPanel(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -708,6 +792,54 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
                 for (final member in _filtered) _buildMemberRow(member),
             ],
           ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Owns its own [TextEditingController] so it's disposed with the dialog
+/// route, not while the dialog's close animation is still using it.
+class _RenameGroupDialog extends StatefulWidget {
+  const _RenameGroupDialog({required this.initialName});
+
+  final String initialName;
+
+  @override
+  State<_RenameGroupDialog> createState() => _RenameGroupDialogState();
+}
+
+class _RenameGroupDialogState extends State<_RenameGroupDialog> {
+  late final _controller = TextEditingController(text: widget.initialName);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return AlertDialog(
+      title: Text(l10n.renameGroupTitle),
+      content: TextField(
+        key: const Key('rename-group-field'),
+        controller: _controller,
+        autofocus: true,
+        maxLength: 80,
+        textCapitalization: TextCapitalization.words,
+        decoration: InputDecoration(labelText: l10n.groupNameLabel),
+        onSubmitted: (value) => Navigator.of(context).pop(value),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text),
+          child: Text(l10n.save),
         ),
       ],
     );

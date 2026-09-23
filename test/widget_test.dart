@@ -11,13 +11,18 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:table_calendar/table_calendar.dart';
 
 import 'package:eCalendar/main.dart';
 import 'package:eCalendar/attachment_image_viewer.dart';
 import 'package:eCalendar/avatar_picker_page.dart';
 import 'package:eCalendar/day_detail_page.dart';
+import 'package:eCalendar/event_colors.dart';
+import 'package:eCalendar/event_conflicts.dart';
 import 'package:eCalendar/event_store.dart';
 import 'package:eCalendar/auth_service.dart';
+import 'package:eCalendar/group_members_page.dart';
 import 'package:eCalendar/liquid_glass_components.dart';
 import 'package:eCalendar/profile_pages.dart';
 import 'package:eCalendar/push_notifications.dart';
@@ -47,6 +52,14 @@ Future<void> openAddEventForToday(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// Drops focus from whatever text field was just typed into, so its
+/// selection handle overlay can't sit on top of (and swallow) a following
+/// scroll drag — which depends on where the field happens to land.
+Future<void> dismissKeyboard(WidgetTester tester) async {
+  FocusManager.instance.primaryFocus?.unfocus();
+  await tester.pumpAndSettle();
+}
+
 void main() {
   // flutter_test's default surface (800x600 @ ratio 1.0) is wider than
   // ResponsiveScaler's 430-logical-px design-width reference, which would
@@ -54,6 +67,9 @@ void main() {
   // tap-coordinate assumptions. Pin a realistic phone viewport instead, so
   // these tests keep exercising today's actual scale=1.0 behavior.
   setUp(() {
+    // A fresh, empty preferences store per test — otherwise anything one
+    // test saves (kiosk mode, calendar style, ...) leaks into the next.
+    SharedPreferences.setMockInitialValues({});
     final view = TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.views.first;
     view.physicalSize = const Size(1080, 2340);
     view.devicePixelRatio = 3.0; // logical 360x780 — below the 430 design width
@@ -1347,6 +1363,7 @@ void main() {
     var textFields = find.byType(TextField);
     await tester.enterText(textFields.at(0), 'Team Meeting');
     await tester.enterText(textFields.at(1), 'Room A');
+    await dismissKeyboard(tester);
     await tester.scrollUntilVisible(
       find.text('Save event'),
       300,
@@ -1361,20 +1378,21 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
 
-    // Second event defaults to the exact same 9:00-10:00 slot -> conflict.
+    // Second event defaults to the exact same 9:00-10:00 slot in the same room -> conflict.
     await tester.tap(find.byKey(const Key('day-detail-add-event-fab')));
     await tester.pumpAndSettle();
     textFields = find.byType(TextField);
+    // Same room as Team Meeting — only same-venue events can conflict.
     await tester.enterText(textFields.at(0), 'Board Meeting');
-    await tester.enterText(textFields.at(1), 'Room B');
-    await tester.pumpAndSettle();
+    await tester.enterText(textFields.at(1), 'room a');
+    await dismissKeyboard(tester);
 
     await tester.scrollUntilVisible(
-      find.text('Overlaps with an existing event:'),
+      find.text('Overlaps with an event at the same location:'),
       300,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('Overlaps with an existing event:'), findsOneWidget);
+    expect(find.text('Overlaps with an event at the same location:'), findsOneWidget);
     expect(find.textContaining('Team Meeting • '), findsOneWidget);
 
     // Saving while still conflicting now prompts a confirmation dialog
@@ -1392,14 +1410,14 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     // Still on Add Event, still conflicting — canceling didn't save it.
-    expect(find.text('Overlaps with an existing event:'), findsOneWidget);
+    expect(find.text('Overlaps with an event at the same location:'), findsOneWidget);
 
     // Tapping the suggested free slot clears the conflict...
     await tester.ensureVisible(find.textContaining('Free slot:'));
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('Free slot:'));
     await tester.pumpAndSettle();
-    expect(find.text('Overlaps with an existing event:'), findsNothing);
+    expect(find.text('Overlaps with an event at the same location:'), findsNothing);
 
     // ...and the event now saves successfully.
     await tester.scrollUntilVisible(
@@ -1621,6 +1639,59 @@ void main() {
 
       expect(members.firstWhere((m) => m.userId == 'mayor-1').accountRole, 'lgu_member');
       expect(members.firstWhere((m) => m.userId == 'staff-1').accountRole, 'citizen');
+    });
+
+    test('renaming a group also renames it on events already posted to it', () async {
+      final repo = MemoryEventRepository.seeded();
+
+      await repo.renameGroup('grp-mayor', '  Mayor\'s Office  ');
+
+      final groups = await repo.searchGroups('');
+      expect(groups.firstWhere((g) => g.id == 'grp-mayor').name, "Mayor's Office");
+      final events = await repo.watchAllEvents().first;
+      final groupEvents = events.where((e) => e.groupId == 'grp-mayor');
+      expect(groupEvents, isNotEmpty);
+      expect(groupEvents.every((e) => e.groupName == "Mayor's Office"), isTrue);
+    });
+
+    test('a blank group name is rejected', () async {
+      final repo = MemoryEventRepository.seeded();
+      await expectLater(repo.renameGroup('grp-mayor', '   '), throwsException);
+    });
+
+    testWidgets('a group admin can rename the group from its members page', (WidgetTester tester) async {
+      // A promoted admin, not the creator — renaming is open to any admin.
+      final repo = MemoryEventRepository.seeded();
+      await repo.joinGroup('grp-mayor');
+      await repo.promoteMember('grp-mayor', 'mock-user-id');
+
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(role: 'lgu_member'),
+          eventRepositoryFactory: () async => repo,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Groups'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text("Mayor's Office Updates"));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Rename'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('rename-group-field')), "Mayor's Office");
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Group renamed to "Mayor\'s Office".'), findsOneWidget);
+      expect((await repo.listMyGroups()).single.name, "Mayor's Office");
+
+      // Back on the Groups tab, the list reflects the new name.
+      Navigator.of(tester.element(find.byType(GroupMembersPage))).pop();
+      await tester.pumpAndSettle();
+      expect(find.text("Mayor's Office"), findsOneWidget);
+      expect(find.text("Mayor's Office Updates"), findsNothing);
     });
   });
 
@@ -1901,6 +1972,7 @@ void main() {
       var textFields = find.byType(TextField);
       await tester.enterText(textFields.at(0), 'Team Meeting');
       await tester.enterText(textFields.at(1), 'Room A');
+      await dismissKeyboard(tester);
       await tester.scrollUntilVisible(
         find.text('Save event'),
         300,
@@ -1916,9 +1988,10 @@ void main() {
       await tester.tap(find.byKey(const Key('day-detail-add-event-fab')));
       await tester.pumpAndSettle();
       textFields = find.byType(TextField);
+      // Same room as Team Meeting — only same-venue events can conflict.
       await tester.enterText(textFields.at(0), 'Board Meeting');
-      await tester.enterText(textFields.at(1), 'Room B');
-      await tester.pumpAndSettle();
+      await tester.enterText(textFields.at(1), 'Room A');
+      await dismissKeyboard(tester);
 
       await tester.scrollUntilVisible(
         find.text('Save event'),
@@ -1941,6 +2014,495 @@ void main() {
       );
       expect(find.text('Team Meeting'), findsOneWidget);
       expect(find.text('Board Meeting'), findsOneWidget);
+    });
+  });
+
+  group('venue-aware overlaps', () {
+    BarangayEvent at(String id, String location, int startHour, int endHour, {DateTime? day}) {
+      final d = day ?? DateTime(2026, 10, 5);
+      return BarangayEvent(
+        id: id,
+        title: id,
+        location: location,
+        startTime: DateTime(d.year, d.month, d.day, startHour),
+        endTime: DateTime(d.year, d.month, d.day, endHour),
+        description: '',
+        createdAt: DateTime(2026, 10, 1),
+      );
+    }
+
+    final day = DateTime(2026, 10, 5);
+    const nine = TimeOfDay(hour: 9, minute: 0);
+    const ten = TimeOfDay(hour: 10, minute: 0);
+
+    test('an event in another room at the same time is not a conflict', () {
+      final events = [at('Lobby event', 'Lobby', 9, 10)];
+      expect(findOverlappingEvents(events, 'Conference Room', day, nine, ten), isEmpty);
+    });
+
+    test('the same room at the same time is a conflict, ignoring case and spacing', () {
+      final events = [at('Lobby event', 'Lobby', 9, 10)];
+      expect(
+        findOverlappingEvents(events, '  lobby ', day, nine, ten).map((e) => e.id),
+        ['Lobby event'],
+      );
+    });
+
+    test('an unspecified ("Other") location never conflicts', () {
+      final events = [at('Unknown venue', unspecifiedLocation, 9, 10)];
+      expect(findOverlappingEvents(events, unspecifiedLocation, day, nine, ten), isEmpty);
+      expect(findOverlappingEvents(events, 'Lobby', day, nine, ten), isEmpty);
+    });
+
+    test('free-slot suggestions only avoid events at the same venue', () {
+      final events = [
+        at('Lobby event', 'Lobby', 8, 10),
+        at('Conference event', 'Conference Room', 10, 11),
+      ];
+      // Nearest free Lobby hour is 10-11 — taken in the Conference Room,
+      // which mustn't matter. (If it did, the answer would be 7:00.)
+      final slot = suggestFreeSlot(events, 'Lobby', day, nine, ten);
+      expect(slot?.start, const TimeOfDay(hour: 10, minute: 0));
+    });
+
+    test('an all-day event blocks its own venue for the whole day', () {
+      final allDay = BarangayEvent(
+        id: 'Fiesta prep',
+        title: 'Fiesta prep',
+        location: 'Plaza',
+        startTime: DateTime(2026, 10, 5),
+        endTime: DateTime(2026, 10, 5, 23, 59),
+        description: '',
+        createdAt: DateTime(2026, 10, 1),
+      );
+      expect(allDay.isAllDay, isTrue);
+      const fourPm = TimeOfDay(hour: 16, minute: 0);
+      const fivePm = TimeOfDay(hour: 17, minute: 0);
+      expect(findOverlappingEvents([allDay], 'Plaza', day, fourPm, fivePm), hasLength(1));
+      expect(findOverlappingEvents([allDay], 'Lobby', day, fourPm, fivePm), isEmpty);
+    });
+  });
+
+  group('add event: all day and optional location', () {
+    testWidgets('an all-day event with no location saves as All day at "Other"',
+        (WidgetTester tester) async {
+      final repo = MemoryEventRepository.seeded();
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repo,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await openAddEventForToday(tester);
+      await tester.enterText(find.byType(TextField).at(0), 'Clean-up Drive');
+      // Location deliberately left blank.
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('add-event-all-day-switch')),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Start time'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('add-event-all-day-switch')));
+      await tester.pumpAndSettle();
+      // Times aren't asked for once it's all day.
+      expect(find.text('Start time'), findsNothing);
+      expect(find.text('End time'), findsNothing);
+
+      await tester.scrollUntilVisible(
+        find.text('Save event'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save event'));
+      await tester.pumpAndSettle();
+
+      final saved = (await repo.watchAllEvents().first).firstWhere((e) => e.title == 'Clean-up Drive');
+      expect(saved.location, unspecifiedLocation);
+      expect(saved.isAllDay, isTrue);
+      expect(find.textContaining('All day'), findsWidgets);
+    });
+
+    testWidgets('a title is still required', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await openAddEventForToday(tester);
+      await tester.scrollUntilVisible(
+        find.text('Save event'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save event'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Please enter an event title.'), findsOneWidget);
+    });
+  });
+
+  group('event colors and group tags', () {
+    Future<void> saveNewEvent(WidgetTester tester, String title) async {
+      await tester.enterText(find.byType(TextField).at(0), title);
+      await dismissKeyboard(tester);
+      await tester.scrollUntilVisible(
+        find.text('Save event'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save event'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a new event with no color picked gets a random palette color',
+        (WidgetTester tester) async {
+      final repo = MemoryEventRepository.seeded();
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repo,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await openAddEventForToday(tester);
+      expect(find.text('No color picked? A random one will be assigned when you save.'), findsOneWidget);
+      await saveNewEvent(tester, 'Feeding Program');
+
+      final saved = (await repo.watchAllEvents().first).firstWhere((e) => e.title == 'Feeding Program');
+      expect(eventColorPalette.keys, contains(saved.colorKey));
+    });
+
+    testWidgets('the shuffle button picks a color right away', (WidgetTester tester) async {
+      final repo = MemoryEventRepository.seeded();
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repo,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await openAddEventForToday(tester);
+      await tester.tap(find.byKey(const Key('add-event-random-color')));
+      await tester.pumpAndSettle();
+      // A color is now selected (shown with a check), so the hint is gone.
+      expect(find.text('No color picked? A random one will be assigned when you save.'), findsNothing);
+      expect(find.byIcon(Icons.check), findsOneWidget);
+    });
+
+    test('randomEventColorKey never repeats the excluded color', () {
+      for (var i = 0; i < 50; i++) {
+        expect(randomEventColorKey(excluding: 'grape'), isNot('grape'));
+      }
+    });
+
+    testWidgets('group event cards show which group they were posted to',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await openTodayDetail(tester);
+      expect(find.text("Posted to Mayor's Office Updates"), findsOneWidget);
+    });
+
+    testWidgets('calendar dots and date-range bars use each event\'s color label',
+        (WidgetTester tester) async {
+      final repo = MemoryEventRepository.seeded();
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      await repo.addEvent(BarangayEvent(
+        id: 'grape-event',
+        title: 'Grape Event',
+        location: 'Plaza',
+        startTime: today.add(const Duration(hours: 13)),
+        endTime: today.add(const Duration(hours: 14)),
+        description: '',
+        createdAt: now,
+        colorKey: 'grape',
+      ));
+      await repo.addEvent(BarangayEvent(
+        id: 'basil-range',
+        title: 'Basil Range',
+        location: 'Plaza',
+        startTime: today.add(const Duration(hours: 8)),
+        endTime: today.add(const Duration(days: 1, hours: 17)),
+        description: '',
+        createdAt: now,
+        colorKey: 'basil',
+      ));
+
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repo,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      Color markerColor(String key) {
+        final box = tester.widget<Container>(find.byKey(Key(key)).first);
+        return (box.decoration! as BoxDecoration).color!;
+      }
+
+      expect(markerColor('calendar-dot-grape-event'), eventColorPalette['grape']);
+      expect(markerColor('calendar-bar-basil-range'), eventColorPalette['basil']);
+    });
+  });
+
+  group('reminders on by default', () {
+    test('a fresh install reminds 1 hour before', () async {
+      SharedPreferences.setMockInitialValues({});
+      final controller = await ThemeController.load();
+      expect(controller.reminderPreference, ReminderPreference.oneHour);
+      expect(ThemeController().reminderPreference, ReminderPreference.oneHour);
+    });
+
+    test('an explicit Off choice is still respected', () async {
+      SharedPreferences.setMockInitialValues({'app_reminder_preference': 'off'});
+      final controller = await ThemeController.load();
+      expect(controller.reminderPreference, ReminderPreference.off);
+    });
+  });
+
+  group('event times from Supabase', () {
+    test('are read as local wall-clock time and written back unchanged', () {
+      final event = BarangayEvent.fromSupabase({
+        'id': 'e1',
+        'title': 'Team Meeting',
+        'location': 'Room A',
+        'start_time': '2026-09-23T10:00:00+00:00',
+        'end_time': '2026-09-23T11:30:00+00:00',
+        'created_at': '2026-09-20T08:15:00+00:00',
+        'description': '',
+      });
+
+      // Same clock time the creator entered, but comparable with
+      // DateTime.now() (it used to come back UTC-flagged, 8 hours off).
+      expect(event.startTime.isUtc, isFalse);
+      expect(event.startTime, DateTime(2026, 9, 23, 10));
+      expect(event.endTime, DateTime(2026, 9, 23, 11, 30));
+      expect(event.createdAt, DateTime(2026, 9, 20, 8, 15));
+      // Still saved exactly as before (no offset -> same stored value).
+      expect(event.toSupabaseJson()['start_time'], '2026-09-23T10:00:00.000');
+    });
+  });
+
+  group('calendar event titles view', () {
+    Future<MemoryEventRepository> emptyRepo() async {
+      final repo = MemoryEventRepository.seeded();
+      for (final event in await repo.watchAllEvents().first) {
+        await repo.deleteEvent(event.id);
+      }
+      return repo;
+    }
+
+    BarangayEvent event(String id, DateTime start, DateTime end, String colorKey) => BarangayEvent(
+          id: id,
+          title: id,
+          location: 'Plaza',
+          startTime: start,
+          endTime: end,
+          description: '',
+          createdAt: DateTime(2026, 1, 1),
+          colorKey: colorKey,
+        );
+
+    Finder chip(String id, DateTime day) => find.byKey(Key('calendar-chip-$id-${day.year}-${day.month}-${day.day}'));
+
+    testWidgets('can be switched on in Settings', (WidgetTester tester) async {
+      final themeController = ThemeController();
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+          themeController: themeController,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(themeController.calendarCellStyle, CalendarCellStyle.dots);
+
+      await tester.tap(find.text('Profile'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Settings'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('settings-calendar-titles')),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings-calendar-titles')));
+      await tester.pumpAndSettle();
+      expect(themeController.calendarCellStyle, CalendarCellStyle.titles);
+
+      Navigator.of(tester.element(find.byType(SettingsPage))).pop();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Calendar'));
+      await tester.pumpAndSettle();
+
+      // Today's seeded event now shows as a titled chip instead of a dot.
+      final now = DateTime.now();
+      expect(chip('seed-mayor-meeting', now), findsOneWidget);
+      expect(find.byKey(const Key('calendar-dot-seed-mayor-meeting')), findsNothing);
+    });
+
+    testWidgets('tapping the selected Month tab offers Dots / Event titles', (WidgetTester tester) async {
+      final themeController = ThemeController();
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+          themeController: themeController,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Month is the default view, so the first tap opens the menu.
+      await tester.tap(find.text('Month'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('calendar-style-dots')), findsOneWidget);
+      expect(find.byKey(const Key('calendar-style-titles')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('calendar-style-titles')));
+      await tester.pumpAndSettle();
+      expect(themeController.calendarCellStyle, CalendarCellStyle.titles);
+      expect(chip('seed-mayor-meeting', DateTime.now()), findsOneWidget);
+
+      // And back to dots the same way.
+      await tester.tap(find.text('Month'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('calendar-style-dots')));
+      await tester.pumpAndSettle();
+      expect(themeController.calendarCellStyle, CalendarCellStyle.dots);
+      expect(chip('seed-mayor-meeting', DateTime.now()), findsNothing);
+    });
+
+    testWidgets('from another view, Month just switches views; Week has the same menu',
+        (WidgetTester tester) async {
+      final themeController = ThemeController();
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+          themeController: themeController,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('List'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Month'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('calendar-style-titles')), findsNothing);
+      expect(find.byType(TableCalendar), findsOneWidget);
+
+      await tester.tap(find.text('Week'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('calendar-style-titles')), findsNothing);
+      await tester.tap(find.text('Week'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('calendar-style-titles')));
+      await tester.pumpAndSettle();
+      expect(themeController.calendarCellStyle, CalendarCellStyle.titles);
+    });
+
+    testWidgets('date-range events keep their lane and span their days, like Google Calendar',
+        (WidgetTester tester) async {
+      final now = DateTime.now();
+      var sunday = DateTime(now.year, now.month, 1);
+      while (sunday.weekday != DateTime.sunday) {
+        sunday = sunday.add(const Duration(days: 1));
+      }
+      DateTime day(int offset, [int hour = 0]) => DateTime(sunday.year, sunday.month, sunday.day + offset, hour);
+
+      final repo = await emptyRepo();
+      // A: Sun-Tue (lane 0). B: Mon-Wed (lane 1, overlaps A).
+      // C: Wed-Thu (lane 0 again — A has ended). S: single-day Tuesday,
+      // which lands below both bars that pass through Tuesday.
+      await repo.addEvent(event('A', day(0, 9), day(2, 17), 'grape'));
+      await repo.addEvent(event('B', day(1, 9), day(3, 17), 'basil'));
+      await repo.addEvent(event('C', day(3, 13), day(4, 15), 'peacock'));
+      await repo.addEvent(event('S', day(2, 10), day(2, 11), 'tomato'));
+
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repo,
+          themeController: ThemeController(initialCalendarCellStyle: CalendarCellStyle.titles),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Each bar is drawn once, from its first day; later days leave the lane empty.
+      expect(chip('A', day(0)), findsOneWidget);
+      expect(chip('A', day(1)), findsNothing);
+      expect(chip('A', day(2)), findsNothing);
+      expect(chip('B', day(1)), findsOneWidget);
+      expect(chip('C', day(3)), findsOneWidget);
+      expect(chip('S', day(2)), findsOneWidget);
+
+      // Lanes: A and C share the top lane; B is one lane down; S is below both.
+      final laneA = tester.getTopLeft(chip('A', day(0))).dy;
+      expect(tester.getTopLeft(chip('C', day(3))).dy, laneA);
+      expect(tester.getTopLeft(chip('B', day(1))).dy, closeTo(laneA + 17, 0.01));
+      expect(tester.getTopLeft(chip('S', day(2))).dy, closeTo(laneA + 34, 0.01));
+
+      // A 3-day bar is three cells wide; a single-day chip is one.
+      final cellWidth = tester.getSize(chip('S', day(2))).width + 2;
+      expect(tester.getSize(chip('A', day(0))).width, closeTo(3 * cellWidth - 2, 0.5));
+      expect(tester.getSize(chip('B', day(1))).width, closeTo(3 * cellWidth - 2, 0.5));
+
+      // Chips use the event's color label; no dots in this view.
+      final aBox = tester.widget<Container>(chip('A', day(0)));
+      expect((aBox.decoration! as BoxDecoration).color, eventColorPalette['grape']);
+      expect(find.byKey(const Key('calendar-dot-S')), findsNothing);
+    });
+
+    testWidgets('a busy day shows "+N" for events that do not fit', (WidgetTester tester) async {
+      final now = DateTime.now();
+      final target = DateTime(now.year, now.month, 15);
+      final repo = await emptyRepo();
+      for (var i = 0; i < 5; i++) {
+        await repo.addEvent(event('E$i', DateTime(target.year, target.month, 15, 8 + i),
+            DateTime(target.year, target.month, 15, 9 + i), 'peacock'));
+      }
+
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repo,
+          themeController: ThemeController(initialCalendarCellStyle: CalendarCellStyle.titles),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Month view fits three chips per day, in start-time order.
+      expect(chip('E0', target), findsOneWidget);
+      expect(chip('E2', target), findsOneWidget);
+      expect(chip('E3', target), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(Key('calendar-more-${target.year}-${target.month}-${target.day}')),
+          matching: find.text('+2'),
+        ),
+        findsOneWidget,
+      );
     });
   });
 

@@ -10,6 +10,35 @@ abstract final class EventType {
   static const String personal = 'personal';
 }
 
+/// What an event's location is saved as when the creator picked "Other"
+/// but left the field blank — location is optional, so someone who
+/// doesn't know the venue yet isn't forced to make one up. Never treated
+/// as a real venue by the overlap check (see [sameVenue]).
+const String unspecifiedLocation = 'Other';
+
+/// The clock-time window an all-day event is stored as (00:00–23:59) —
+/// the same convention the per-day "All day" button already used, so an
+/// all-day event needs no separate column: it's derived from its times.
+const int allDayStartMinutes = 0;
+const int allDayEndMinutes = 23 * 60 + 59;
+
+bool isAllDayWindow(int startMinutes, int endMinutes) =>
+    startMinutes == allDayStartMinutes && endMinutes == allDayEndMinutes;
+
+/// Whether two event locations are the same venue, for overlap purposes —
+/// case/whitespace-insensitive, and never true when either side is blank
+/// or [unspecifiedLocation] (an unknown venue can't be said to clash with
+/// anything, and two "Other"s aren't necessarily the same place).
+bool sameVenue(String a, String b) {
+  final left = a.trim().toLowerCase();
+  final right = b.trim().toLowerCase();
+  final unspecified = unspecifiedLocation.toLowerCase();
+  if (left.isEmpty || right.isEmpty || left == unspecified || right == unspecified) {
+    return false;
+  }
+  return left == right;
+}
+
 /// A per-day time-of-day override for one specific day of a multi-day
 /// event — e.g. day 1 all day (0-1440), day 2 just 1-5 PM. Days not
 /// listed in [BarangayEvent.dailyOverrides] fall back to the event's own
@@ -122,6 +151,13 @@ class BarangayEvent {
   /// True when the event spans more than one calendar day.
   bool get isMultiDay => endDayKey.isAfter(dayKey);
 
+  /// Stored as 00:00–23:59 (see [isAllDayWindow]) — shown as "All day"
+  /// instead of clock times.
+  bool get isAllDay => isAllDayWindow(
+        startTime.hour * 60 + startTime.minute,
+        endTime.hour * 60 + endTime.minute,
+      );
+
   /// Whether this event is happening on [day] — i.e. [day] falls anywhere
   /// within [dayKey]..[endDayKey] inclusive, not just on the start day.
   bool occursOnDay(DateTime day) {
@@ -149,6 +185,7 @@ class BarangayEvent {
 
   BarangayEvent copyWith({
     String? attendanceStatus,
+    String? groupName,
   }) {
     return BarangayEvent(
       id: id,
@@ -164,7 +201,7 @@ class BarangayEvent {
       createdById: createdById,
       eventType: eventType,
       groupId: groupId,
-      groupName: groupName,
+      groupName: groupName ?? this.groupName,
       dailyOverrides: dailyOverrides,
     );
   }
@@ -264,14 +301,28 @@ class BarangayEvent {
     );
   }
 
+  /// Event times are stored as the creator's local wall-clock time labeled
+  /// as UTC (written via [toSupabaseJson] with no offset, into a database
+  /// whose TimeZone is UTC), so they come back as e.g. "10:00+00:00" for a
+  /// 10:00 AM event. Re-reading those same wall-clock fields as a *local*
+  /// DateTime keeps every display identical, but makes comparisons with
+  /// `DateTime.now()` (Upcoming lists, "posted 5m ago", the Google
+  /// Calendar hand-off's `toUtc()`) correct instead of 8 hours off on a
+  /// Philippine device. Writing it back produces the exact same stored
+  /// value, so nothing already saved changes.
   static DateTime? _readDateTime(Object? value) {
-    if (value is DateTime) {
-      return value;
-    }
-    if (value is String) {
-      return DateTime.tryParse(value);
-    }
-    return null;
+    final parsed = value is DateTime ? value : (value is String ? DateTime.tryParse(value) : null);
+    if (parsed == null || !parsed.isUtc) return parsed;
+    return DateTime(
+      parsed.year,
+      parsed.month,
+      parsed.day,
+      parsed.hour,
+      parsed.minute,
+      parsed.second,
+      parsed.millisecond,
+      parsed.microsecond,
+    );
   }
 }
 
@@ -319,6 +370,7 @@ class BarangayGroup {
   bool get isAdmin => myRole == 'admin';
 
   BarangayGroup copyWith({
+    String? name,
     int? memberCount,
     String? myRole,
     String? createdBy,
@@ -327,7 +379,7 @@ class BarangayGroup {
   }) {
     return BarangayGroup(
       id: id,
-      name: name,
+      name: name ?? this.name,
       code: code,
       memberCount: memberCount ?? this.memberCount,
       createdBy: createdBy ?? this.createdBy,
@@ -572,6 +624,11 @@ abstract class EventRepository {
   /// Changes whether [groupId] requires admin approval to join — callable
   /// by any admin of that group. See [BarangayGroup.requiresApproval].
   Future<void> setGroupRequiresApproval(String groupId, bool requiresApproval);
+
+  /// Renames [groupId] — callable by any admin of that group. Also
+  /// rewrites the denormalized [BarangayEvent.groupName] on every event
+  /// already posted to it, so old events don't keep showing the old name.
+  Future<void> renameGroup(String groupId, String newName);
 
   /// Hands [groupId]'s creator-only privileges to [newOwnerUserId], who
   /// must already be a member — promoted to admin as part of the
@@ -1014,6 +1071,19 @@ class MemoryEventRepository implements EventRepository {
   }
 
   @override
+  Future<void> renameGroup(String groupId, String newName) async {
+    final name = newName.trim();
+    if (name.isEmpty) throw Exception('Group name cannot be empty');
+    final index = _allGroups.indexWhere((group) => group.id == groupId);
+    if (index == -1) throw Exception('Group not found');
+    _allGroups[index] = _allGroups[index].copyWith(name: name);
+    _events = _events
+        .map((event) => event.groupId == groupId ? event.copyWith(groupName: name) : event)
+        .toList();
+    _updates.add(_sortedEvents);
+  }
+
+  @override
   Future<void> transferGroupOwnership(String groupId, String newOwnerUserId) async {
     final index = _allGroups.indexWhere((group) => group.id == groupId);
     if (index == -1) throw Exception('Group not found');
@@ -1447,6 +1517,14 @@ class SupabaseEventRepository implements EventRepository {
     await _client.rpc('admin_set_group_requires_approval', params: {
       'p_group_id': groupId,
       'p_requires_approval': requiresApproval,
+    });
+  }
+
+  @override
+  Future<void> renameGroup(String groupId, String newName) async {
+    await _client.rpc('rename_group', params: {
+      'p_group_id': groupId,
+      'p_name': newName.trim(),
     });
   }
 

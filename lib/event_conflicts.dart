@@ -4,9 +4,12 @@ import 'event_store.dart';
 
 int timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
 
-/// Events in [events] occurring on [date] (any type — public/group/personal,
-/// since all of them show up together in a given user's own view) whose
-/// time-of-day range overlaps [start]–[end]. For a multi-day event,
+/// Events in [events] at the same venue as [location] (see [sameVenue] —
+/// events in different rooms never clash, and a blank/"Other" location
+/// never clashes with anything) occurring on [date] (any type —
+/// public/group/personal, since all of them show up together in a given
+/// user's own view) whose time-of-day range overlaps [start]–[end]. For a
+/// multi-day event,
 /// "occurring on [date]" uses [BarangayEvent.occursOnDay], and its
 /// time-of-day comes from [BarangayEvent.minutesWindowForDay] — its own
 /// start/end *clock* time applied on every spanned day by default, unless
@@ -14,6 +17,7 @@ int timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
 /// just 1-5 PM), in which case that day's own window is used instead.
 List<BarangayEvent> findOverlappingEvents(
   List<BarangayEvent> events,
+  String location,
   DateTime date,
   TimeOfDay start,
   TimeOfDay end,
@@ -22,6 +26,7 @@ List<BarangayEvent> findOverlappingEvents(
   final endMinutes = timeToMinutes(end);
 
   final overlapping = events.where((event) {
+    if (!sameVenue(event.location, location)) return false;
     if (!event.occursOnDay(date)) return false;
     final window = event.minutesWindowForDay(date);
     // Half-open interval overlap — back-to-back events (one ending right as
@@ -33,11 +38,13 @@ List<BarangayEvent> findOverlappingEvents(
   return overlapping;
 }
 
-/// The free time slot on [date], of the same length as [desiredStart]–
-/// [desiredEnd], that starts closest to what was originally requested.
-/// Null if the day has no gap long enough left, computed against [events].
+/// The free time slot at [location] on [date], of the same length as
+/// [desiredStart]–[desiredEnd], that starts closest to what was originally
+/// requested. Null if the day has no gap long enough left, computed
+/// against [events] at that same venue only (see [findOverlappingEvents]).
 ({TimeOfDay start, TimeOfDay end})? suggestFreeSlot(
   List<BarangayEvent> events,
+  String location,
   DateTime date,
   TimeOfDay desiredStart,
   TimeOfDay desiredEnd,
@@ -46,7 +53,7 @@ List<BarangayEvent> findOverlappingEvents(
   if (duration <= 0) return null;
 
   final busy = events
-      .where((event) => event.occursOnDay(date))
+      .where((event) => sameVenue(event.location, location) && event.occursOnDay(date))
       .map((event) {
         final window = event.minutesWindowForDay(date);
         return (start: window.startMinutes, end: window.endMinutes);

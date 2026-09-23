@@ -75,6 +75,29 @@ function resolveTopic(event: BarangayEventRow): string | null {
   return null;
 }
 
+// Columns whose change alone isn't worth an "X was updated" push.
+// group_name is rewritten on every one of a group's events whenever that
+// group is renamed (rename_group in barangay_events.sql) — without this,
+// renaming a group with 30 events would send its members 30 pushes.
+const IGNORED_UPDATE_COLUMNS = new Set(["group_name", "updated_at"]);
+
+function hasMeaningfulChange(
+  record: BarangayEventRow | null,
+  oldRecord: BarangayEventRow | null,
+): boolean {
+  // No old_record to compare against (unexpected for an UPDATE) — err on
+  // the side of notifying, same as before this check existed.
+  if (!record || !oldRecord) return true;
+  const next = record as unknown as Record<string, unknown>;
+  const prev = oldRecord as unknown as Record<string, unknown>;
+  const keys = new Set([...Object.keys(next), ...Object.keys(prev)]);
+  for (const key of keys) {
+    if (IGNORED_UPDATE_COLUMNS.has(key)) continue;
+    if (JSON.stringify(next[key]) !== JSON.stringify(prev[key])) return true;
+  }
+  return false;
+}
+
 function buildMessage(
   event: BarangayEventRow,
   changeType: "INSERT" | "UPDATE" | "DELETE",
@@ -140,6 +163,10 @@ Deno.serve(async (req) => {
   const event = payload.record ?? payload.old_record;
   if (!event) {
     return new Response("Ignored: no row data in payload", { status: 200 });
+  }
+
+  if (payload.type === "UPDATE" && !hasMeaningfulChange(payload.record, payload.old_record)) {
+    return new Response("Ignored: no user-facing change (e.g. a group rename)", { status: 200 });
   }
 
   const topic = resolveTopic(event);

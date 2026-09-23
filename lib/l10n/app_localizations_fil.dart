@@ -229,6 +229,27 @@ class AppLocalizationsFil extends AppLocalizations {
   String get settingsReminderOneDay => '1 araw bago';
 
   @override
+  String get settingsCalendarView => 'Kalendaryo';
+
+  @override
+  String get settingsCalendarViewHint =>
+      'Kung paano ipinapakita ng Buwan at Linggo ang mga kaganapan sa bawat araw.';
+
+  @override
+  String get settingsCalendarDots => 'Mga tuldok';
+
+  @override
+  String get settingsCalendarDotsSubtitle =>
+      'Isang maliit na may-kulay na tuldok para sa bawat kaganapan.';
+
+  @override
+  String get settingsCalendarTitles => 'Mga pamagat ng kaganapan';
+
+  @override
+  String get settingsCalendarTitlesSubtitle =>
+      'Ang pangalan ng bawat kaganapan sa loob ng kalendaryo, gaya ng Google Calendar.';
+
+  @override
   String get eventReminderNoticeLabel => 'Paalala sa event';
 
   @override
@@ -467,6 +488,18 @@ class AppLocalizationsFil extends AppLocalizations {
   String get eventColorLabel => 'Kulay na etiketa';
 
   @override
+  String get randomColorTooltip => 'Pumili ng random na kulay';
+
+  @override
+  String get randomColorHint =>
+      'Walang napiling kulay? Bibigyan ito ng random na kulay pag-save.';
+
+  @override
+  String postedToGroupLabel(String group) {
+    return 'Naka-post sa $group';
+  }
+
+  @override
   String get groupFilterPickerTitle => 'I-filter ang mga grupo';
 
   @override
@@ -588,7 +621,7 @@ class AppLocalizationsFil extends AppLocalizations {
   String get eventTitleHint => 'hal. Asembleya ng Barangay';
 
   @override
-  String get locationHint => 'hal. Barangay Hall';
+  String get locationHint => 'hal. Barangay Hall — opsyonal';
 
   @override
   String get locationOtherOption => 'Iba pa (i-type nang manwal)';
@@ -704,16 +737,17 @@ class AppLocalizationsFil extends AppLocalizations {
   String get changeButton => 'Palitan';
 
   @override
-  String get overlapsWithOne => 'Nagtatapat sa isang umiiral na kaganapan:';
+  String get overlapsWithOne =>
+      'Nagtatapat sa isang kaganapan sa parehong lokasyon:';
 
   @override
   String overlapsWithMany(int count) {
-    return 'Nagtatapat sa $count umiiral na kaganapan:';
+    return 'Nagtatapat sa $count kaganapan sa parehong lokasyon:';
   }
 
   @override
   String get adjustOverlapHint =>
-      'Ayusin ang oras o saklaw ng petsa para maalis ang pagkakatapat.';
+      'Palitan ang oras, petsa, o lokasyon para maalis ang pagkakatapat.';
 
   @override
   String get noFreeSlotHint =>
@@ -726,16 +760,16 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get overlapDialogTitleOne =>
-      'Nagtatapat ito sa isang umiiral na kaganapan';
+      'Nagtatapat ito sa isang kaganapan sa parehong lokasyon';
 
   @override
   String overlapDialogTitleMany(int count) {
-    return 'Nagtatapat ito sa $count umiiral na kaganapan';
+    return 'Nagtatapat ito sa $count kaganapan sa parehong lokasyon';
   }
 
   @override
   String get overlapDialogBody =>
-      'Puwede mo pa rin itong i-save, pero baka makita ng iba ang dalawang kaganapang magkasabay ang oras:';
+      'Puwede mo pa rin itong i-save, pero magkakaroon ng dalawang kaganapang magkasabay ang oras sa lugar na ito:';
 
   @override
   String get proceedAnyway => 'Ituloy pa rin';
@@ -751,6 +785,22 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get titleLocationRequired => 'Kailangan ang pamagat at lokasyon.';
+
+  @override
+  String get titleRequired => 'Maglagay ng pamagat ng kaganapan.';
+
+  @override
+  String get locationOptionalHelper =>
+      'Opsyonal — iwanang blangko kung hindi pa sigurado; ise-save ito bilang \"Other\".';
+
+  @override
+  String get allDayEventLabel => 'Buong araw na kaganapan';
+
+  @override
+  String get allDayEventHint => 'Walang tiyak na oras ng simula o pagtatapos.';
+
+  @override
+  String get defaultAllDaySuffix => 'Buong araw (default)';
 
   @override
   String get pastDateError =>
@@ -1201,6 +1251,25 @@ class AppLocalizationsFil extends AppLocalizations {
   @override
   String get couldNotUpdateJoinSettingError =>
       'Hindi ma-update ang setting ng pagsali ng grupong ito. Subukan ulit.';
+
+  @override
+  String get renameGroupButton => 'Palitan ang pangalan';
+
+  @override
+  String get renameGroupTitle => 'Palitan ang pangalan ng grupo';
+
+  @override
+  String get renameGroupHint =>
+      'Maaaring palitan ng mga admin ang pangalan ng grupong ito. Ipapakita rin ang bagong pangalan sa mga dati nang kaganapan.';
+
+  @override
+  String groupRenamedMessage(String name) {
+    return 'Bagong pangalan ng grupo: \"$name\".';
+  }
+
+  @override
+  String get couldNotRenameGroupError =>
+      'Hindi mapalitan ang pangalan ng grupong ito. Subukan ulit.';
 
   @override
   String get requestToJoinButton => 'Humiling na sumali';

@@ -1574,6 +1574,50 @@ class SettingsPage extends StatelessWidget {
         ),
         const SizedBox(height: 22),
         Text(
+          l10n.settingsCalendarView,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                letterSpacing: 0.6,
+                fontWeight: FontWeight.w700,
+              ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          l10n.settingsCalendarViewHint,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 10),
+        ListenableBuilder(
+          listenable: themeController,
+          builder: (context, _) {
+            final style = themeController.calendarCellStyle;
+            return Column(
+              children: [
+                _ThemeOptionTile(
+                  key: const Key('settings-calendar-dots'),
+                  icon: FontAwesomeIcons.ellipsis,
+                  label: l10n.settingsCalendarDots,
+                  subtitle: l10n.settingsCalendarDotsSubtitle,
+                  selected: style == CalendarCellStyle.dots,
+                  onTap: () => themeController.setCalendarCellStyle(CalendarCellStyle.dots),
+                ),
+                const SizedBox(height: 10),
+                _ThemeOptionTile(
+                  key: const Key('settings-calendar-titles'),
+                  icon: FontAwesomeIcons.tableList,
+                  label: l10n.settingsCalendarTitles,
+                  subtitle: l10n.settingsCalendarTitlesSubtitle,
+                  selected: style == CalendarCellStyle.titles,
+                  onTap: () => themeController.setCalendarCellStyle(CalendarCellStyle.titles),
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 22),
+        Text(
           l10n.settingsNotifications,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
@@ -1620,6 +1664,7 @@ class SettingsPage extends StatelessWidget {
 
 class _ThemeOptionTile extends StatelessWidget {
   const _ThemeOptionTile({
+    super.key,
     required this.icon,
     required this.label,
     required this.selected,

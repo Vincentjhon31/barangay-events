@@ -1360,6 +1360,10 @@ alter table public.event_reminders_sent enable row level security;
 -- ordinary Postgres role so it can't be called via the public REST API,
 -- where it would otherwise leak every user's reminder_preference and
 -- upcoming-event visibility to any authenticated caller.
+-- (Superseded by the "Reminder timing fix" block at the end of this file,
+-- which adds a result column — the drop keeps a full re-run of this file
+-- from failing on "cannot change return type" before reaching that block.)
+drop function if exists public.list_due_event_reminders(text);
 create or replace function public.list_due_event_reminders(p_window text)
 returns table(
   user_id uuid, event_id text, event_title text, event_start timestamptz,
@@ -1725,3 +1729,212 @@ do $$ begin
       using (bucket_id = 'event-attachments' and owner = auth.uid());
   end if;
 end $$;
+
+-- ============================================================
+-- Group renaming (September 2026).
+-- Any admin of the group can rename it — same bar as the join-policy
+-- toggle (admin_set_group_requires_approval), since a name is an ordinary
+-- group setting. Security definer because `groups` has no UPDATE policy
+-- for clients at all, and because the rename also has to rewrite the
+-- denormalized barangay_events.group_name on every event already posted
+-- to the group (event rows are otherwise only editable by their creator
+-- or a group admin, and one admin renaming shouldn't fail halfway just
+-- because they can't touch someone else's event row).
+--
+-- Note: those event-row updates DO reach the send-event-notification
+-- webhook as UPDATEs. That function ignores UPDATEs whose only change is
+-- group_name, so a rename doesn't push "X was updated" once per event —
+-- redeploy it (supabase functions deploy send-event-notification) along
+-- with running this block.
+-- ============================================================
+create or replace function public.rename_group(p_group_id uuid, p_name text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  new_name text := trim(coalesce(p_name, ''));
+begin
+  if not exists (
+    select 1 from group_members where group_id = p_group_id and user_id = auth.uid() and role = 'admin'
+  ) then
+    raise exception 'Only an admin of this group can rename it';
+  end if;
+  if new_name = '' then
+    raise exception 'Group name cannot be empty';
+  end if;
+  if char_length(new_name) > 80 then
+    raise exception 'Group name is too long (80 characters max)';
+  end if;
+
+  update groups set name = new_name where id = p_group_id;
+  update barangay_events set group_name = new_name
+    where group_id = p_group_id and group_name is distinct from new_name;
+end $$;
+
+-- ============================================================
+-- Reminder timing fix + reminders on by default (September 2026).
+--
+-- WHY REMINDERS WERE LATE: event times are stored as Philippine
+-- wall-clock time labeled as UTC (the app sends "10:00" with no offset,
+-- and this database's TimeZone is UTC — see list_due_event_reminders'
+-- older comment above). The live copy of list_due_event_reminders was an
+-- even older version that compared those values against plain now(), so
+-- every reminder went out 8 hours late: a 10:00 AM event's "1 hour
+-- before" reminder arrived at 5:00 PM, and a "1 day before" reminder
+-- arrived 17 hours before the event instead of 24. Confirmed from the
+-- live event_reminders_sent log (September 2026).
+--
+-- This block replaces the reminder logic with one that is accurate to
+-- the minute:
+--   * "now" is expressed in the same stored convention before comparing;
+--   * a reminder is due once (start - lead) has passed and the event
+--     hasn't started yet, instead of a +/-10 minute window around the
+--     target that a 15-minute cron could only approximate;
+--   * the cron job runs every minute, but only calls the Edge Function
+--     when something is actually due (has_due_event_reminders), so the
+--     function isn't invoked 1,440 times a day for nothing;
+--   * all-day events (stored 00:00-23:59) are reminded relative to
+--     8:00 AM on their day, not midnight — otherwise "1 hour before" would
+--     fire at 11 PM the night before and "1 day before" at midnight;
+--   * rescheduling an event clears its sent-reminder records, so people
+--     get reminded about the NEW time instead of never again.
+--
+-- It also makes reminders ON ("1 hour before") by default, for new
+-- accounts and — once — for existing accounts still on "off".
+--
+-- After running this, redeploy the function (same flags as before):
+--   supabase functions deploy send-event-reminders --use-api --no-verify-jwt
+-- The SQL works with the previous deployment too (same column names);
+-- the redeploy adds the clearer message text ("starts at 10:00 AM"),
+-- high-priority delivery, and duplicate-safe sending.
+-- ============================================================
+
+-- Result columns keep their old names, plus event_all_day. Changing a
+-- function's result columns requires dropping it first.
+drop function if exists public.list_due_event_reminders(text);
+
+create function public.list_due_event_reminders(p_window text)
+returns table(
+  user_id uuid, event_id text, event_title text, event_start timestamptz,
+  event_location text, event_type text, group_name text, event_all_day boolean
+)
+language plpgsql security definer set search_path = public as $$
+declare
+  -- The current moment in the stored convention: Philippine wall-clock
+  -- time labeled as UTC.
+  v_now timestamptz := (now() at time zone 'Asia/Manila') at time zone 'UTC';
+  v_lead interval;
+begin
+  if p_window = '1h' then
+    v_lead := interval '1 hour';
+  elsif p_window = '1d' then
+    v_lead := interval '1 day';
+  else
+    raise exception 'Invalid window: %', p_window;
+  end if;
+
+  -- Every column reference is table-qualified: the output columns above
+  -- are PL/pgSQL variables, and an unqualified user_id/event_id/etc.
+  -- would be ambiguous (see the request_or_join_group lesson above).
+  return query
+    with upcoming as (
+      select
+        e.id, e.title, e.start_time, e.location, e.event_type,
+        e.group_id, e.group_name, e.created_by_id,
+        ((e.start_time at time zone 'UTC')::time = time '00:00'
+          and (e.end_time at time zone 'UTC')::time = time '23:59') as all_day
+      from barangay_events e
+      -- Cheap pre-filter only; the exact "is it due" check is below.
+      where e.start_time > v_now - interval '1 day'
+        and e.start_time <= v_now + v_lead + interval '1 day'
+    ),
+    anchored as (
+      select u.*,
+        case when u.all_day then u.start_time + interval '8 hours' else u.start_time end as remind_at
+      from upcoming u
+    )
+    select p.id, a.id, a.title, a.start_time, a.location, a.event_type, a.group_name, a.all_day
+    from anchored a
+    join profiles p on p.reminder_preference = p_window
+    where a.remind_at - v_lead <= v_now
+      and a.remind_at > v_now
+      and (
+        a.event_type = 'public'
+        or (a.event_type = 'personal' and a.created_by_id = p.id)
+        or (a.event_type = 'shared' and a.group_id is not null and exists (
+              select 1 from group_members gm where gm.group_id = a.group_id and gm.user_id = p.id))
+      )
+      and not exists (
+        select 1 from event_reminders_sent ers
+        where ers.event_id = a.id and ers.user_id = p.id and ers.reminder_window = p_window
+      );
+end $$;
+
+-- Cheap gate for the cron job below.
+create or replace function public.has_due_event_reminders()
+returns boolean language sql security definer set search_path = public as $$
+  select exists (select 1 from list_due_event_reminders('1h'))
+      or exists (select 1 from list_due_event_reminders('1d'));
+$$;
+
+-- Recreating a function resets its grants, so re-revoke (service-role /
+-- cron only — see the original list_due_event_reminders comment).
+revoke all on function public.list_due_event_reminders(text) from public, anon, authenticated;
+revoke all on function public.has_due_event_reminders() from public, anon, authenticated;
+
+-- Every minute instead of every 15, but only calls the Edge Function when
+-- a reminder is actually due. cron.schedule with an existing job name
+-- updates that job in place.
+select cron.schedule(
+  'send-event-reminders',
+  '* * * * *',
+  $cron$
+  do $job$
+  begin
+    if public.has_due_event_reminders() then
+      perform net.http_post(
+        url := 'https://xuxnoydakqembrytdbyz.supabase.co/functions/v1/send-event-reminders',
+        headers := jsonb_build_object(
+          'Authorization', 'Bearer ' || (
+            select decrypted_secret from vault.decrypted_secrets where name = 'reminder_cron_secret'
+          )
+        ),
+        -- pg_net's default is 5s; a cold start plus a batch of sends can
+        -- take longer, and a timed-out request may be cut off mid-batch.
+        timeout_milliseconds := 30000
+      );
+    end if;
+  end
+  $job$;
+  $cron$
+);
+
+-- A rescheduled event should remind people about its new time. Security
+-- definer because event_reminders_sent has no client policies at all, so
+-- under the editing user's own RLS this delete would silently match
+-- nothing.
+create or replace function public.reset_event_reminders_on_reschedule()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.start_time is distinct from old.start_time or new.end_time is distinct from old.end_time then
+    delete from event_reminders_sent where event_reminders_sent.event_id = new.id;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists reset_event_reminders_on_reschedule on public.barangay_events;
+create trigger reset_event_reminders_on_reschedule
+  after update of start_time, end_time on public.barangay_events
+  for each row execute function public.reset_event_reminders_on_reschedule();
+
+-- Reminders on by default. Guarded on the column default still being
+-- 'off', so this runs exactly once: re-running this file later never
+-- turns reminders back on for someone who has since chosen "Off".
+do $$ begin
+  if (select column_default from information_schema.columns
+      where table_schema = 'public' and table_name = 'profiles' and column_name = 'reminder_preference')
+     = '''off''::text' then
+    alter table public.profiles alter column reminder_preference set default '1h';
+    update public.profiles set reminder_preference = '1h' where reminder_preference = 'off';
+  end if;
+end $$;
+
+notify pgrst, 'reload schema';

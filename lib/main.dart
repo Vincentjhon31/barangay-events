@@ -1925,10 +1925,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
           lguLocations: lguLocations,
           initialDate: initialDate,
           creatorProfile: _userProfile ?? widget.authService?.currentUser,
-          findOverlappingEvents: (date, start, end) =>
-              findOverlappingEvents(_events, date, start, end),
-          suggestFreeSlot: (date, start, end) =>
-              suggestFreeSlot(_events, date, start, end),
+          findOverlappingEvents: (location, date, start, end) =>
+              findOverlappingEvents(_events, location, date, start, end),
+          suggestFreeSlot: (location, date, start, end) =>
+              suggestFreeSlot(_events, location, date, start, end),
         ),
       ),
     );
@@ -1978,10 +1978,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
           initialDate: event.startTime,
           existingEvent: event,
           creatorProfile: _userProfile ?? widget.authService?.currentUser,
-          findOverlappingEvents: (date, start, end) =>
-              findOverlappingEvents(_events, date, start, end),
-          suggestFreeSlot: (date, start, end) =>
-              suggestFreeSlot(_events, date, start, end),
+          findOverlappingEvents: (location, date, start, end) =>
+              findOverlappingEvents(_events, location, date, start, end),
+          suggestFreeSlot: (location, date, start, end) =>
+              suggestFreeSlot(_events, location, date, start, end),
         ),
       ),
     );
@@ -2080,7 +2080,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
               onEventTap: _showEventDetails,
             ),
           ] else ...[
-            _buildCalendar(),
+            ListenableBuilder(
+              listenable: widget.themeController,
+              builder: (context, _) => _buildCalendar(),
+            ),
             const SizedBox(height: 22),
             _buildUpcomingHeader(),
             const SizedBox(height: 12),
@@ -2091,10 +2094,80 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  /// Lets [_showCalendarStyleMenu] anchor its menu under the tapped tab.
+  final GlobalKey _viewToggleKey = GlobalKey();
+
+  /// Month/Week tab label with a small caret while that tab is selected —
+  /// the hint that tapping it again offers Dots / Event titles. The caret's
+  /// space is kept (invisibly) when unselected, so the tabs don't change
+  /// width as the selection moves.
+  Widget _gridTabLabel(String text, _CalendarViewMode mode) {
+    return _fitTabLabel(
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(text),
+          const SizedBox(width: 3),
+          Visibility(
+            visible: _viewMode == mode,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: FaIcon(FontAwesomeIcons.caretDown, size: 10, key: Key('calendar-view-caret-${mode.name}')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Shrinks a tab label slightly instead of overflowing when the tabs are
+  /// squeezed (e.g. Guest mode's extra Settings button beside them, or the
+  /// longer Filipino labels) — and leaves it untouched when there's room.
+  Widget _fitTabLabel(Widget label) => FittedBox(fit: BoxFit.scaleDown, child: label);
+
+  /// The Dots / Event titles choice, anchored under the Month or Week tab
+  /// (same setting as Settings > Calendar — it applies to both views).
+  Future<void> _showCalendarStyleMenu() async {
+    final l10n = AppLocalizations.of(context)!;
+    final toggleBox = _viewToggleKey.currentContext?.findRenderObject() as RenderBox?;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (toggleBox == null || overlay == null) return;
+
+    const segmentCount = 4;
+    final segmentWidth = toggleBox.size.width / segmentCount;
+    final segmentIndex = _viewMode == _CalendarViewMode.week ? 1 : 0;
+    final anchor = toggleBox.localToGlobal(Offset(segmentWidth * segmentIndex, toggleBox.size.height), ancestor: overlay);
+    final current = widget.themeController.calendarCellStyle;
+
+    final choice = await showMenu<CalendarCellStyle>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(anchor.dx, anchor.dy + 4, segmentWidth, 0),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        CheckedPopupMenuItem<CalendarCellStyle>(
+          key: const Key('calendar-style-dots'),
+          value: CalendarCellStyle.dots,
+          checked: current == CalendarCellStyle.dots,
+          child: Text(l10n.settingsCalendarDots),
+        ),
+        CheckedPopupMenuItem<CalendarCellStyle>(
+          key: const Key('calendar-style-titles'),
+          value: CalendarCellStyle.titles,
+          checked: current == CalendarCellStyle.titles,
+          child: Text(l10n.settingsCalendarTitles),
+        ),
+      ],
+    );
+    if (choice != null) await widget.themeController.setCalendarCellStyle(choice);
+  }
+
   Widget _buildViewToggle() {
     final colorScheme = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
     return SegmentedButton<_CalendarViewMode>(
+      key: _viewToggleKey,
       style: SegmentedButton.styleFrom(
         visualDensity: VisualDensity.compact,
         backgroundColor: colorScheme.onSurface.withValues(alpha: 0.06),
@@ -2107,23 +2180,33 @@ class _CalendarScreenState extends State<CalendarScreen> {
       segments: [
         ButtonSegment<_CalendarViewMode>(
           value: _CalendarViewMode.month,
-          label: Text(l10n.calendarViewMonth),
+          label: _gridTabLabel(l10n.calendarViewMonth, _CalendarViewMode.month),
         ),
         ButtonSegment<_CalendarViewMode>(
           value: _CalendarViewMode.week,
-          label: Text(l10n.calendarViewWeek),
+          label: _gridTabLabel(l10n.calendarViewWeek, _CalendarViewMode.week),
         ),
         ButtonSegment<_CalendarViewMode>(
           value: _CalendarViewMode.list,
-          label: Text(l10n.calendarViewList),
+          label: _fitTabLabel(Text(l10n.calendarViewList)),
         ),
         ButtonSegment<_CalendarViewMode>(
           value: _CalendarViewMode.day,
-          label: Text(l10n.calendarViewFull),
+          label: _fitTabLabel(Text(l10n.calendarViewFull)),
         ),
       ],
       selected: {_viewMode},
+      // Lets a tap on the already-selected tab reach onSelectionChanged (as
+      // an empty selection) instead of being swallowed — that's how Month
+      // and Week open the Dots / Event titles menu.
+      emptySelectionAllowed: true,
       onSelectionChanged: (selection) {
+        if (selection.isEmpty) {
+          if (_viewMode == _CalendarViewMode.month || _viewMode == _CalendarViewMode.week) {
+            unawaited(_showCalendarStyleMenu());
+          }
+          return;
+        }
         setState(() {
           _viewMode = selection.first;
         });
@@ -3044,7 +3127,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
             child: Column(
               children: [
                 Text(
-                  _formatTime(event.startTime),
+                  event.isAllDay ? AppLocalizations.of(context)!.allDayButton : _formatTime(event.startTime),
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         fontWeight: FontWeight.w700,
@@ -3175,7 +3258,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       const SizedBox(width: 5),
                       Expanded(
                         child: Text(
-                          '${_dateRangeLabel(event)} • ${_formatTime(event.startTime)} - ${_formatTime(event.endTime)}',
+                          '${_dateRangeLabel(event)} • ${_timeRangeLabel(event)}',
                           style:
                               Theme.of(context).textTheme.bodySmall?.copyWith(
                                     fontWeight: FontWeight.w700,
@@ -3367,8 +3450,393 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  // Google-Calendar-style cells (CalendarCellStyle.titles): day number on
+  // top, then one colored chip per event. Sizes are in logical pixels.
+  static const double _titleDayNumberHeight = 24;
+  static const double _titleChipHeight = 15;
+  static const double _titleChipGap = 2;
+  static const double _titleMoreLineHeight = 12;
+  static const int _titleMonthSlots = 3;
+  static const int _titleWeekSlots = 7;
+  static const double _titleMonthRowHeight = _titleDayNumberHeight +
+      _titleMonthSlots * (_titleChipHeight + _titleChipGap) +
+      _titleMoreLineHeight +
+      5;
+  static const double _titleWeekRowHeight = _titleDayNumberHeight +
+      _titleWeekSlots * (_titleChipHeight + _titleChipGap) +
+      _titleMoreLineHeight +
+      5;
+
+  /// The Sunday that starts [day]'s row (TableCalendar's default
+  /// startingDayOfWeek), as a UTC day key like [BarangayEvent.dayKey].
+  DateTime _rowStartFor(DateTime day) => DateTime.utc(day.year, day.month, day.day - (day.weekday % 7));
+
+  /// The days of [day]'s row that are actually drawn. Month view hides
+  /// other months' days, so a row there is clipped to [day]'s own month;
+  /// Week view always shows all seven.
+  ({DateTime start, DateTime end}) _visibleRowRange(DateTime day, {required bool isWeek}) {
+    final rowStart = _rowStartFor(day);
+    final rowEnd = rowStart.add(const Duration(days: 6));
+    if (isWeek) return (start: rowStart, end: rowEnd);
+    final monthStart = DateTime.utc(day.year, day.month, 1);
+    final monthEnd = DateTime.utc(day.year, day.month + 1, 0);
+    return (
+      start: rowStart.isBefore(monthStart) ? monthStart : rowStart,
+      end: rowEnd.isAfter(monthEnd) ? monthEnd : rowEnd,
+    );
+  }
+
+  /// Which vertical lane each date-range event gets within one visible
+  /// row, so its bar sits at the same height on every day it spans (the
+  /// way Google Calendar lines them up). Earlier-starting, then longer,
+  /// events get the upper lanes; a lane is reused once it's free again.
+  Map<String, int> _multiDayLanes(({DateTime start, DateTime end}) range) {
+    final byId = <String, BarangayEvent>{};
+    for (var day = range.start; !day.isAfter(range.end); day = day.add(const Duration(days: 1))) {
+      for (final event in _getEventsForDay(day)) {
+        if (event.isMultiDay) byId[event.id] = event;
+      }
+    }
+    final events = byId.values.toList()
+      ..sort((a, b) {
+        final byStart = a.dayKey.compareTo(b.dayKey);
+        if (byStart != 0) return byStart;
+        final byEnd = b.endDayKey.compareTo(a.endDayKey);
+        if (byEnd != 0) return byEnd;
+        return a.id.compareTo(b.id);
+      });
+
+    final laneEnds = <DateTime>[];
+    final lanes = <String, int>{};
+    for (final event in events) {
+      final segment = _segmentInRange(event, range);
+      var lane = laneEnds.indexWhere((end) => end.isBefore(segment.start));
+      if (lane == -1) {
+        lane = laneEnds.length;
+        laneEnds.add(segment.end);
+      } else {
+        laneEnds[lane] = segment.end;
+      }
+      lanes[event.id] = lane;
+    }
+    return lanes;
+  }
+
+  /// The part of [event]'s date range that falls inside [range].
+  ({DateTime start, DateTime end}) _segmentInRange(BarangayEvent event, ({DateTime start, DateTime end}) range) => (
+        start: event.dayKey.isBefore(range.start) ? range.start : event.dayKey,
+        end: event.endDayKey.isAfter(range.end) ? range.end : event.endDayKey,
+      );
+
+  Widget _buildTitleDayNumber(DateTime day, {bool isSelected = false, bool isOutside = false}) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isToday = isSameDay(day, DateTime.now());
+    return Align(
+      alignment: Alignment.topCenter,
+      child: Container(
+        margin: const EdgeInsets.only(top: 2),
+        width: 20,
+        height: 20,
+        alignment: Alignment.center,
+        decoration: isToday
+            ? BoxDecoration(color: colorScheme.primary, shape: BoxShape.circle)
+            : isSelected
+                ? BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: colorScheme.primary, width: 1.4),
+                  )
+                : null,
+        child: Text(
+          '${day.day}',
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: isToday || isSelected ? FontWeight.w800 : FontWeight.w600,
+            color: isToday
+                ? colorScheme.onPrimary
+                : isOutside
+                    ? colorScheme.onSurfaceVariant.withValues(alpha: 0.6)
+                    : colorScheme.onSurface,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// One event chip. A date-range event is drawn once per row, on its
+  /// first visible day, as a single bar [spanDays] cells wide that
+  /// overflows over the following cells (which leave that lane empty) —
+  /// so the title reads across the whole bar instead of being cut off at
+  /// every day boundary.
+  Widget _buildTitleChip(
+    BarangayEvent event,
+    DateTime day, {
+    required double cellWidth,
+    int spanDays = 1,
+    bool continuesBefore = false,
+    bool continuesAfter = false,
+  }) {
+    final tint = _tintForEvent(event);
+    final onTint = tint.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
+    final leftGap = continuesBefore ? 0.0 : 2.0;
+    final rightGap = continuesAfter ? 0.0 : 2.0;
+    final width = cellWidth * spanDays - leftGap - rightGap;
+
+    final chip = Container(
+      key: Key('calendar-chip-${event.id}-${day.year}-${day.month}-${day.day}'),
+      width: width,
+      height: _titleChipHeight,
+      margin: EdgeInsets.only(left: leftGap),
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      alignment: Alignment.centerLeft,
+      decoration: BoxDecoration(
+        color: tint,
+        borderRadius: BorderRadius.horizontal(
+          left: Radius.circular(continuesBefore ? 0 : 4),
+          right: Radius.circular(continuesAfter ? 0 : 4),
+        ),
+      ),
+      child: Text(
+        event.title,
+        maxLines: 1,
+        softWrap: false,
+        overflow: spanDays > 1 ? TextOverflow.ellipsis : TextOverflow.clip,
+        style: TextStyle(fontSize: 9.5, height: 1.1, fontWeight: FontWeight.w700, color: onTint),
+      ),
+    );
+
+    return SizedBox(
+      height: _titleChipHeight + _titleChipGap,
+      child: OverflowBox(
+        alignment: Alignment.topLeft,
+        minWidth: 0,
+        maxWidth: width + leftGap,
+        child: chip,
+      ),
+    );
+  }
+
+  CalendarBuilders _titleCalendarBuilders({
+    required bool isWeek,
+    required Map<DateTime, Map<String, int>> laneCache,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final maxSlots = isWeek ? _titleWeekSlots : _titleMonthSlots;
+
+    return CalendarBuilders(
+      defaultBuilder: (context, day, focusedDay) => _buildTitleDayNumber(day),
+      todayBuilder: (context, day, focusedDay) => _buildTitleDayNumber(day),
+      selectedBuilder: (context, day, focusedDay) => _buildTitleDayNumber(day, isSelected: true),
+      outsideBuilder: (context, day, focusedDay) => _buildTitleDayNumber(day, isOutside: true),
+      markerBuilder: (context, date, _) {
+        final dayEvents = _getEventsForDay(date);
+        if (dayEvents.isEmpty) return null;
+
+        final day = DateTime.utc(date.year, date.month, date.day);
+        final range = _visibleRowRange(day, isWeek: isWeek);
+        final lanes = laneCache.putIfAbsent(range.start, () => _multiDayLanes(range));
+
+        // Date-range events take their row-wide lane; single-day events
+        // fill whatever slots are left, in start-time order.
+        final slots = List<BarangayEvent?>.filled(maxSlots, null);
+        var hiddenCount = 0;
+        for (final event in dayEvents.where((event) => event.isMultiDay)) {
+          final lane = lanes[event.id];
+          if (lane != null && lane < maxSlots) {
+            slots[lane] = event;
+          } else {
+            hiddenCount++;
+          }
+        }
+        for (final event in dayEvents.where((event) => !event.isMultiDay)) {
+          final free = slots.indexOf(null);
+          if (free == -1) {
+            hiddenCount++;
+          } else {
+            slots[free] = event;
+          }
+        }
+        final lastUsed = slots.lastIndexWhere((event) => event != null);
+
+        return Positioned(
+          top: _titleDayNumberHeight,
+          left: 0,
+          right: 0,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final cellWidth = constraints.maxWidth;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i <= lastUsed; i++)
+                    if (slots[i] == null)
+                      const SizedBox(height: _titleChipHeight + _titleChipGap)
+                    else if (!slots[i]!.isMultiDay)
+                      _buildTitleChip(slots[i]!, day, cellWidth: cellWidth)
+                    else
+                      Builder(builder: (context) {
+                        final event = slots[i]!;
+                        final segment = _segmentInRange(event, range);
+                        // Later days of the bar: keep the lane, draw nothing
+                        // (the bar from the segment's first day covers it).
+                        if (!isSameDay(segment.start, day)) {
+                          return const SizedBox(height: _titleChipHeight + _titleChipGap);
+                        }
+                        return _buildTitleChip(
+                          event,
+                          day,
+                          cellWidth: cellWidth,
+                          spanDays: segment.end.difference(segment.start).inDays + 1,
+                          continuesBefore: event.dayKey.isBefore(segment.start),
+                          continuesAfter: event.endDayKey.isAfter(segment.end),
+                        );
+                      }),
+                  if (hiddenCount > 0)
+                    Padding(
+                      key: Key('calendar-more-${day.year}-${day.month}-${day.day}'),
+                      padding: const EdgeInsets.only(left: 3),
+                      child: Text(
+                        '+$hiddenCount',
+                        style: TextStyle(
+                          fontSize: 9,
+                          height: 1.2,
+                          fontWeight: FontWeight.w800,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  /// The original Month/Week look: colored dots (single-day events) and
+  /// bars (date-range events) under each day number.
+  CalendarBuilders _dotCalendarBuilders() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return CalendarBuilders(
+      // Show event markers below dates
+      markerBuilder: (context, date, events) {
+        final dayEvents = _getEventsForDay(date);
+        if (dayEvents.isEmpty) return null;
+
+        // Each marker takes its event's own color label (or the
+        // same fallback tint its card uses), so a glance at the
+        // grid shows *which* events are on a day, not just that
+        // something is. Single-day events are dots; multi-day
+        // events (e.g. a 3-day fiesta) are a bar repeated on every
+        // day they span. Capped so a busy day still fits the cell.
+        const maxDots = 3;
+        const maxBars = 2;
+        final singleDay = dayEvents.where((event) => !event.isMultiDay).toList();
+        final multiDay = dayEvents.where((event) => event.isMultiDay).toList();
+        final dots = singleDay.take(maxDots).toList();
+        final bars = multiDay.take(maxBars).toList();
+        final hiddenCount = (singleDay.length - dots.length) + (multiDay.length - bars.length);
+
+        return Positioned(
+          bottom: 1,
+          child: Column(
+            key: Key('calendar-markers-${date.year}-${date.month}-${date.day}'),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (dots.isNotEmpty || hiddenCount > 0)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final event in dots)
+                      Container(
+                        key: Key('calendar-dot-${event.id}'),
+                        width: 5,
+                        height: 5,
+                        margin: const EdgeInsets.symmetric(horizontal: 1),
+                        decoration: BoxDecoration(
+                          color: _tintForEvent(event),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    if (hiddenCount > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 1),
+                        child: Text(
+                          '+',
+                          style: TextStyle(
+                            fontSize: 8,
+                            height: 0.8,
+                            fontWeight: FontWeight.w800,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              for (final event in bars)
+                Container(
+                  key: Key('calendar-bar-${event.id}'),
+                  width: 18,
+                  height: 3,
+                  margin: const EdgeInsets.only(top: 1),
+                  decoration: BoxDecoration(
+                    color: _tintForEvent(event),
+                    borderRadius: const BorderRadius.all(Radius.circular(2)),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+
+      // Highlight today
+      todayBuilder: (context, day, focusedDay) {
+        return Container(
+          margin: const EdgeInsets.all(4.0),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: colorScheme.primary,
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            day.day.toString(),
+            style: TextStyle(
+              color: colorScheme.onPrimary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        );
+      },
+
+      // Customize selected day
+      selectedBuilder: (context, day, focusedDay) {
+        return Container(
+          margin: const EdgeInsets.all(4.0),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: colorScheme.primary.withValues(alpha: 0.16),
+            shape: BoxShape.circle,
+            border: Border.all(color: colorScheme.primary, width: 1.6),
+          ),
+          child: Text(
+            day.day.toString(),
+            style: TextStyle(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildCalendar() {
     final colorScheme = Theme.of(context).colorScheme;
+    final showTitles = widget.themeController.calendarCellStyle == CalendarCellStyle.titles;
+    final isWeek = _calendarFormat == CalendarFormat.week;
+    // Fresh per build, so lanes always reflect the current events/filters.
+    final laneCache = <DateTime, Map<String, int>>{};
 
     return GlassPanel(
       borderRadius: 28,
@@ -3380,6 +3848,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
             lastDay: DateTime.utc(2030, 12, 31),
             focusedDay: _focusedDay,
             calendarFormat: _calendarFormat,
+            // Titles need taller cells: a day number plus a few event chips.
+            rowHeight: showTitles ? (isWeek ? _titleWeekRowHeight : _titleMonthRowHeight) : 52,
             // Horizontal swipe still pages between months/weeks; the
             // vertical swipe that silently flips Month<->Week format is
             // disabled — that's the Month/Week/List buttons' job now, not
@@ -3403,91 +3873,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
             onPageChanged: (focusedDay) {
               _focusedDay = focusedDay;
             },
-            calendarBuilders: CalendarBuilders(
-              // Show event markers below dates
-              markerBuilder: (context, date, events) {
-                final dayEvents = _getEventsForDay(date);
-                if (dayEvents.isEmpty) return null;
-
-                // Multi-day events (e.g. a 3-day fiesta) get an extra
-                // accent bar on every day they span, distinct from the
-                // regular single-day dot, so a long event is easy to spot
-                // at a glance in the grid.
-                final hasMultiDay = dayEvents.any((event) => event.isMultiDay);
-
-                return Stack(
-                  alignment: Alignment.center,
-                  clipBehavior: Clip.none,
-                  children: [
-                    Positioned(
-                      bottom: hasMultiDay ? 7 : 3,
-                      child: Container(
-                        width: 5,
-                        height: 5,
-                        decoration: BoxDecoration(
-                          color: colorScheme.primary,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                    if (hasMultiDay)
-                      const Positioned(
-                        bottom: 1,
-                        child: SizedBox(
-                          width: 18,
-                          height: 3,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: Color(0xFFFFA726),
-                              borderRadius:
-                                  BorderRadius.all(Radius.circular(2)),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                );
-              },
-
-              // Highlight today
-              todayBuilder: (context, day, focusedDay) {
-                return Container(
-                  margin: const EdgeInsets.all(4.0),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: colorScheme.primary,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Text(
-                    day.day.toString(),
-                    style: TextStyle(
-                      color: colorScheme.onPrimary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                );
-              },
-
-              // Customize selected day
-              selectedBuilder: (context, day, focusedDay) {
-                return Container(
-                  margin: const EdgeInsets.all(4.0),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: colorScheme.primary.withValues(alpha: 0.16),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: colorScheme.primary, width: 1.6),
-                  ),
-                  child: Text(
-                    day.day.toString(),
-                    style: TextStyle(
-                      color: colorScheme.onSurface,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                );
-              },
-            ),
+            calendarBuilders: showTitles
+                ? _titleCalendarBuilders(isWeek: isWeek, laneCache: laneCache)
+                : _dotCalendarBuilders(),
             // Styling
             headerStyle: HeaderStyle(
               formatButtonVisible: false,
@@ -3543,7 +3931,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Future<void> _shareEvent(BarangayEvent event) async {
     final lines = [
       event.title,
-      '${_dateRangeLabel(event)} • ${_formatTime(event.startTime)} - ${_formatTime(event.endTime)}',
+      '${_dateRangeLabel(event)} • ${_timeRangeLabel(event)}',
       event.location,
       if (event.description.isNotEmpty) event.description,
     ];
@@ -3562,6 +3950,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     // Google wants UTC "basic" ISO-8601 for both ends, e.g. 20260812T010000Z.
     String stamp(DateTime t) =>
         DateFormat("yyyyMMdd'T'HHmmss'Z'").format(t.toUtc());
+    // All-day events are date-only in the event's own local dates, with an
+    // exclusive end date (the day after the last day).
+    String allDayStamp(DateTime t) => DateFormat('yyyyMMdd').format(t);
     final details = [
       if (event.description.isNotEmpty) event.description,
       if (event.creatorLabel != null)
@@ -3574,7 +3965,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final uri = Uri.https('calendar.google.com', '/calendar/render', {
       'action': 'TEMPLATE',
       'text': event.title,
-      'dates': '${stamp(event.startTime)}/${stamp(event.endTime)}',
+      'dates': event.isAllDay
+          ? '${allDayStamp(event.startTime)}/${allDayStamp(event.endTime.add(const Duration(days: 1)))}'
+          : '${stamp(event.startTime)}/${stamp(event.endTime)}',
       if (details.isNotEmpty) 'details': details,
       if (event.location.isNotEmpty) 'location': event.location,
     });
@@ -3588,11 +3981,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Future<void> _showEventDetails(BarangayEvent event) async {
     final l10n = AppLocalizations.of(context)!;
-    final startTime = event.startTime;
-    final endTime = event.endTime;
     final formattedDate = _dateRangeLabel(event);
-    final startTimeStr = _formatTime(startTime);
-    final endTimeStr = _formatTime(endTime);
     final eventTint = colorForKey(event.colorKey) ?? _getEventTint(event.title);
 
     // Time/Location/Posted-by/Group, all sharing one tint (the event's own
@@ -3603,7 +3992,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         icon: FontAwesomeIcons.clock,
         tint: eventTint,
         label: l10n.detailTime,
-        value: '$startTimeStr - $endTimeStr',
+        value: _timeRangeLabel(event),
       ),
       _DetailInfoRow(
         icon: FontAwesomeIcons.locationDot,
@@ -3858,9 +4247,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _buildEventCard(BarangayEvent event) {
     final l10n = AppLocalizations.of(context)!;
-    final startTime = event.startTime;
-    final endTime = event.endTime;
-    final tint = colorForKey(event.colorKey) ?? _getEventTint(event.title);
+    final tint = _tintForEvent(event);
+    final groupName = event.eventType == EventType.shared ? event.groupName?.trim() : null;
 
     return InkWell(
       borderRadius: BorderRadius.circular(26),
@@ -3932,7 +4320,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       const SizedBox(width: 5),
                       Expanded(
                         child: Text(
-                          '${_dateRangeLabel(event)} • ${_formatTime(startTime)} - ${_formatTime(endTime)}',
+                          '${_dateRangeLabel(event)} • ${_timeRangeLabel(event)}',
                           style:
                               Theme.of(context).textTheme.bodySmall?.copyWith(
                                     color: Theme.of(context)
@@ -3967,6 +4355,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         ),
                       ],
                     ),
+                  ],
+                  if (groupName != null && groupName.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    _buildGroupTag(groupName),
                   ],
                   if (event.description.isNotEmpty) ...[
                     const SizedBox(height: 6),
@@ -4046,6 +4438,39 @@ class _CalendarScreenState extends State<CalendarScreen> {
       default:
         return const Color(0xFF2B7FFF);
     }
+  }
+
+  /// "Posted to «group»" tag under a Group event's card details, in the
+  /// Group type's green so it reads as the same thing as the Group pill.
+  Widget _buildGroupTag(String groupName) {
+    final l10n = AppLocalizations.of(context)!;
+    final tint = _eventTypeTint(EventType.shared);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: tint.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: tint.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FaIcon(FontAwesomeIcons.userGroup, size: 10, color: tint),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              l10n.postedToGroupLabel(groupName),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: tint,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildEventTypePill(String type) {
@@ -4232,6 +4657,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   String _formatTime(DateTime time) => formatDateTime12Hour(time);
+
+  /// The event's chosen color label, or the keyword-based fallback tint
+  /// for older events saved before color labels existed — the same color
+  /// its card's icon badge uses.
+  Color _tintForEvent(BarangayEvent event) => colorForKey(event.colorKey) ?? _getEventTint(event.title);
+
+  /// "9:00 AM - 10:00 AM", or "All day" for an all-day event.
+  String _timeRangeLabel(BarangayEvent event) => event.isAllDay
+      ? AppLocalizations.of(context)!.allDayButton
+      : '${_formatTime(event.startTime)} - ${_formatTime(event.endTime)}';
 
   String _formatDate(DateTime date) {
     return DateFormat('EEEE, MMM d, yyyy').format(date);

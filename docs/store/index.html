@@ -512,11 +512,31 @@
     var releaseInfo = { version: null, notes: '', url: 'https://github.com/' + GH_REPO + '/releases/latest' };
     var totalDownloads = null;
 
+    // The first line of the release notes that actually says something:
+    // skips blank lines, the release workflow's "Check out the past
+    // releases" boilerplate, headings, and tip blocks, and strips Markdown
+    // (links, emphasis, list bullets) since this is shown as plain text.
+    function releaseSummary(body) {
+      var lines = (body || '').split('\n');
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if (!line) continue;
+        if (/^check out the \[past releases\]/i.test(line)) continue;
+        if (/^#/.test(line) || /^>/.test(line)) continue;
+        if (/^no notable changes/i.test(line)) continue;
+        return line
+          .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+          .replace(/[*_`]/g, '')
+          .replace(/^[-•]\s*/, '');
+      }
+      return 'No release notes provided.';
+    }
+
     fetch('https://api.github.com/repos/' + GH_REPO + '/releases/latest')
       .then(function (r) { return r.json(); })
       .then(function (release) {
         releaseInfo.version = release.tag_name || null;
-        releaseInfo.notes = (release.body || '').split('\n')[0] || 'No release notes provided.';
+        releaseInfo.notes = releaseSummary(release.body);
         releaseInfo.url = release.html_url || releaseInfo.url;
         document.getElementById('release-slide-title').textContent =
           releaseInfo.version ? ('eCalendar ' + releaseInfo.version + ' is out now') : 'Latest eCalendar release';
