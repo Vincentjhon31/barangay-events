@@ -59,6 +59,8 @@ Future<void> main() async {
   }
 
   final themeController = await ThemeController.load();
+  final PushNotificationService pushService =
+      firebaseReady ? FirebasePushNotificationService() : const NoopPushNotificationService();
 
   // DateFormat throws if a locale's symbol/day-name data hasn't been loaded
   // yet — load both supported locales upfront rather than only whichever
@@ -76,9 +78,10 @@ Future<void> main() async {
         repositoryOwner: 'Vincentjhon31',
         repositoryName: 'barangay-events',
       ),
-      pushNotificationServiceFactory: firebaseReady
-          ? () async => FirebasePushNotificationService()
-          : () async => const NoopPushNotificationService(),
+      // One instance for the whole process (every sign-in reuses it) — see
+      // FirebasePushNotificationService for why a fresh one per sign-in
+      // stacked duplicate notifications.
+      pushNotificationServiceFactory: () async => pushService,
     ),
   );
 }
@@ -323,6 +326,15 @@ class _AuthenticatedShellState extends State<AuthenticatedShell> {
   void dispose() {
     widget.themeController.detachAuthService();
     unawaited(_resolvedRepository?.dispose());
+    // Signing out is what disposes this shell: stop this device receiving
+    // that account's reminders and its groups' pushes. (A shell rebuilt
+    // while still signed in skips this — the new one re-syncs right away.)
+    if (!widget.authService.isSignedIn) {
+      unawaited(_pushServiceFuture.then((service) async {
+        await service.syncUserTopic(null);
+        await service.syncTopics(const []);
+      }).catchError((_) {}));
+    }
     super.dispose();
   }
 
@@ -2492,15 +2504,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return widgets;
   }
 
+  /// Single choice, like tabs: picking a type shows only that type, and
+  /// "All" (null) clears the filter. Tapping the active one keeps it.
   void _toggleTypeFilter(Set<String> filters, String? value) {
     setState(() {
-      if (value == null) {
-        filters.clear();
-      } else if (filters.contains(value)) {
-        filters.remove(value);
-      } else {
-        filters.add(value);
-      }
+      filters.clear();
+      if (value != null) filters.add(value);
       // Changing which posts match should always land back on page 1,
       // rather than possibly stranding the user on a now out-of-range page.
       if (identical(filters, _feedTypeFilters)) _feedPage = 0;
@@ -2672,8 +2681,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
     // there's actually more than one group to choose between.
     final showGroupPicker = keyPrefix == 'calendar' && _myGroups.length > 1;
 
-    // "All" is active when no specific type is checked; the type chips are
-    // checkable so several can be enabled at once.
+    // Exactly one chip is active: "All" when no type is picked, otherwise
+    // the one picked type (see [_toggleTypeFilter]).
     bool isActive(String? value) =>
         value == null ? filters.isEmpty : filters.contains(value);
 
@@ -2712,14 +2721,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                 : colorScheme.onSurfaceVariant,
                           ),
                     ),
-                    if (option.value != null && isActive(option.value)) ...[
-                      const SizedBox(width: 6),
-                      FaIcon(
-                        FontAwesomeIcons.circleCheck,
-                        size: 12,
-                        color: colorScheme.primary,
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -3289,12 +3290,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    'Posted by $postedBy • ${_relativeTime(event.createdAt)}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      _PosterAvatar(event: event, size: 18),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Posted by $postedBy • ${_relativeTime(event.createdAt)}',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
                         ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -4003,6 +4012,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       if (event.creatorLabel != null)
         _DetailInfoRow(
           icon: FontAwesomeIcons.userPen,
+          leading: _PosterAvatar(event: event, size: 38),
           tint: eventTint,
           label: l10n.detailPostedBy,
           value: event.creatorLabel!,
@@ -4332,16 +4342,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     ],
                   ),
                   if (event.creatorLabel != null) ...[
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 4),
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        FaIcon(
-                          FontAwesomeIcons.userPen,
-                          size: 13,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 5),
+                        _PosterAvatar(event: event, size: 18),
+                        const SizedBox(width: 6),
                         Expanded(
                           child: Text(
                             l10n.postedByPrefix(event.creatorLabel!),
@@ -4692,6 +4698,50 @@ class _CalendarScreenState extends State<CalendarScreen> {
 /// identically-shaped `Container`s with one consistent, lighter-weight
 /// pattern, all sharing the event's own type color instead of an arbitrary
 /// primary/secondary/tertiary rotation.
+/// The poster's profile picture, shown next to "By …" / "Posted by" so
+/// people can tell at a glance who posted an event. Someone who never set
+/// a picture gets the same default profile icon the Profile page shows.
+class _PosterAvatar extends StatelessWidget {
+  const _PosterAvatar({required this.event, required this.size});
+
+  final BarangayEvent event;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final fallback = Container(
+      key: const Key('poster-avatar-default'),
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      color: colorScheme.primary.withValues(alpha: 0.16),
+      child: FaIcon(FontAwesomeIcons.circleUser, size: size * 0.62, color: colorScheme.primary),
+    );
+    final avatarUrl = event.createdByAvatarUrl;
+    return Container(
+      key: Key('poster-avatar-${event.id}'),
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.6)),
+      ),
+      child: ClipOval(
+        child: avatarUrl == null || avatarUrl.isEmpty
+            ? fallback
+            : Image.asset(
+                avatarUrl,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => fallback,
+              ),
+      ),
+    );
+  }
+}
+
 class _DetailInfoRow extends StatelessWidget {
   const _DetailInfoRow({
     required this.icon,
@@ -4700,9 +4750,13 @@ class _DetailInfoRow extends StatelessWidget {
     required this.value,
     this.subtitle,
     this.trailing,
+    this.leading,
   });
 
   final FaIconData icon;
+
+  /// Replaces the icon badge, e.g. the poster's avatar on "Posted by".
+  final Widget? leading;
   final Color tint;
   final String label;
   final String value;
@@ -4721,7 +4775,7 @@ class _DetailInfoRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        IconBadge(icon: icon, tint: tint, size: 38, iconSize: 15),
+        leading ?? IconBadge(icon: icon, tint: tint, size: 38, iconSize: 15),
         const SizedBox(width: 12),
         Expanded(
           child: Column(

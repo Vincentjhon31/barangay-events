@@ -1938,3 +1938,170 @@ do $$ begin
 end $$;
 
 notify pgrst, 'reload schema';
+
+-- ============================================================
+-- Poster avatars on events + LGU admin portal back end (September 2026).
+-- Safe to re-run on an existing database.
+-- ============================================================
+
+-- The poster's avatar (an assets/avatars/... path — a preset picture,
+-- never a personal photo) is denormalized onto each event like
+-- created_by_name, so every event card can show who posted it without a
+-- profile lookup (profiles are only readable by their owner). A trigger
+-- fills it on insert from the poster's profile — so events posted from an
+-- older app version or the admin portal get it too — and another keeps it
+-- current when someone changes their avatar.
+alter table public.barangay_events add column if not exists created_by_avatar_url text;
+
+create or replace function public.fill_event_creator_avatar()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  new.created_by_avatar_url := (select p.avatar_url from profiles p where p.id = new.created_by_id);
+  return new;
+end $$;
+
+drop trigger if exists fill_event_creator_avatar on public.barangay_events;
+create trigger fill_event_creator_avatar
+  before insert on public.barangay_events
+  for each row execute function public.fill_event_creator_avatar();
+
+-- Security definer: a profile edit must update every one of that person's
+-- events, which the editing user's own RLS wouldn't necessarily allow.
+create or replace function public.sync_event_creator_avatar()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.avatar_url is distinct from old.avatar_url then
+    update barangay_events set created_by_avatar_url = new.avatar_url
+      where barangay_events.created_by_id = new.id;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists sync_event_creator_avatar on public.profiles;
+create trigger sync_event_creator_avatar
+  after update of avatar_url on public.profiles
+  for each row execute function public.sync_event_creator_avatar();
+
+-- Backfill events posted before this existed (idempotent).
+update public.barangay_events e set created_by_avatar_url = p.avatar_url
+  from public.profiles p
+  where p.id = e.created_by_id and e.created_by_avatar_url is distinct from p.avatar_url;
+
+-- ---- LGU admin portal (docs/lgu-admin/index.html) ----
+-- All superadmin-only, checked inside each function. Personal events are
+-- private to their creator: they're counted in the dashboard totals but
+-- never listed, edited, or deleted from the portal.
+
+create or replace function public.admin_dashboard_stats()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  -- Event times are Philippine wall-clock labeled UTC (see the "Reminder
+  -- timing fix" block), so "now" is expressed the same way.
+  v_now timestamptz := (now() at time zone 'Asia/Manila') at time zone 'UTC';
+  v_month_start timestamptz := date_trunc('month', v_now at time zone 'UTC') at time zone 'UTC';
+begin
+  if not exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can view dashboard stats';
+  end if;
+  return jsonb_build_object(
+    'users_total', (select count(*) from profiles),
+    'users_citizen', (select count(*) from profiles where role = 'citizen'),
+    'users_lgu', (select count(*) from profiles where role = 'lgu_member'),
+    'users_superadmin', (select count(*) from profiles where role = 'superadmin'),
+    'users_new_7d', (select count(*) from profiles where created_at > now() - interval '7 days'),
+    'pending_applications', (select count(*) from profiles where lgu_request_status = 'pending'),
+    'events_public', (select count(*) from barangay_events where event_type = 'public'),
+    'events_group', (select count(*) from barangay_events where event_type = 'shared'),
+    'events_personal', (select count(*) from barangay_events where event_type = 'personal'),
+    'events_upcoming_7d', (select count(*) from barangay_events
+      where event_type <> 'personal' and end_time >= v_now and start_time < v_now + interval '7 days'),
+    'events_this_month', (select count(*) from barangay_events
+      where event_type <> 'personal' and start_time >= v_month_start
+        and start_time < v_month_start + interval '1 month'),
+    'groups_total', (select count(*) from groups),
+    'reminders_sent_24h', (select count(*) from event_reminders_sent where sent_at > now() - interval '24 hours')
+  );
+end $$;
+
+create or replace function public.admin_list_events()
+returns table(
+  out_id text, out_title text, out_location text, out_description text,
+  out_start_time timestamptz, out_end_time timestamptz, out_event_type text,
+  out_group_name text, out_created_by_name text, out_created_by_department text,
+  out_created_by_avatar_url text, out_color_key text, out_contact_number text,
+  out_created_at timestamptz
+)
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can list events';
+  end if;
+  return query
+    select e.id, e.title, e.location, e.description, e.start_time, e.end_time, e.event_type,
+           e.group_name, e.created_by_name, e.created_by_department, e.created_by_avatar_url,
+           e.color_key, e.contact_number, e.created_at
+    from barangay_events e
+    where e.event_type <> 'personal'
+    order by e.start_time desc
+    limit 2000;
+end $$;
+
+-- Times arrive as wall-clock values with no offset (e.g. '2026-09-24T10:00'),
+-- which this UTC database stores in the same convention the app uses.
+create or replace function public.admin_update_event(
+  p_event_id text, p_title text, p_location text, p_description text,
+  p_start timestamptz, p_end timestamptz, p_color_key text, p_contact_number text
+)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_type text;
+begin
+  if not exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can edit events from the admin portal';
+  end if;
+  select e.event_type into v_type from barangay_events e where e.id = p_event_id;
+  if v_type is null then
+    raise exception 'Event not found';
+  end if;
+  if v_type = 'personal' then
+    raise exception 'Personal events can only be changed by their creator';
+  end if;
+  if coalesce(trim(p_title), '') = '' then
+    raise exception 'Title is required';
+  end if;
+  if p_end <= p_start then
+    raise exception 'The end must be after the start';
+  end if;
+
+  update barangay_events e set
+    title = trim(p_title),
+    location = coalesce(nullif(trim(p_location), ''), 'Other'),
+    description = coalesce(p_description, ''),
+    start_time = p_start,
+    end_time = p_end,
+    day_key = date_trunc('day', p_start at time zone 'UTC') at time zone 'UTC',
+    color_key = nullif(p_color_key, ''),
+    contact_number = nullif(trim(coalesce(p_contact_number, '')), ''),
+    -- Drop per-day overrides for days no longer in the (possibly moved) range.
+    daily_overrides = coalesce((
+      select jsonb_agg(o)
+      from jsonb_array_elements(coalesce(e.daily_overrides, '[]'::jsonb)) o
+      where ((o->>'day')::timestamptz at time zone 'UTC')::date
+            between (p_start at time zone 'UTC')::date and (p_end at time zone 'UTC')::date
+    ), '[]'::jsonb)
+  where e.id = p_event_id;
+end $$;
+
+create or replace function public.admin_delete_event(p_event_id text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can delete events from the admin portal';
+  end if;
+  if exists (select 1 from barangay_events e where e.id = p_event_id and e.event_type = 'personal') then
+    raise exception 'Personal events can only be deleted by their creator';
+  end if;
+  delete from barangay_events e where e.id = p_event_id;
+end $$;
+
+notify pgrst, 'reload schema';

@@ -1408,256 +1408,289 @@ class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
 
     return GlassSubPage(
       title: l10n.settingsTitle,
       subtitle: l10n.settingsSubtitle,
       children: [
-        Text(
-          l10n.settingsAppearance,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                letterSpacing: 0.6,
-                fontWeight: FontWeight.w700,
-              ),
-        ),
-        const SizedBox(height: 10),
+        // One collapsible section per setting, each closed by default and
+        // showing its current choice in the header, so the page stays short
+        // as more settings are added.
         ListenableBuilder(
           listenable: themeController,
           builder: (context, _) {
             final mode = themeController.themeMode;
-            return Column(
-              children: [
-                _ThemeOptionTile(
-                  icon: FontAwesomeIcons.circleHalfStroke,
-                  label: l10n.settingsSystemDefault,
-                  selected: mode == ThemeMode.system,
-                  onTap: () => themeController.setThemeMode(ThemeMode.system),
-                ),
-                const SizedBox(height: 10),
-                _ThemeOptionTile(
-                  icon: FontAwesomeIcons.sun,
-                  label: l10n.settingsLight,
-                  selected: mode == ThemeMode.light,
-                  onTap: () => themeController.setThemeMode(ThemeMode.light),
-                ),
-                const SizedBox(height: 10),
-                _ThemeOptionTile(
-                  icon: FontAwesomeIcons.moon,
-                  label: l10n.settingsDark,
-                  selected: mode == ThemeMode.dark,
-                  onTap: () => themeController.setThemeMode(ThemeMode.dark),
-                ),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 22),
-        Text(
-          l10n.settingsAppStyle,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                letterSpacing: 0.6,
-                fontWeight: FontWeight.w700,
-              ),
-        ),
-        const SizedBox(height: 10),
-        ListenableBuilder(
-          listenable: themeController,
-          builder: (context, _) {
             final style = themeController.uiStyle;
-            return Column(
-              children: [
-                _ThemeOptionTile(
-                  icon: FontAwesomeIcons.wandMagicSparkles,
-                  label: l10n.settingsLiquidGlass,
-                  subtitle: l10n.settingsLiquidGlassSubtitle,
-                  selected: style == UiStyle.liquid,
-                  onTap: () => themeController.setUiStyle(UiStyle.liquid),
-                ),
-                const SizedBox(height: 10),
-                _ThemeOptionTile(
-                  icon: FontAwesomeIcons.bolt,
-                  label: l10n.settingsSolid,
-                  subtitle: l10n.settingsSolidSubtitle,
-                  selected: style == UiStyle.solid,
-                  onTap: () => themeController.setUiStyle(UiStyle.solid),
-                ),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 22),
-        Text(
-          l10n.settingsDisplaySize,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                letterSpacing: 0.6,
-                fontWeight: FontWeight.w700,
-              ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          l10n.settingsDisplaySizeHint,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-        ),
-        const SizedBox(height: 10),
-        ListenableBuilder(
-          listenable: themeController,
-          builder: (context, _) {
             final displayMode = themeController.displayMode;
-            final options = <(DisplayMode, FaIconData, String)>[
+            final language = themeController.locale.languageCode;
+            final cellStyle = themeController.calendarCellStyle;
+            final reminder = themeController.reminderPreference;
+
+            final displayOptions = <(DisplayMode, FaIconData, String)>[
               (DisplayMode.auto, FontAwesomeIcons.wandMagicSparkles, l10n.settingsDisplayAuto),
               (DisplayMode.mobile, FontAwesomeIcons.mobileScreen, l10n.settingsDisplayMobile),
               (DisplayMode.tablet, FontAwesomeIcons.tabletScreenButton, l10n.settingsDisplayTablet),
               (DisplayMode.windows, FontAwesomeIcons.desktop, l10n.settingsDisplayWindows),
             ];
-            return Column(
-              children: [
-                for (final (mode, icon, subtitle) in options) ...[
-                  _ThemeOptionTile(
-                    icon: icon,
-                    label: mode.label,
-                    subtitle: subtitle,
-                    selected: displayMode == mode,
-                    onTap: () => themeController.setDisplayMode(mode),
-                  ),
-                  if (mode != options.last.$1) const SizedBox(height: 10),
-                ],
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 22),
-        Text(
-          l10n.settingsLanguage,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                letterSpacing: 0.6,
-                fontWeight: FontWeight.w700,
-              ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          l10n.settingsLanguageHint,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-        ),
-        const SizedBox(height: 10),
-        ListenableBuilder(
-          listenable: themeController,
-          builder: (context, _) {
-            final language = themeController.locale.languageCode;
-            return Column(
-              children: [
-                _ThemeOptionTile(
-                  icon: FontAwesomeIcons.language,
-                  label: l10n.settingsLanguageEnglish,
-                  selected: language == 'en',
-                  onTap: () => themeController.setLanguage('en'),
-                ),
-                const SizedBox(height: 10),
-                _ThemeOptionTile(
-                  icon: FontAwesomeIcons.language,
-                  label: l10n.settingsLanguageFilipino,
-                  selected: language == 'fil',
-                  onTap: () => themeController.setLanguage('fil'),
-                ),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 22),
-        Text(
-          l10n.settingsCalendarView,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                letterSpacing: 0.6,
-                fontWeight: FontWeight.w700,
-              ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          l10n.settingsCalendarViewHint,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-        ),
-        const SizedBox(height: 10),
-        ListenableBuilder(
-          listenable: themeController,
-          builder: (context, _) {
-            final style = themeController.calendarCellStyle;
-            return Column(
-              children: [
-                _ThemeOptionTile(
-                  key: const Key('settings-calendar-dots'),
-                  icon: FontAwesomeIcons.ellipsis,
-                  label: l10n.settingsCalendarDots,
-                  subtitle: l10n.settingsCalendarDotsSubtitle,
-                  selected: style == CalendarCellStyle.dots,
-                  onTap: () => themeController.setCalendarCellStyle(CalendarCellStyle.dots),
-                ),
-                const SizedBox(height: 10),
-                _ThemeOptionTile(
-                  key: const Key('settings-calendar-titles'),
-                  icon: FontAwesomeIcons.tableList,
-                  label: l10n.settingsCalendarTitles,
-                  subtitle: l10n.settingsCalendarTitlesSubtitle,
-                  selected: style == CalendarCellStyle.titles,
-                  onTap: () => themeController.setCalendarCellStyle(CalendarCellStyle.titles),
-                ),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 22),
-        Text(
-          l10n.settingsNotifications,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                letterSpacing: 0.6,
-                fontWeight: FontWeight.w700,
-              ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          l10n.settingsNotificationsHint,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-        ),
-        const SizedBox(height: 10),
-        ListenableBuilder(
-          listenable: themeController,
-          builder: (context, _) {
-            final reminder = themeController.reminderPreference;
-            final options = <(ReminderPreference, FaIconData, String)>[
+            final reminderOptions = <(ReminderPreference, FaIconData, String)>[
               (ReminderPreference.off, FontAwesomeIcons.bellSlash, l10n.settingsReminderOff),
               (ReminderPreference.oneHour, FontAwesomeIcons.userClock, l10n.settingsReminderOneHour),
               (ReminderPreference.oneDay, FontAwesomeIcons.bell, l10n.settingsReminderOneDay),
             ];
+
             return Column(
               children: [
-                for (final (preference, icon, label) in options) ...[
-                  _ThemeOptionTile(
-                    icon: icon,
-                    label: label,
-                    selected: reminder == preference,
-                    onTap: () => themeController.setReminderPreference(preference),
-                  ),
-                  if (preference != options.last.$1) const SizedBox(height: 10),
-                ],
+                _SettingsSection(
+                  id: 'appearance',
+                  icon: FontAwesomeIcons.circleHalfStroke,
+                  title: l10n.settingsAppearance,
+                  summary: switch (mode) {
+                    ThemeMode.system => l10n.settingsSystemDefault,
+                    ThemeMode.light => l10n.settingsLight,
+                    ThemeMode.dark => l10n.settingsDark,
+                  },
+                  children: [
+                    _ThemeOptionTile(
+                      icon: FontAwesomeIcons.circleHalfStroke,
+                      label: l10n.settingsSystemDefault,
+                      selected: mode == ThemeMode.system,
+                      onTap: () => themeController.setThemeMode(ThemeMode.system),
+                    ),
+                    _ThemeOptionTile(
+                      icon: FontAwesomeIcons.sun,
+                      label: l10n.settingsLight,
+                      selected: mode == ThemeMode.light,
+                      onTap: () => themeController.setThemeMode(ThemeMode.light),
+                    ),
+                    _ThemeOptionTile(
+                      icon: FontAwesomeIcons.moon,
+                      label: l10n.settingsDark,
+                      selected: mode == ThemeMode.dark,
+                      onTap: () => themeController.setThemeMode(ThemeMode.dark),
+                    ),
+                  ],
+                ),
+                _SettingsSection(
+                  id: 'app-style',
+                  icon: FontAwesomeIcons.wandMagicSparkles,
+                  title: l10n.settingsAppStyle,
+                  summary: style == UiStyle.liquid ? l10n.settingsLiquidGlass : l10n.settingsSolid,
+                  children: [
+                    _ThemeOptionTile(
+                      icon: FontAwesomeIcons.wandMagicSparkles,
+                      label: l10n.settingsLiquidGlass,
+                      subtitle: l10n.settingsLiquidGlassSubtitle,
+                      selected: style == UiStyle.liquid,
+                      onTap: () => themeController.setUiStyle(UiStyle.liquid),
+                    ),
+                    _ThemeOptionTile(
+                      icon: FontAwesomeIcons.bolt,
+                      label: l10n.settingsSolid,
+                      subtitle: l10n.settingsSolidSubtitle,
+                      selected: style == UiStyle.solid,
+                      onTap: () => themeController.setUiStyle(UiStyle.solid),
+                    ),
+                  ],
+                ),
+                _SettingsSection(
+                  id: 'display-size',
+                  icon: FontAwesomeIcons.desktop,
+                  title: l10n.settingsDisplaySize,
+                  summary: displayMode.label,
+                  hint: l10n.settingsDisplaySizeHint,
+                  children: [
+                    for (final (option, icon, subtitle) in displayOptions)
+                      _ThemeOptionTile(
+                        icon: icon,
+                        label: option.label,
+                        subtitle: subtitle,
+                        selected: displayMode == option,
+                        onTap: () => themeController.setDisplayMode(option),
+                      ),
+                  ],
+                ),
+                _SettingsSection(
+                  id: 'language',
+                  icon: FontAwesomeIcons.language,
+                  title: l10n.settingsLanguage,
+                  summary: language == 'fil' ? l10n.settingsLanguageFilipino : l10n.settingsLanguageEnglish,
+                  hint: l10n.settingsLanguageHint,
+                  children: [
+                    _ThemeOptionTile(
+                      icon: FontAwesomeIcons.language,
+                      label: l10n.settingsLanguageEnglish,
+                      selected: language == 'en',
+                      onTap: () => themeController.setLanguage('en'),
+                    ),
+                    _ThemeOptionTile(
+                      icon: FontAwesomeIcons.language,
+                      label: l10n.settingsLanguageFilipino,
+                      selected: language == 'fil',
+                      onTap: () => themeController.setLanguage('fil'),
+                    ),
+                  ],
+                ),
+                _SettingsSection(
+                  id: 'calendar',
+                  icon: FontAwesomeIcons.calendarDays,
+                  title: l10n.settingsCalendarView,
+                  summary: cellStyle == CalendarCellStyle.titles ? l10n.settingsCalendarTitles : l10n.settingsCalendarDots,
+                  hint: l10n.settingsCalendarViewHint,
+                  children: [
+                    _ThemeOptionTile(
+                      key: const Key('settings-calendar-dots'),
+                      icon: FontAwesomeIcons.ellipsis,
+                      label: l10n.settingsCalendarDots,
+                      subtitle: l10n.settingsCalendarDotsSubtitle,
+                      selected: cellStyle == CalendarCellStyle.dots,
+                      onTap: () => themeController.setCalendarCellStyle(CalendarCellStyle.dots),
+                    ),
+                    _ThemeOptionTile(
+                      key: const Key('settings-calendar-titles'),
+                      icon: FontAwesomeIcons.tableList,
+                      label: l10n.settingsCalendarTitles,
+                      subtitle: l10n.settingsCalendarTitlesSubtitle,
+                      selected: cellStyle == CalendarCellStyle.titles,
+                      onTap: () => themeController.setCalendarCellStyle(CalendarCellStyle.titles),
+                    ),
+                  ],
+                ),
+                _SettingsSection(
+                  id: 'notifications',
+                  icon: FontAwesomeIcons.bell,
+                  title: l10n.settingsNotifications,
+                  summary: reminderOptions.firstWhere((option) => option.$1 == reminder).$3,
+                  hint: l10n.settingsNotificationsHint,
+                  children: [
+                    for (final (preference, icon, label) in reminderOptions)
+                      _ThemeOptionTile(
+                        icon: icon,
+                        label: label,
+                        selected: reminder == preference,
+                        onTap: () => themeController.setReminderPreference(preference),
+                      ),
+                  ],
+                ),
               ],
             );
           },
         ),
       ],
+    );
+  }
+}
+
+/// A collapsible Settings section: a header with the section's name and
+/// its current choice, which opens to show the options. Closed by default.
+class _SettingsSection extends StatefulWidget {
+  const _SettingsSection({
+    required this.id,
+    required this.icon,
+    required this.title,
+    required this.summary,
+    required this.children,
+    this.hint,
+  });
+
+  /// Keys the header as `settings-section-<id>` (for tests).
+  final String id;
+  final FaIconData icon;
+  final String title;
+  final String summary;
+  final String? hint;
+  final List<Widget> children;
+
+  @override
+  State<_SettingsSection> createState() => _SettingsSectionState();
+}
+
+class _SettingsSectionState extends State<_SettingsSection> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GlassPanel(
+        borderRadius: 22,
+        padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Semantics(
+              button: true,
+              expanded: _open,
+              child: InkWell(
+                key: Key('settings-section-${widget.id}'),
+                borderRadius: BorderRadius.circular(22),
+                onTap: () => setState(() => _open = !_open),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  child: Row(
+                    children: [
+                      IconBadge(icon: widget.icon, tint: colorScheme.primary, size: 40, iconSize: 16),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.title,
+                              style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                            Text(
+                              widget.summary,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      AnimatedRotation(
+                        turns: _open ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 180),
+                        child: FaIcon(FontAwesomeIcons.chevronDown, size: 14, color: colorScheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              alignment: Alignment.topCenter,
+              child: !_open
+                  ? const SizedBox(width: double.infinity)
+                  : Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (widget.hint != null)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+                              child: Text(
+                                widget.hint!,
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                              ),
+                            ),
+                          for (final (index, child) in widget.children.indexed) ...[
+                            if (index > 0) const SizedBox(height: 8),
+                            child,
+                          ],
+                        ],
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

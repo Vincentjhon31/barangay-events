@@ -192,7 +192,14 @@ Deno.serve(async (req) => {
           topic: `user-${row.user_id}`,
           notification: { title, body },
           data: { type: "event_reminder", eventId: row.event_id, window },
-          android: { priority: "high", ttl: ttlMs(row, nowMs) },
+          android: {
+            priority: "high",
+            ttl: ttlMs(row, nowMs),
+            // Same tag = the same reminder replaces itself in the tray
+            // instead of stacking, e.g. on a phone still subscribed to more
+            // than one account's topic.
+            notification: { tag: `reminder-${row.event_id}-${window}` },
+          },
         });
       } catch (sendError) {
         errors.push(`FCM send failed for user ${row.user_id}/event ${row.event_id}: ${sendError}`);

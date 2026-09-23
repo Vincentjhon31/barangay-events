@@ -1941,7 +1941,12 @@ void main() {
       await tester.tap(find.text('Settings'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Auto'), findsOneWidget);
+      // Sections start closed, showing the current choice.
+      expect(find.text('Mobile'), findsNothing);
+      await tester.tap(find.byKey(const Key('settings-section-display-size')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Auto'), findsNWidgets(2)); // header summary + option
       expect(find.text('Mobile'), findsOneWidget);
       expect(find.text('Tablet'), findsOneWidget);
       expect(find.text('Windows / Kiosk'), findsOneWidget);
@@ -2342,6 +2347,14 @@ void main() {
       await tester.tap(find.text('Settings'));
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
+        find.byKey(const Key('settings-section-calendar')),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings-section-calendar')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
         find.byKey(const Key('settings-calendar-titles')),
         300,
         scrollable: find.byType(Scrollable).first,
@@ -2500,6 +2513,125 @@ void main() {
         find.descendant(
           of: find.byKey(Key('calendar-more-${target.year}-${target.month}-${target.day}')),
           matching: find.text('+2'),
+        ),
+        findsOneWidget,
+      );
+    });
+  });
+
+  group('type filter is a single choice, like tabs', () {
+    testWidgets('picking a type replaces the previous one, and All clears it', (WidgetTester tester) async {
+      final repo = MemoryEventRepository.seeded();
+      for (final event in await repo.watchAllEvents().first) {
+        await repo.deleteEvent(event.id);
+      }
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      Future<void> add(String title, String type) => repo.addEvent(BarangayEvent(
+            id: title,
+            title: title,
+            location: 'Plaza',
+            startTime: today.add(const Duration(hours: 23)),
+            endTime: today.add(const Duration(hours: 23, minutes: 30)),
+            description: '',
+            createdAt: now,
+            eventType: type,
+            createdById: 'mock-user-id',
+          ));
+      await add('Public One', EventType.public);
+      await add('Personal One', EventType.personal);
+
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repo,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      Future<void> tapFilter(String value) async {
+        await tester.ensureVisible(find.byKey(Key('calendar-filter-$value')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key('calendar-filter-$value')));
+        await tester.pumpAndSettle();
+      }
+
+      await tapFilter('public');
+      expect(find.text('Public One'), findsWidgets);
+      expect(find.text('Personal One'), findsNothing);
+
+      // Picking Personal replaces Public instead of adding to it.
+      await tapFilter('personal');
+      expect(find.text('Personal One'), findsWidgets);
+      expect(find.text('Public One'), findsNothing);
+
+      // Tapping the active one keeps it (tabs don't untoggle).
+      await tapFilter('personal');
+      expect(find.text('Public One'), findsNothing);
+
+      await tapFilter('all');
+      expect(find.text('Public One'), findsWidgets);
+      expect(find.text('Personal One'), findsWidgets);
+    });
+  });
+
+  group('poster avatar', () {
+    test('is read from Supabase rows and kept by copyWith', () {
+      final event = BarangayEvent.fromSupabase({
+        'id': 'e1',
+        'title': 'Assembly',
+        'location': 'Hall',
+        'start_time': '2026-09-24T10:00:00+00:00',
+        'end_time': '2026-09-24T11:00:00+00:00',
+        'created_at': '2026-09-20T08:00:00+00:00',
+        'description': '',
+        'color_key': 'grape',
+        'contact_number': '0917',
+        'created_by_avatar_url': 'assets/avatars/animal/animal_01.png',
+      });
+      expect(event.createdByAvatarUrl, 'assets/avatars/animal/animal_01.png');
+      // Server-managed, so never sent back on save.
+      expect(event.toSupabaseJson().containsKey('created_by_avatar_url'), isFalse);
+
+      final renamed = event.copyWith(groupName: 'New name');
+      expect(renamed.createdByAvatarUrl, event.createdByAvatarUrl);
+      expect(renamed.colorKey, 'grape');
+      expect(renamed.contactNumber, '0917');
+    });
+
+    testWidgets('shows next to who posted the event', (WidgetTester tester) async {
+      final repo = MemoryEventRepository.seeded();
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      await repo.addEvent(BarangayEvent(
+        id: 'with-avatar',
+        title: 'Posted With Avatar',
+        location: 'Plaza',
+        startTime: today.add(const Duration(hours: 23)),
+        endTime: today.add(const Duration(hours: 23, minutes: 30)),
+        description: '',
+        createdAt: now,
+        createdByName: 'Juan Dela Cruz',
+        createdByAvatarUrl: 'assets/avatars/animal/animal_01.png',
+      ));
+
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repo,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await openTodayDetail(tester);
+
+      final avatar = find.byKey(const Key('poster-avatar-with-avatar'));
+      expect(avatar, findsWidgets);
+      expect(find.descendant(of: avatar.first, matching: find.byType(Image)), findsOneWidget);
+      // Someone who never set a picture gets the default profile icon, not a letter.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('poster-avatar-seed-mayor-meeting')).first,
+          matching: find.byKey(const Key('poster-avatar-default')),
         ),
         findsOneWidget,
       );
@@ -2868,12 +3000,14 @@ void main() {
       // does, unlike ensureVisible, which needs the element to already
       // exist in the tree.
       await tester.scrollUntilVisible(
-        find.text('Language'),
+        find.byKey(const Key('settings-section-language')),
         300,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
       expect(find.text('Language'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('settings-section-language')));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Filipino'));
       await tester.pumpAndSettle();
 

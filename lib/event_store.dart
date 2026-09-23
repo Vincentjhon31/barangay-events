@@ -94,6 +94,7 @@ class BarangayEvent {
     this.dailyOverrides = const [],
     this.colorKey,
     this.contactNumber,
+    this.createdByAvatarUrl,
   });
 
   final String id;
@@ -151,6 +152,12 @@ class BarangayEvent {
   /// True when the event spans more than one calendar day.
   bool get isMultiDay => endDayKey.isAfter(dayKey);
 
+  /// The poster's avatar (an `assets/avatars/...` path, see avatar_catalog),
+  /// or null if they never picked one. Filled and kept current server-side
+  /// from their profile (barangay_events.created_by_avatar_url triggers), so
+  /// it's read but never written by [toSupabaseJson].
+  final String? createdByAvatarUrl;
+
   /// Stored as 00:00–23:59 (see [isAllDayWindow]) — shown as "All day"
   /// instead of clock times.
   bool get isAllDay => isAllDayWindow(
@@ -203,6 +210,9 @@ class BarangayEvent {
       groupId: groupId,
       groupName: groupName ?? this.groupName,
       dailyOverrides: dailyOverrides,
+      colorKey: colorKey,
+      contactNumber: contactNumber,
+      createdByAvatarUrl: createdByAvatarUrl,
     );
   }
 
@@ -298,6 +308,7 @@ class BarangayEvent {
           const [],
       colorKey: row['color_key'] as String?,
       contactNumber: row['contact_number'] as String?,
+      createdByAvatarUrl: row['created_by_avatar_url'] as String?,
     );
   }
 

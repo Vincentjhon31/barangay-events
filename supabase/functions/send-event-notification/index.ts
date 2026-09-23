@@ -181,6 +181,9 @@ Deno.serve(async (req) => {
       topic,
       notification: { title, body },
       data: { eventId: event.id, changeType: payload.type },
+      // One tray entry per event: a repeat delivery (or a later
+      // update/cancellation push) replaces it instead of stacking.
+      android: { priority: "high", notification: { tag: `event-${event.id}` } },
     });
   } catch (error) {
     console.error("FCM send failed:", error);

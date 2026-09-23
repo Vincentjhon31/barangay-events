@@ -97,6 +97,7 @@ jobs:
             > [!TIP]
             > **Android** — download `e-calendar-${{ steps.version.outputs.version }}.apk`.
             > **Windows** — download `e-calendar-${{ steps.version.outputs.version }}-setup.exe` and run it. It upgrades an existing install in place — no need to uninstall or delete anything first.
+            > **Website** — download `e-calendar-${{ steps.version.outputs.version }}-web.zip` and extract its contents into the site's folder on the web host (e.g. Hostinger's `public_html`), replacing the old files.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -186,5 +187,48 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: installer_output\e-calendar-*-setup.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-web:
+    # Same pattern as build-windows: runs after the Android job has created
+    # the release, then adds the web build to it as a zip for uploading to
+    # a regular web host (e.g. Hostinger). The app uses hash URLs, so it
+    # works from any folder with no server rewrite rules; web/.htaccess
+    # (copied into the build) stops Apache caching the files that keep the
+    # same name every release (main.dart.js, index.html, ...), so visitors
+    # get the new version as soon as it's uploaded.
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.1'
+          channel: stable
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build release web app
+        # --no-tree-shake-icons: same font_awesome_flutter glyph issue as
+        # the Android and Windows builds.
+        run: flutter build web --release --no-tree-shake-icons
+
+      - name: Zip web build
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${VERSION%%+*}"
+          (cd build/web && zip -qr "../../e-calendar-${VERSION}-web.zip" .)
+          ls -lh e-calendar-*-web.zip
+
+      - name: Add web build to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: e-calendar-*-web.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

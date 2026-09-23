@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// One FCM topic every device always listens to; public events are pushed
 /// here regardless of who created them.
@@ -98,7 +99,21 @@ class FirebasePushNotificationService implements PushNotificationService {
       _providedLocalNotifications ?? (_localNotificationsInstance ??= FlutterLocalNotificationsPlugin());
   FlutterLocalNotificationsPlugin? _localNotificationsInstance;
 
-  bool _initialized = false;
+  // Process-wide, not per instance. Firebase's onMessage/onMessageOpenedApp
+  // are global streams that outlive any one service object, and the app
+  // used to build a new service on every sign-in — each one added another
+  // listener, so after a few sign-out/sign-in cycles every incoming push was
+  // shown once per listener (reported as the same notification ~7 times).
+  // Holding the subscriptions statically, and replacing them on each
+  // initialize(), guarantees exactly one listener however many instances
+  // exist. main() also shares a single instance now.
+  static bool _initialized = false;
+  static StreamSubscription<RemoteMessage>? _foregroundSubscription;
+  static StreamSubscription<RemoteMessage>? _openedAppSubscription;
+
+  static const _topicsResetPrefKey = 'push_topics_reset_v1';
+  static const _subscribedUserPrefKey = 'push_subscribed_user_id';
+
   Set<String> _subscribedGroupIds = const {};
   String? _subscribedUserId;
   void Function()? _onAppUpdateAvailable;
@@ -114,6 +129,20 @@ class FirebasePushNotificationService implements PushNotificationService {
     _onAppUpdateAvailable = onAppUpdateAvailable;
     _onEventReminder = onEventReminder;
     _onNotificationTapped = onNotificationTapped;
+
+    // Always (re)attach, replacing whatever listener was there before —
+    // see the static fields above. Background/terminated delivery is
+    // handled natively by FCM once the payload has a `notification` block;
+    // only the foreground case needs app code, since Android doesn't
+    // surface FCM notifications while the app is in front.
+    await _foregroundSubscription?.cancel();
+    _foregroundSubscription = FirebaseMessaging.onMessage.listen(_showForegroundNotification);
+    // Tapping a notification while the app is backgrounded (not fully
+    // killed) fires this — the payload's `data` survives the tap same as
+    // it does in the foreground.
+    await _openedAppSubscription?.cancel();
+    _openedAppSubscription = FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+
     if (_initialized) return;
     _initialized = true;
 
@@ -127,26 +156,50 @@ class FirebasePushNotificationService implements PushNotificationService {
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(_eventUpdatesChannel);
 
+    await _resetStaleTopicsOnce(await SharedPreferences.getInstance());
     await _messaging.subscribeToTopic(publicEventsTopic);
     await _messaging.subscribeToTopic(appUpdatesTopic);
-
-    // Background/terminated delivery is handled natively by FCM once the
-    // payload has a `notification` block — only the foreground case needs
-    // app code, since Android doesn't surface FCM notifications while the
-    // app is in front. The subscription is intentionally left unowned: it
-    // should live for as long as the process does, same as this service.
-    FirebaseMessaging.onMessage.listen(_showForegroundNotification);
-
-    // Tapping a notification while the app is backgrounded (not fully
-    // killed) fires this — the payload's `data` survives the tap same as
-    // it does in the foreground.
-    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
 
     // A tap that cold-starts the app (process wasn't running at all)
     // doesn't go through onMessageOpenedApp — this is the one-shot way to
     // recover that same tap after initialize() runs.
     final initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null) _handleNotificationTap(initialMessage);
+  }
+
+  /// One-time cleanup (per install). Before the fix above, each sign-in's
+  /// fresh service never knew the previous account, so a phone that had
+  /// been signed into several accounts stayed subscribed to all of their
+  /// `user-<uid>` topics — receiving every one of those accounts' reminders:
+  /// duplicates at best, someone else's personal reminders at worst. FCM
+  /// can't list a device's topics, but deleting the token drops all of
+  /// them; the current ones are re-subscribed right after this.
+  Future<void> _resetStaleTopicsOnce(SharedPreferences prefs) async {
+    if (prefs.getBool(_topicsResetPrefKey) ?? false) return;
+    try {
+      await _messaging.deleteToken();
+      await prefs.remove(_subscribedUserPrefKey);
+      await prefs.setBool(_topicsResetPrefKey, true);
+    } catch (_) {
+      // Offline or similar — try again next launch.
+    }
+  }
+
+  /// The same logical notification always gets the same id — one event's
+  /// reminder, one event's new/updated/cancelled push, one app release —
+  /// so a duplicate delivery replaces the notification already showing
+  /// instead of stacking a second copy.
+  int _notificationIdFor(RemoteMessage message) {
+    final data = message.data;
+    final eventId = data['eventId'] as String?;
+    final key = switch (data['type']) {
+      'event_reminder' => 'reminder:$eventId:${data['window']}',
+      'app_update' => 'app_update:${data['version']}',
+      _ => eventId != null
+          ? 'event:$eventId:${data['changeType']}'
+          : (message.messageId ?? '${message.hashCode}'),
+    };
+    return key.hashCode & 0x7fffffff;
   }
 
   void _handleNotificationTap(RemoteMessage message) {
@@ -166,7 +219,7 @@ class FirebasePushNotificationService implements PushNotificationService {
     if (notification == null) return;
 
     await _localNotifications.show(
-      id: message.hashCode,
+      id: _notificationIdFor(message),
       title: notification.title,
       body: notification.body,
       notificationDetails: const NotificationDetails(
@@ -176,6 +229,9 @@ class FirebasePushNotificationService implements PushNotificationService {
           channelDescription: 'New public and group events posted to the barangay calendar.',
           importance: Importance.high,
           priority: Priority.high,
+          // A duplicate that replaces an already-showing notification
+          // (same id, see _notificationIdFor) updates it silently.
+          onlyAlertOnce: true,
         ),
       ),
     );
@@ -197,14 +253,26 @@ class FirebasePushNotificationService implements PushNotificationService {
 
   @override
   Future<void> syncUserTopic(String? userId) async {
-    if (_subscribedUserId == userId) return;
-    if (_subscribedUserId != null) {
-      await _messaging.unsubscribeFromTopic(userTopic(_subscribedUserId!));
+    // The previously-subscribed account is remembered across restarts, so
+    // switching accounts (or signing out) always drops the old account's
+    // topic — not just when it happens within one app session.
+    final prefs = await SharedPreferences.getInstance();
+    final previous = _subscribedUserId ?? prefs.getString(_subscribedUserPrefKey);
+    if (previous != null && previous != userId) {
+      await _messaging.unsubscribeFromTopic(userTopic(previous));
     }
-    if (userId != null) {
+    // Subscribed once per process, not skipped just because it was
+    // subscribed in an earlier run: re-subscribing is idempotent, and it
+    // repairs a subscription lost to a token reset.
+    if (userId != null && _subscribedUserId != userId) {
       await _messaging.subscribeToTopic(userTopic(userId));
     }
     _subscribedUserId = userId;
+    if (userId == null) {
+      await prefs.remove(_subscribedUserPrefKey);
+    } else {
+      await prefs.setString(_subscribedUserPrefKey, userId);
+    }
   }
 }
 
