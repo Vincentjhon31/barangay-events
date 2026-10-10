@@ -523,6 +523,8 @@
         if (!line) continue;
         if (/^check out the \[past releases\]/i.test(line)) continue;
         if (/^#/.test(line) || /^>/.test(line)) continue;
+        // The what's-new markers around the user-facing bullets.
+        if (/^<!--/.test(line)) continue;
         if (/^no notable changes/i.test(line)) continue;
         return line
           .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
