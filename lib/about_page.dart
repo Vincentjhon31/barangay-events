@@ -10,6 +10,7 @@ import 'app_update_service.dart';
 import 'faq_page.dart';
 import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
+import 'whats_new.dart';
 
 /// About page: installed version, a manual "check for updates" action, and
 /// the latest release's notes ("What's New") — reached from Profile.
@@ -30,6 +31,9 @@ class _AboutPageState extends State<AboutPage> {
   static const String _downloadUrl = 'https://vincentjhon31.github.io/barangay-events/';
 
   String? _installedVersion;
+
+  /// "What's new in this version" — from the notes bundled with the app.
+  WhatsNewEntry? _installedNotes;
   AppReleaseInfo? _latestRelease;
   bool _checking = false;
   String? _error;
@@ -43,8 +47,12 @@ class _AboutPageState extends State<AboutPage> {
 
   Future<void> _loadInstalledVersion() async {
     final info = await PackageInfo.fromPlatform();
+    final notes = await bundledWhatsNewFor(info.version);
     if (!mounted) return;
-    setState(() => _installedVersion = '${info.version} (${info.buildNumber})');
+    setState(() {
+      _installedVersion = '${info.version} (${info.buildNumber})';
+      _installedNotes = notes;
+    });
   }
 
   Future<void> _checkForUpdates() async {
@@ -333,27 +341,31 @@ class _AboutPageState extends State<AboutPage> {
         _buildShareAppPanel(),
         const SizedBox(height: 16),
         _buildUpdatesPanel(),
-        if (release != null && release.releaseNotes.isNotEmpty) ...[
+        // A newer release's notes, before updating — only its hand-written
+        // what's-new bullets, never GitHub's generated release body (which
+        // can mention internal details; see lib/whats_new.dart).
+        if (release != null && release.isNewerThanInstalled && release.whatsNew.isNotEmpty) ...[
           const SizedBox(height: 16),
-          GlassPanel(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _sectionHeader(
-                  FontAwesomeIcons.listCheck,
-                  const Color(0xFF7C4DFF),
-                  l10n.whatsNewInVersion(release.version),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  release.releaseNotes,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.4),
-                ),
-              ],
-            ),
-          ),
+          _buildWhatsNewPanel(l10n.whatsNewInVersion(release.version), release.whatsNew),
+        ],
+        if (_installedNotes != null) ...[
+          const SizedBox(height: 16),
+          _buildWhatsNewPanel(l10n.whatsNewThisVersion, _installedNotes!.items),
         ],
       ],
+    );
+  }
+
+  Widget _buildWhatsNewPanel(String title, List<String> items) {
+    return GlassPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _sectionHeader(FontAwesomeIcons.listCheck, const Color(0xFF7C4DFF), title),
+          const SizedBox(height: 12),
+          WhatsNewList(items: items),
+        ],
+      ),
     );
   }
 }

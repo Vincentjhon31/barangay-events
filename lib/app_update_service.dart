@@ -23,11 +23,16 @@ class AppUpdateInfo {
     required this.latestVersion,
     required this.releaseUrl,
     required this.downloadUrl,
+    this.whatsNew = const [],
   });
 
   final String latestVersion;
   final String releaseUrl;
   final String downloadUrl;
+
+  /// The user-facing "What's new" bullets for [latestVersion] — see
+  /// AppReleaseInfo.whatsNew.
+  final List<String> whatsNew;
 }
 
 /// Full info about the latest GitHub release, independent of whether it's
@@ -39,11 +44,22 @@ class AppReleaseInfo {
     required this.downloadUrl,
     required this.releaseNotes,
     required this.isNewerThanInstalled,
+    this.whatsNew = const [],
   });
 
   final String version;
   final String releaseUrl;
   final String downloadUrl;
+
+  /// The release's full body as GitHub has it. Generated from commit titles,
+  /// so it can mention internal details — NEVER show it to users; show
+  /// [whatsNew] instead.
   final String releaseNotes;
   final bool isNewerThanInstalled;
+
+  /// Only the hand-written, user-facing bullets from the release (the
+  /// what's-new section the release workflow copies from
+  /// assets/whats_new.md — see lib/whats_new.dart). Empty for releases made
+  /// before this existed.
+  final List<String> whatsNew;
 }

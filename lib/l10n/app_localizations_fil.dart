@@ -820,6 +820,15 @@ class AppLocalizationsFil extends AppLocalizations {
       'Hindi magagamit ng app ang file na iyon bilang larawan. Subukan ang JPG o PNG.';
 
   @override
+  String get whatsNewGotIt => 'Sige';
+
+  @override
+  String get whatsNewSeeButton => 'Tingnan ang bago';
+
+  @override
+  String get whatsNewThisVersion => 'Ano ang bago sa bersyong ito';
+
+  @override
   String get eventChatYou => 'Ikaw';
 
   @override

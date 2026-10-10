@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -38,6 +39,7 @@ import 'push_notifications.dart';
 import 'reset_password_page.dart';
 import 'responsive_scale.dart';
 import 'theme_controller.dart';
+import 'whats_new.dart';
 
 bool get _isWindowManagerSupported => !kIsWeb && Platform.isWindows;
 
@@ -1267,7 +1269,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     unawaited(_loadUserProfile());
     unawaited(_loadFeedLastSeen());
     unawaited(_initializePushNotifications());
-    unawaited(_loadKioskModeState());
+    unawaited(_loadKioskModeState().then((_) => _showWhatsNewAfterUpdate()));
     if (widget.authService != null) {
       _chatActivity = EventChatActivity(
         repository: widget.eventRepository,
@@ -1308,6 +1310,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _armKioskExitShrinkTimer();
       setState(() => _kioskModeActive = active);
       unawaited(_applyKioskWindowChrome(active));
+    }
+  }
+
+  /// Once after the app is updated: "What's new in version X", from the
+  /// hand-written notes bundled with the app (assets/whats_new.md). Skipped
+  /// on a kiosk display, which nobody is there to dismiss.
+  Future<void> _showWhatsNewAfterUpdate() async {
+    if (!mounted || _kioskModeActive) return;
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      await showWhatsNewAfterUpdateIfNeeded(context, info.version);
+    } catch (_) {
+      // Version unavailable (e.g. tests) — nothing to compare against.
     }
   }
 
@@ -1769,8 +1785,28 @@ class _CalendarScreenState extends State<CalendarScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Update available'),
-        content: Text(
-          'Version ${update.latestVersion} is ready. Install it over this app to keep your data and settings.',
+        content: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.5),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Version ${update.latestVersion} is ready. Install it over this app to keep your data and settings.',
+                ),
+                if (update.whatsNew.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    AppLocalizations.of(context)!.whatsNewInVersion(update.latestVersion),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 10),
+                  WhatsNewList(key: const Key('update-dialog-whats-new'), items: update.whatsNew),
+                ],
+              ],
+            ),
+          ),
         ),
         actions: [
           TextButton(
@@ -3533,12 +3569,32 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  'Version ${update.latestVersion} is available',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSecondaryContainer,
-                    fontWeight: FontWeight.w600,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Version ${update.latestVersion} is available',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSecondaryContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    // Under the version (not another button in the row),
+                    // so the banner still fits a narrow phone.
+                    if (update.whatsNew.isNotEmpty)
+                      TextButton(
+                        key: const Key('update-banner-whats-new'),
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(0, 28),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () => unawaited(showWhatsNewSheet(context, update.latestVersion, update.whatsNew)),
+                        child: Text(AppLocalizations.of(context)!.whatsNewSeeButton),
+                      ),
+                  ],
                 ),
               ),
               TextButton(

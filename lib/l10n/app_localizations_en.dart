@@ -813,6 +813,15 @@ class AppLocalizationsEn extends AppLocalizations {
       'That file isn\'t a picture the app can use. Try a JPG or PNG photo.';
 
   @override
+  String get whatsNewGotIt => 'Got it';
+
+  @override
+  String get whatsNewSeeButton => 'See what\'s new';
+
+  @override
+  String get whatsNewThisVersion => 'What\'s new in this version';
+
+  @override
   String get eventChatYou => 'You';
 
   @override

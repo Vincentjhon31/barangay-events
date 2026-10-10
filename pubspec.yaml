@@ -51,6 +51,8 @@ flutter:
     - assets/avatars/animal/
     - assets/avatars/person/
     - assets/icons/
+    # User-facing release notes (lib/whats_new.dart).
+    - assets/whats_new.md
     - docs/download-qr.png
 
 # Official Android launcher icon. Run `flutter pub run flutter_launcher_icons`

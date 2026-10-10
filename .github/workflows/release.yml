@@ -18,6 +18,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Read "What's new" notes for this version
+        # First, so a release with no notes for users (or notes that mention
+        # internal details) stops before anything is built. These bullets
+        # are the only release text the app shows — see lib/whats_new.dart.
+        id: whats_new
+        run: |
+          python3 scripts/whats_new_for_release.py "$GITHUB_REF_NAME" > whats_new.txt
+          {
+            echo 'notes<<WHATS_NEW_EOF'
+            cat whats_new.txt
+            echo 'WHATS_NEW_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -89,7 +102,15 @@ jobs:
         with:
           files: |
             build/app/outputs/flutter-apk/e-calendar-*.apk
+          # The app reads ONLY the lines between the what's-new markers (keep
+          # them if you edit this release on GitHub); the generated changelog
+          # below them is for developers and never shown in the app.
           body: |
+            ## What's new
+            <!-- whats-new -->
+            ${{ steps.whats_new.outputs.notes }}
+            <!-- /whats-new -->
+
             Check out the [past releases](https://github.com/${{ github.repository }}/releases) if you're upgrading from an older version.
 
             ${{ steps.build_changelog.outputs.changelog }}

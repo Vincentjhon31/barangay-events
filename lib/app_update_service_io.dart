@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_update_service.dart';
+import 'whats_new.dart';
 
 class GitHubReleaseUpdateService implements AppUpdateService {
   GitHubReleaseUpdateService({
@@ -23,6 +24,7 @@ class GitHubReleaseUpdateService implements AppUpdateService {
       latestVersion: release.version,
       releaseUrl: release.releaseUrl,
       downloadUrl: release.downloadUrl,
+      whatsNew: release.whatsNew,
     );
   }
 
@@ -39,6 +41,7 @@ class GitHubReleaseUpdateService implements AppUpdateService {
       releaseUrl: latestRelease.releaseUrl,
       downloadUrl: latestRelease.platformDownloadUrl ?? latestRelease.releaseUrl,
       releaseNotes: latestRelease.body,
+      whatsNew: publicNotesFromReleaseBody(latestRelease.body),
       isNewerThanInstalled: _isNewerVersion(
         latestVersion,
         '$currentVersion+$currentBuildNumber',

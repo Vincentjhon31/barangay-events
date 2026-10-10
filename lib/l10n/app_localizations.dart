@@ -1496,6 +1496,24 @@ abstract class AppLocalizations {
   /// **'That file isn\'t a picture the app can use. Try a JPG or PNG photo.'**
   String get avatarNotAPicture;
 
+  /// No description provided for @whatsNewGotIt.
+  ///
+  /// In en, this message translates to:
+  /// **'Got it'**
+  String get whatsNewGotIt;
+
+  /// No description provided for @whatsNewSeeButton.
+  ///
+  /// In en, this message translates to:
+  /// **'See what\'s new'**
+  String get whatsNewSeeButton;
+
+  /// No description provided for @whatsNewThisVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'What\'s new in this version'**
+  String get whatsNewThisVersion;
+
   /// No description provided for @eventChatYou.
   ///
   /// In en, this message translates to:
