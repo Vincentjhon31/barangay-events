@@ -9,6 +9,14 @@ version: 1.16.1+28
 environment:
   sdk: ">=3.4.0 <4.0.0"
 dependencies:
+  # Pinned to 8.x deliberately. 8.3.7's Android module is plain Java and only
+  # applies com.android.library, so it builds under this project's AGP 9.0.1.
+  # file_picker 11 skips `apply plugin: org.jetbrains.kotlin.android` whenever
+  # AGP >= 9 (assuming AGP's built-in Kotlin support, which this project does
+  # not opt into), so its Kotlin sources never compile and FilePickerPlugin
+  # goes missing at link time. 8.x's only defect is a hardcoded `compileSdk 34`
+  # — corrected by the compileSdk floor in android/build.gradle.kts.
+  file_picker: ^8.0.0
   firebase_core: ^4.11.0
   firebase_messaging: ^16.4.1
   flutter:
@@ -17,6 +25,10 @@ dependencies:
     sdk: flutter
   flutter_local_notifications: ^22.0.1
   font_awesome_flutter: ^11.0.0
+  # Talks to the Hostinger file API (lib/file_api.dart).
+  http: ^1.6.0
+  # Pure Dart (no native code): shrinks pictures before upload.
+  image: ^4.5.0
   intl: ^0.20.2
   package_info_plus: ^8.3.1
   path_provider: ^2.1.6

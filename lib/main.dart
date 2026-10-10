@@ -20,6 +20,7 @@ import 'app_update_service.dart';
 import 'app_update_service_factory.dart';
 import 'attachment_image_viewer.dart';
 import 'auth_service.dart';
+import 'avatar_image.dart';
 import 'day_detail_page.dart';
 import 'day_timeline_view.dart';
 import 'event_calendars.dart';
@@ -3024,7 +3025,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               role: profile?.role ?? 'citizen',
               size: 48,
               child: profile?.avatarUrl != null
-                  ? Image.asset(profile!.avatarUrl!, fit: BoxFit.cover)
+                  ? avatarImage(profile!.avatarUrl!)
                   : IconBadge(
                       icon: FontAwesomeIcons.circleUser,
                       tint: Theme.of(context).colorScheme.primary,
@@ -5013,13 +5014,7 @@ class _PosterAvatar extends StatelessWidget {
       child: ClipOval(
         child: avatarUrl == null || avatarUrl.isEmpty
             ? fallback
-            : Image.asset(
-                avatarUrl,
-                width: size,
-                height: size,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => fallback,
-              ),
+            : avatarImage(avatarUrl, width: size, height: size, fallback: fallback),
       ),
     );
   }

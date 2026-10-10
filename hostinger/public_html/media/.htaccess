@@ -1,0 +1,16 @@
+# Profile pictures only. Nothing in this folder may ever run as a script.
+
+Options -Indexes
+
+<FilesMatch "\.(php|php\d|phtml|phar|pl|py|cgi|sh|asp|aspx|jsp|html?|js|svg|htaccess)$">
+  Require all denied
+</FilesMatch>
+
+<IfModule mod_php.c>
+  php_flag engine off
+</IfModule>
+
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set Cache-Control "public, max-age=604800"
+</IfModule>

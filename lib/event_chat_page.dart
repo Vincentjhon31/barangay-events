@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 
+import 'avatar_image.dart';
 import 'event_chat_activity.dart';
 import 'event_store.dart';
 import 'l10n/app_localizations.dart';
@@ -1003,7 +1004,7 @@ class _AuthorAvatar extends StatelessWidget {
     );
     final url = avatarUrl;
     if (url == null || url.isEmpty) return initial;
-    return Image.asset(url, fit: BoxFit.cover, errorBuilder: (_, __, ___) => initial);
+    return avatarImage(url, fallback: initial);
   }
 }
 

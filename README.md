@@ -39,7 +39,27 @@ flutter build web --no-tree-shake-icons
 which `font_awesome_flutter` glyphs are actually used (it wrongly stripped
 `shieldHalved`, `userShield`, and `mapLocationDot` down to 33 surviving
 glyphs out of 2000+, showing as broken-glyph boxes in the app). Upload the
-contents of `build/web` to the Hostinger site root.
+contents of `build/web` to the Hostinger site root — **without deleting the
+`api/` and `media/` folders** that live there too (see below).
+
+## Files on Hostinger (attachments and profile pictures)
+
+Event attachments and uploaded profile pictures are stored on the same
+Hostinger site, through a small PHP API in [hostinger/](hostinger/) — Supabase
+remains the database, login, and permission system (the API checks every
+request with Supabase as the signed-in user; no Supabase secret goes on
+Hostinger). Setup, the folder layout, and the web-deploy checklist are in
+[hostinger/README.md](hostinger/README.md). The app talks to it at
+`kFileApiBaseUrl` in `lib/file_api.dart`; the portal at `FILE_API` in
+`docs/lgu-admin/index.html`.
+
+- Attachments: up to 5 per event, 10 MB each (pictures are shrunk in the app
+  first); only the event's poster can add or remove them.
+- Profile pictures: users can upload their own photo (cropped square, 512 px),
+  and the superadmin can add pictures to the Anime / Animal / Person choices
+  and remove inappropriate photos (portal → Pictures).
+- Older attachments already in Supabase Storage keep working; Supabase Storage
+  takes no new uploads.
 
 ## Update-Safe Releases
 

@@ -1448,11 +1448,53 @@ abstract class AppLocalizations {
   /// **'Everyone sees it under the {calendar} tab, and everyone gets a notification.'**
   String typeHelperCalendar(String calendar);
 
-  /// No description provided for @attachmentsUploadsOffHint.
+  /// No description provided for @attachmentsHint.
   ///
   /// In en, this message translates to:
-  /// **'Adding files is turned off to save storage. You can still remove files added before.'**
-  String get attachmentsUploadsOffHint;
+  /// **'Up to 5 files: pictures, PDFs, or Office documents. Pictures are made smaller automatically.'**
+  String get attachmentsHint;
+
+  /// No description provided for @attachmentsSomeFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 file couldn\'t be uploaded. You can add it again from Edit.} other{{count} files couldn\'t be uploaded. You can add them again from Edit.}}'**
+  String attachmentsSomeFailed(int count);
+
+  /// No description provided for @avatarOwnPhotoTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Your own photo'**
+  String get avatarOwnPhotoTitle;
+
+  /// No description provided for @avatarOwnPhotoHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a photo from your gallery. It\'s cropped to a square and shown wherever your profile picture appears.'**
+  String get avatarOwnPhotoHint;
+
+  /// No description provided for @avatarUploadPhotoButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload a photo'**
+  String get avatarUploadPhotoButton;
+
+  /// No description provided for @avatarChangePhotoButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Change photo'**
+  String get avatarChangePhotoButton;
+
+  /// No description provided for @avatarUploadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t upload your photo.'**
+  String get avatarUploadFailed;
+
+  /// No description provided for @avatarNotAPicture.
+  ///
+  /// In en, this message translates to:
+  /// **'That file isn\'t a picture the app can use. Try a JPG or PNG photo.'**
+  String get avatarNotAPicture;
 
   /// No description provided for @eventChatYou.
   ///
@@ -2435,7 +2477,7 @@ abstract class AppLocalizations {
   /// No description provided for @profilePictureSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Pick one — it saves right away.'**
+  /// **'Upload your own photo, or pick a picture — it saves right away.'**
   String get profilePictureSubtitle;
 
   /// No description provided for @couldNotSaveAvatarError.
@@ -2951,7 +2993,7 @@ abstract class AppLocalizations {
   /// No description provided for @privacyCollectBody.
   ///
   /// In en, this message translates to:
-  /// **'When you create an account, we collect your email address and the details you choose to add to your profile — display name, department, phone number, address, a short bio, and a profile picture chosen from a fixed set of avatars (the app never accesses your camera or photo library). We also store the events, groups, and preferences (language, theme, display size, reminders) you set up while using the app.'**
+  /// **'When you create an account, we collect your email address and the details you choose to add to your profile — display name, department, phone number, address, a short bio, and a profile picture: either one of the app\'s preset pictures, or a photo you choose from your device\'s gallery (the app only reads the one photo you pick, and never uses your camera). Uploaded photos and files you attach to events are stored on the municipality\'s own web server. We also store the events, groups, and preferences (language, theme, display size, reminders) you set up while using the app.'**
   String get privacyCollectBody;
 
   /// No description provided for @privacyUseHeading.
@@ -2975,7 +3017,7 @@ abstract class AppLocalizations {
   /// No description provided for @privacyVisibilityBody.
   ///
   /// In en, this message translates to:
-  /// **'Your profile details are visible only to you. If you join a group, that group\'s other members can see your display name and profile picture in the member list. Events follow their own visibility: Public events are visible to everyone, Group events only to that group\'s members, and Personal events only to you. Messages you post in an event\'s chat — along with your display name and profile picture — are visible to everyone who can see that event.'**
+  /// **'Your profile details are visible only to you. If you join a group, that group\'s other members can see your display name and profile picture in the member list. Your profile picture also appears next to events you post and messages you write, and is reachable by its web link. You can replace or remove an uploaded photo at any time, and the superadmin can remove one that breaks community rules. Events follow their own visibility: Public events are visible to everyone, Group events only to that group\'s members, and Personal events only to you. Messages you post in an event\'s chat — along with your display name and profile picture — are visible to everyone who can see that event.'**
   String get privacyVisibilityBody;
 
   /// No description provided for @privacyThirdPartyHeading.

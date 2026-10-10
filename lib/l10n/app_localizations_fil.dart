@@ -783,8 +783,41 @@ class AppLocalizationsFil extends AppLocalizations {
   }
 
   @override
-  String get attachmentsUploadsOffHint =>
-      'Naka-off ang pagdagdag ng file para makatipid sa storage. Puwede mo pa ring tanggalin ang mga file na naidagdag dati.';
+  String get attachmentsHint =>
+      'Hanggang 5 file: mga larawan, PDF, o Office na dokumento. Awtomatikong pinapaliit ang mga larawan.';
+
+  @override
+  String attachmentsSomeFailed(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Hindi na-upload ang $count na file. Puwede mo silang idagdag ulit mula sa I-edit.',
+      one:
+          'Hindi na-upload ang 1 file. Puwede mo itong idagdag ulit mula sa I-edit.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get avatarOwnPhotoTitle => 'Sarili mong larawan';
+
+  @override
+  String get avatarOwnPhotoHint =>
+      'Pumili ng larawan mula sa iyong gallery. Gagawin itong parisukat at ipapakita saanman lumalabas ang iyong larawan sa profile.';
+
+  @override
+  String get avatarUploadPhotoButton => 'Mag-upload ng larawan';
+
+  @override
+  String get avatarChangePhotoButton => 'Palitan ang larawan';
+
+  @override
+  String get avatarUploadFailed => 'Hindi na-upload ang iyong larawan.';
+
+  @override
+  String get avatarNotAPicture =>
+      'Hindi magagamit ng app ang file na iyon bilang larawan. Subukan ang JPG o PNG.';
 
   @override
   String get eventChatYou => 'Ikaw';
@@ -1362,7 +1395,8 @@ class AppLocalizationsFil extends AppLocalizations {
   String get profilePictureTitle => 'Larawan sa Profile';
 
   @override
-  String get profilePictureSubtitle => 'Pumili ng isa — agad itong mase-save.';
+  String get profilePictureSubtitle =>
+      'Mag-upload ng sarili mong larawan, o pumili ng isa — agad itong mase-save.';
 
   @override
   String get couldNotSaveAvatarError =>
@@ -1676,7 +1710,7 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get privacyCollectBody =>
-      'Kapag gumawa ka ng account, kinokolekta namin ang iyong email address at ang mga detalyeng idadagdag mo sa iyong profile — pangalan, departamento, numero ng telepono, address, maikling bio, at larawan sa profile na pinili mula sa nakapirming set ng mga avatar (hindi kailanman ina-access ng app ang iyong camera o photo library). Iniimbak din namin ang mga kaganapan, grupo, at kagustuhan (wika, tema, sukat ng display, paalala) na itinakda mo habang ginagamit ang app.';
+      'Kapag gumawa ka ng account, kinokolekta namin ang iyong email address at ang mga detalyeng idadagdag mo sa iyong profile — pangalan, departamento, numero ng telepono, address, maikling bio, at larawan sa profile: isa sa mga nakahandang larawan ng app, o larawang pipiliin mo mula sa gallery ng iyong device (ang isang larawang pipiliin mo lang ang binabasa ng app, at hindi nito ginagamit ang iyong camera). Ang mga na-upload na larawan at mga file na idinadagdag mo sa mga kaganapan ay iniimbak sa sariling web server ng munisipyo. Iniimbak din namin ang mga kaganapan, grupo, at kagustuhan (wika, tema, sukat ng display, paalala) na itinakda mo habang ginagamit ang app.';
 
   @override
   String get privacyUseHeading => 'Paano Namin Ginagamit ang Iyong Impormasyon';
@@ -1691,7 +1725,7 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get privacyVisibilityBody =>
-      'Ikaw lang ang makakakita ng mga detalye ng iyong profile. Kung sumali ka sa isang grupo, makikita ng ibang miyembro ng grupong iyon ang iyong pangalan at larawan sa listahan ng miyembro. Sinusunod ng mga kaganapan ang sarili nilang visibility: makikita ng lahat ang mga Pampublikong kaganapan, ng mga miyembro lang ng grupo ang mga kaganapan ng Grupo, at ikaw lang ang makakakita ng mga Personal na kaganapan. Ang mga mensaheng ipo-post mo sa chat ng isang kaganapan — kasama ang iyong pangalan at larawan — ay makikita ng lahat ng nakakakita sa kaganapang iyon.';
+      'Ikaw lang ang makakakita ng mga detalye ng iyong profile. Kung sumali ka sa isang grupo, makikita ng ibang miyembro ng grupong iyon ang iyong pangalan at larawan sa listahan ng miyembro. Lumalabas din ang iyong larawan sa profile sa tabi ng mga kaganapang ipino-post mo at mga mensaheng isinusulat mo, at naaabot ito sa pamamagitan ng web link nito. Puwede mong palitan o alisin ang na-upload mong larawan anumang oras, at puwedeng alisin ng superadmin ang larawang lumalabag sa mga patakaran ng komunidad. Sinusunod ng mga kaganapan ang sarili nilang visibility: makikita ng lahat ang mga Pampublikong kaganapan, ng mga miyembro lang ng grupo ang mga kaganapan ng Grupo, at ikaw lang ang makakakita ng mga Personal na kaganapan. Ang mga mensaheng ipo-post mo sa chat ng isang kaganapan — kasama ang iyong pangalan at larawan — ay makikita ng lahat ng nakakakita sa kaganapang iyon.';
 
   @override
   String get privacyThirdPartyHeading => 'Mga Serbisyo ng Ikatlong Partido';

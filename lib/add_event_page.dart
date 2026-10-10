@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
@@ -10,6 +11,7 @@ import 'auth_service.dart' show AppUserProfile;
 import 'event_calendars.dart';
 import 'event_colors.dart';
 import 'event_store.dart';
+import 'image_prep.dart';
 import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
 
@@ -110,16 +112,33 @@ class _AddEventPageState extends State<AddEventPage> {
   /// same as an event that's never had any overrides set.
   final Map<DateTime, ({TimeOfDay start, TimeOfDay end})> _perDayOverrides = {};
 
-  /// Files uploaded to this event before attachments were turned off (to
-  /// keep the Supabase free-tier file storage from filling up) — only
-  /// ever non-empty when editing. New files can't be added anymore, but
-  /// these can still be removed, which frees their storage.
+  static const _maxAttachments = 5;
+
+  /// Matches the file server's limit (hostinger/public_html/api). Checked
+  /// after a picture has been shrunk, so a large phone photo still fits.
+  static const _maxAttachmentBytes = 10 * 1024 * 1024;
+
+  /// Already-uploaded attachments — only ever non-empty when editing
+  /// (fetched in [initState]), since a brand-new event has no id yet for
+  /// [EventRepository.listEventAttachments] to look up.
   List<EventAttachment> _existingAttachments = const [];
+
+  /// Picked-but-not-yet-uploaded files for a brand-new event, held here
+  /// until [_save] gets a real event id back — an existing event uploads
+  /// immediately on pick instead (see [_pickAttachments]), since it
+  /// already has one. Pictures are already shrunk (see [_prepareFile]).
+  final List<_PendingAttachment> _pendingAttachments = [];
+
+  bool _pickingAttachments = false;
   final Set<String> _busyAttachmentIds = {};
 
   /// Thumbnails for [_existingAttachments], fetched in the background as
-  /// soon as each one's metadata loads (see [_loadExistingAttachments]).
+  /// soon as each one's metadata loads (see [_loadExistingAttachments]) —
+  /// a pending file needs no equivalent map, since its bytes are already
+  /// here.
   final Map<String, Uint8List> _existingAttachmentThumbnails = {};
+
+  int get _attachmentCount => _existingAttachments.length + _pendingAttachments.length;
 
   bool get _isEditing => widget.existingEvent != null;
 
@@ -608,6 +627,24 @@ class _AddEventPageState extends State<AddEventPage> {
       return;
     }
 
+    // Uploaded now that the event has a real id — a brand-new event's id
+    // was only ever a locally-generated placeholder until addEvent above
+    // actually succeeded. A failed upload here doesn't undo the
+    // already-saved event; the user can just re-add the file via Edit.
+    var failedUploads = 0;
+    for (final file in _pendingAttachments) {
+      try {
+        await widget.eventRepository.uploadEventAttachment(eventId, file.name, file.bytes, mimeType: file.mimeType);
+      } catch (_) {
+        failedUploads++;
+      }
+    }
+    if (failedUploads > 0 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context)!.attachmentsSomeFailed(failedUploads))),
+      );
+    }
+
     if (!mounted) return;
     Navigator.of(context).pop<AddEventResult>((
       date: DateTime.utc(_startDate.year, _startDate.month, _startDate.day),
@@ -646,6 +683,135 @@ class _AddEventPageState extends State<AddEventPage> {
         builder: (_) => AttachmentImageViewer(bytes: bytes, fileName: fileName),
       ),
     );
+  }
+
+  String? _mimeTypeForExtension(String? extension) {
+    switch (extension?.toLowerCase()) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'pdf':
+        return 'application/pdf';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'xls':
+        return 'application/vnd.ms-excel';
+      case 'xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case 'ppt':
+        return 'application/vnd.ms-powerpoint';
+      case 'pptx':
+        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      default:
+        return null;
+    }
+  }
+
+  /// A picked file ready to upload: pictures (except GIFs, which may be
+  /// animated) are shrunk first — see [shrinkImageForUpload] — and renamed
+  /// to .jpg when that re-encoded them.
+  Future<_PendingAttachment> _prepareFile(String name, Uint8List bytes, String? extension) async {
+    final mime = _mimeTypeForExtension(extension);
+    if (mime == null || !mime.startsWith('image/') || mime == 'image/gif') {
+      return _PendingAttachment(name: name, bytes: bytes, mimeType: mime);
+    }
+    final shrunk = await shrinkImageForUpload(bytes);
+    if (!shrunk.reencoded) return _PendingAttachment(name: name, bytes: bytes, mimeType: mime);
+    final dot = name.lastIndexOf('.');
+    final base = dot > 0 ? name.substring(0, dot) : name;
+    return _PendingAttachment(name: '$base.jpg', bytes: shrunk.bytes, mimeType: 'image/jpeg');
+  }
+
+  Future<void> _pickAttachments() async {
+    final l10n = AppLocalizations.of(context)!;
+    if (_attachmentCount >= _maxAttachments) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.attachmentLimitReached(_maxAttachments))),
+      );
+      return;
+    }
+
+    setState(() => _pickingAttachments = true);
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        withData: true,
+        type: FileType.custom,
+        allowedExtensions: const [
+          'jpg', 'jpeg', 'png', 'gif', 'webp',
+          'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+        ],
+      );
+      final picked = result?.files ?? const [];
+      final existing = widget.existingEvent;
+
+      for (final file in picked) {
+        if (_attachmentCount >= _maxAttachments) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(l10n.attachmentLimitReached(_maxAttachments))),
+            );
+          }
+          break;
+        }
+        final raw = file.bytes;
+        if (raw == null) continue;
+        final prepared = await _prepareFile(file.name, raw, file.extension);
+        if (prepared.bytes.length > _maxAttachmentBytes) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(l10n.attachmentTooLarge(file.name))),
+            );
+          }
+          continue;
+        }
+
+        if (existing != null) {
+          // Already has a real id — upload right away instead of holding
+          // it in _pendingAttachments, which only exists to bridge the
+          // "no id yet" gap for a brand-new event.
+          try {
+            await widget.eventRepository.uploadEventAttachment(
+              existing.id,
+              prepared.name,
+              prepared.bytes,
+              mimeType: prepared.mimeType,
+            );
+            await _loadExistingAttachments(existing.id);
+          } catch (error) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${l10n.attachmentUploadError(file.name)} $error')),
+              );
+            }
+          }
+        } else if (mounted) {
+          setState(() => _pendingAttachments.add(prepared));
+        }
+      }
+    } catch (_) {
+      // The file picker call itself failing (e.g. the browser blocked or
+      // cancelled it) — everything past that point has its own catch.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.attachmentPickError)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _pickingAttachments = false);
+    }
+  }
+
+  void _removePendingAttachment(_PendingAttachment file) {
+    setState(() => _pendingAttachments.remove(file));
   }
 
   Future<void> _removeExistingAttachment(EventAttachment attachment) async {
@@ -1028,26 +1194,41 @@ class _AddEventPageState extends State<AddEventPage> {
           ),
         ),
         const SizedBox(height: 16),
-        if (_existingAttachments.isNotEmpty) ...[
-          GlassPanel(
-            key: const Key('add-event-existing-attachments'),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  l10n.attachmentsSectionTitle,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w700),
+        GlassPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                l10n.attachmentsSectionTitle,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                l10n.attachmentsHint,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const Key('add-event-attachment-button'),
+                  onPressed: _pickingAttachments ? null : () => unawaited(_pickAttachments()),
+                  icon: _pickingAttachments
+                      ? const SizedBox(
+                          height: 14,
+                          width: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const FaIcon(FontAwesomeIcons.paperclip, size: 14),
+                  label: Text(l10n.addAttachmentButton),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  l10n.attachmentsUploadsOffHint,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                ),
+              ),
+              if (_existingAttachments.isNotEmpty || _pendingAttachments.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 for (final attachment in _existingAttachments)
                   _AttachmentRow(
@@ -1063,11 +1244,20 @@ class _AddEventPageState extends State<AddEventPage> {
                               attachment.fileName,
                             )),
                   ),
+                for (final file in _pendingAttachments)
+                  _AttachmentRow(
+                    key: Key('pending-attachment-${file.name}'),
+                    fileName: file.name,
+                    busy: false,
+                    onRemove: () => _removePendingAttachment(file),
+                    thumbnailBytes: file.isImage ? file.bytes : null,
+                    onTap: file.isImage ? () => unawaited(_viewImage(file.bytes, file.name)) : null,
+                  ),
               ],
-            ),
+            ],
           ),
-          const SizedBox(height: 16),
-        ],
+        ),
+        const SizedBox(height: 16),
         GlassPanel(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1375,8 +1565,8 @@ class _RandomColorButton extends StatelessWidget {
   }
 }
 
-/// One already-uploaded file in Add Event's attachments list (see
-/// [_AddEventPageState._existingAttachments]),
+/// One file in Add Event's attachments list — already uploaded (an
+/// [EventAttachment]) or still pending (a [_PendingAttachment]),
 /// both rendered identically since the caller (see [AddEventPage])
 /// already normalized them down to a filename, an optional thumbnail,
 /// and what removing/tapping each one actually does.
@@ -1451,4 +1641,16 @@ class _AttachmentRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A picked file waiting for a brand-new event to save (see
+/// [_AddEventPageState._pendingAttachments]).
+class _PendingAttachment {
+  const _PendingAttachment({required this.name, required this.bytes, this.mimeType});
+
+  final String name;
+  final Uint8List bytes;
+  final String? mimeType;
+
+  bool get isImage => mimeType?.startsWith('image/') == true;
 }

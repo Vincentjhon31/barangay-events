@@ -65,6 +65,7 @@ const BACKUP_FORMAT_VERSION = 1;
 const TABLES = [
   "profiles",
   "app_settings",
+  "avatar_presets",
   "event_calendars",
   "event_calendar_handlers",
   "lgu_locations",
@@ -128,8 +129,11 @@ async function exportAll(admin: SupabaseClient) {
   }
 
   // Files are found through their event_attachments rows (the bucket's
-  // own listing is per-folder only).
+  // own listing is per-folder only). Only files kept in Supabase Storage —
+  // newer ones live on the Hostinger site and the portal fetches those
+  // from its file API instead.
   const paths = (tables["event_attachments"] ?? [])
+    .filter((row) => (row["storage_provider"] ?? "supabase") !== "hostinger")
     .map((row) => row["storage_path"])
     .filter((p): p is string => typeof p === "string" && p.length > 0);
   const files: { path: string; url: string | null }[] = [];

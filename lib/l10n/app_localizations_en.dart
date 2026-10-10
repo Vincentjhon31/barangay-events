@@ -777,8 +777,40 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get attachmentsUploadsOffHint =>
-      'Adding files is turned off to save storage. You can still remove files added before.';
+  String get attachmentsHint =>
+      'Up to 5 files: pictures, PDFs, or Office documents. Pictures are made smaller automatically.';
+
+  @override
+  String attachmentsSomeFailed(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          '$count files couldn\'t be uploaded. You can add them again from Edit.',
+      one: '1 file couldn\'t be uploaded. You can add it again from Edit.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get avatarOwnPhotoTitle => 'Your own photo';
+
+  @override
+  String get avatarOwnPhotoHint =>
+      'Choose a photo from your gallery. It\'s cropped to a square and shown wherever your profile picture appears.';
+
+  @override
+  String get avatarUploadPhotoButton => 'Upload a photo';
+
+  @override
+  String get avatarChangePhotoButton => 'Change photo';
+
+  @override
+  String get avatarUploadFailed => 'Couldn\'t upload your photo.';
+
+  @override
+  String get avatarNotAPicture =>
+      'That file isn\'t a picture the app can use. Try a JPG or PNG photo.';
 
   @override
   String get eventChatYou => 'You';
@@ -1348,7 +1380,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get profilePictureTitle => 'Profile Picture';
 
   @override
-  String get profilePictureSubtitle => 'Pick one — it saves right away.';
+  String get profilePictureSubtitle =>
+      'Upload your own photo, or pick a picture — it saves right away.';
 
   @override
   String get couldNotSaveAvatarError =>
@@ -1657,7 +1690,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get privacyCollectBody =>
-      'When you create an account, we collect your email address and the details you choose to add to your profile — display name, department, phone number, address, a short bio, and a profile picture chosen from a fixed set of avatars (the app never accesses your camera or photo library). We also store the events, groups, and preferences (language, theme, display size, reminders) you set up while using the app.';
+      'When you create an account, we collect your email address and the details you choose to add to your profile — display name, department, phone number, address, a short bio, and a profile picture: either one of the app\'s preset pictures, or a photo you choose from your device\'s gallery (the app only reads the one photo you pick, and never uses your camera). Uploaded photos and files you attach to events are stored on the municipality\'s own web server. We also store the events, groups, and preferences (language, theme, display size, reminders) you set up while using the app.';
 
   @override
   String get privacyUseHeading => 'How We Use Your Information';
@@ -1671,7 +1704,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get privacyVisibilityBody =>
-      'Your profile details are visible only to you. If you join a group, that group\'s other members can see your display name and profile picture in the member list. Events follow their own visibility: Public events are visible to everyone, Group events only to that group\'s members, and Personal events only to you. Messages you post in an event\'s chat — along with your display name and profile picture — are visible to everyone who can see that event.';
+      'Your profile details are visible only to you. If you join a group, that group\'s other members can see your display name and profile picture in the member list. Your profile picture also appears next to events you post and messages you write, and is reachable by its web link. You can replace or remove an uploaded photo at any time, and the superadmin can remove one that breaks community rules. Events follow their own visibility: Public events are visible to everyone, Group events only to that group\'s members, and Personal events only to you. Messages you post in an event\'s chat — along with your display name and profile picture — are visible to everyone who can see that event.';
 
   @override
   String get privacyThirdPartyHeading => 'Third-Party Services';

@@ -285,6 +285,20 @@
     .progress-label { margin-top: 6px; font-size: 13px; color: var(--ink-2); }
     .table-row { grid-template-columns: minmax(160px, 1fr) 110px 110px; }
     .history-row { grid-template-columns: minmax(180px, 1fr) minmax(160px, 1fr); }
+    .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 999px; overflow: hidden; }
+    .seg button {
+      border: 0; background: transparent; color: var(--ink-2); font: inherit; font-weight: 700;
+      padding: 7px 16px; cursor: pointer;
+    }
+    .seg button[aria-pressed="true"] { background: var(--brand); color: #fff; }
+    .preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 14px; padding: 18px; }
+    .preset-tile { position: relative; aspect-ratio: 1; border-radius: 50%; overflow: visible; }
+    .preset-tile img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; box-shadow: 0 0 0 1px var(--line-strong); }
+    .preset-tile button {
+      position: absolute; top: -4px; right: -4px; width: 28px; height: 28px; border-radius: 50%;
+      border: 2px solid var(--surface); background: var(--danger); color: #fff; font-size: 16px; line-height: 1; cursor: pointer;
+    }
+    .photo-row { grid-template-columns: minmax(200px, 1fr) auto; }
     .radio-stack { display: flex; flex-direction: column; gap: 10px; border: 0; padding: 0; margin: 0 0 14px; }
     .radio-stack label { display: flex; gap: 10px; align-items: flex-start; font-size: 14.5px; cursor: pointer; }
     .radio-stack input { margin-top: 3px; }
@@ -738,6 +752,30 @@
           </div>
         </section>
 
+        <!-- Profile pictures -->
+        <section id="view-pictures" class="stack hidden">
+          <div class="panel">
+            <div class="panel-head"><div><h2>Picture choices</h2><p>Add pictures to the Anime, Animal, and Person choices people see in the app. The app's 41 built-in pictures are always there too. Uploads are cropped square and resized to 512 &times; 512, and stored on the Hostinger site.</p></div></div>
+            <div class="panel-body" style="border-bottom:1px solid var(--line)">
+              <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+                <div class="seg" id="preset-cats" role="group" aria-label="Category">
+                  <button type="button" data-preset-cat="anime" aria-pressed="true">Anime</button>
+                  <button type="button" data-preset-cat="animal" aria-pressed="false">Animal</button>
+                  <button type="button" data-preset-cat="person" aria-pressed="false">Person</button>
+                </div>
+                <label class="btn primary" for="preset-files" id="preset-upload-label">Add pictures</label>
+                <input id="preset-files" type="file" accept="image/jpeg,image/png,image/webp" multiple class="sr-only">
+              </div>
+              <div id="preset-msg"></div>
+            </div>
+            <div class="preset-grid" id="preset-grid"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div><h2>Uploaded photos</h2><p>People using their own photo. Remove one that breaks community rules: their picture is cleared and the file deleted. They can choose another.</p></div></div>
+            <ul class="rows" id="user-photos"></ul>
+          </div>
+        </section>
+
         <!-- Backups -->
         <section id="view-backups" class="stack hidden">
           <div class="panel">
@@ -799,8 +837,9 @@
               <form id="limits-form" class="form-narrow">
                 <div class="field-row">
                   <div class="field"><label for="limit-db">Database limit (MB)</label><input id="limit-db" type="number" min="1" step="1" required></div>
-                  <div class="field"><label for="limit-storage">File storage limit (MB)</label><input id="limit-storage" type="number" min="1" step="1" required></div>
+                  <div class="field"><label for="limit-storage">Supabase file storage limit (MB)</label><input id="limit-storage" type="number" min="1" step="1" required></div>
                 </div>
+                <div class="field"><label for="limit-hostinger">Hostinger storage limit (MB)</label><input id="limit-hostinger" type="number" min="1" step="1" required><span class="help">Cloud Startup includes about 100 GB (102400 MB). Check hPanel for your plan's figure.</span></div>
                 <button class="btn primary" type="submit">Save limits</button>
               </form>
               <div id="limits-msg"></div>
@@ -945,6 +984,30 @@
     // Avatars are preset pictures bundled with the app (assets/avatars/...);
     // this page is served from docs/ only, so load them from the repo.
     var AVATAR_BASE = 'https://raw.githubusercontent.com/Vincentjhon31/barangay-events/main/';
+    // The Hostinger file API (hostinger/public_html/api in the repo):
+    // attachments, uploaded profile photos, and superadmin preset pictures.
+    var FILE_API = 'https://calendar.bongabong.gov.ph/api';
+    function fileApiFetch(path, options) {
+      return sb.auth.getSession().then(function (res) {
+        var token = res.data && res.data.session && res.data.session.access_token;
+        if (!token) throw new Error('Your session has expired. Sign in again.');
+        var opts = options || {};
+        opts.headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + token, 'X-Auth-Token': token });
+        return fetch(FILE_API + '/' + path, opts);
+      });
+    }
+    function fileApiJson(path, options) {
+      return fileApiFetch(path, options).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (body) {
+          if (!r.ok) throw new Error(body.error || ('The file server answered ' + r.status + '.'));
+          return body;
+        });
+      }, function () {
+        throw new Error('Couldn\'t reach the file server at ' + FILE_API + '. Check that the api folder is uploaded to Hostinger.');
+      });
+    }
+    function unawaited_(promise) { if (promise && promise.catch) promise.catch(function () {}); }
+    function isWebPicture(url) { return /^https?:\/\//.test(url || ''); }
     var MANILA_MS = 8 * 3600 * 1000;
     var COLORS = {
       tomato: '#E85D50', tangerine: '#F0932B', banana: '#F2C94C', basil: '#2FA36B',
@@ -1114,7 +1177,7 @@
       if (opts.pictureOnly && !opts.url) return '<span class="' + cls + '">' + PERSON_ICON + '</span>';
       var inner = esc(initials(opts.name));
       if (opts.url) {
-        inner = '<img src="' + esc(AVATAR_BASE + opts.url) + '" alt="" loading="lazy">';
+        inner = '<img src="' + esc(isWebPicture(opts.url) ? opts.url : AVATAR_BASE + opts.url) + '" alt="" loading="lazy">';
         return '<span class="' + cls + '" data-initials="' + esc(initials(opts.name)) + '">' + inner + '</span>';
       }
       return '<span class="' + cls + '">' + inner + '</span>';
@@ -1148,6 +1211,11 @@
     var backupLoaded = false;
     var restoreZip = null;
     var restoreManifest = null;
+    var presets = [];
+    var presetsError = null;
+    var presetCategory = 'anime';
+    var hostingerUsage = null;
+    var hostingerUsageError = null;
 
     // ---------- Navigation ----------
     var NAV = [
@@ -1155,6 +1223,7 @@
       { id: 'users', label: 'Users', sub: 'Accounts, roles, and LGU applications', icon: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20v-1a5 5 0 0 1 5-5h3a5 5 0 0 1 5 5v1"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20v-1a4.5 4.5 0 0 0-3-4.2"/>' },
       { id: 'events', label: 'Events', sub: 'Public and group events in the app', icon: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>' },
       { id: 'calendars', label: 'Calendars', sub: 'Extra calendars in the app, like Sports, and who handles them', icon: '<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>' },
+      { id: 'pictures', label: 'Pictures', sub: 'Profile picture choices, and uploaded photos', icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/>' },
       { id: 'backups', label: 'Backups', sub: 'Download all app data, or restore it from a backup', icon: '<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/>' },
       { id: 'system', label: 'System', sub: 'Database and file storage usage', icon: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.7-4 3-9 3s-9-1.3-9-3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/>' },
       { id: 'settings', label: 'Settings', sub: 'Your account, appearance, and event locations', icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>' }
@@ -2061,6 +2130,125 @@
     });
     renderCalendarForm(null);
 
+    // ---------- Profile pictures ----------
+    function renderPictures() {
+      document.querySelectorAll('[data-preset-cat]').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b.dataset.presetCat === presetCategory));
+      });
+      var label = { anime: 'Anime', animal: 'Animal', person: 'Person' }[presetCategory];
+      $('preset-upload-label').textContent = 'Add ' + label + ' pictures';
+      if (presetsError) {
+        $('preset-grid').innerHTML = '<div class="empty"><strong>Picture choices aren\'t set up yet</strong>' + esc(presetsError) + '</div>';
+      } else {
+        var list = presets.filter(function (p) { return p.category === presetCategory; });
+        $('preset-grid').innerHTML = list.length ? list.map(function (p) {
+          return '<div class="preset-tile"><img src="' + esc(p.url) + '" alt="" loading="lazy">' +
+            '<button type="button" data-preset-delete="' + esc(p.id) + '" aria-label="Delete this picture" title="Delete">&times;</button></div>';
+        }).join('') : '<div class="empty" style="grid-column:1/-1"><strong>No added ' + esc(label) + ' pictures yet</strong>People still see the built-in ones.</div>';
+      }
+      var withPhotos = users.filter(function (u) { return (u.avatar_url || '').indexOf('/avatars/users/') >= 0; });
+      $('user-photos').innerHTML = withPhotos.length ? withPhotos.map(function (u) {
+        return '<li class="row photo-row">' + whoCell(u) +
+          '<div class="actions"><button class="btn danger-ghost sm" type="button" data-remove-photo="' + esc(u.user_id) + '">Remove photo</button></div></li>';
+      }).join('') : '<li class="empty">Nobody is using their own photo yet.</li>';
+    }
+    $('preset-cats').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-preset-cat]');
+      if (!b) return;
+      presetCategory = b.dataset.presetCat;
+      renderPictures();
+    });
+    $('preset-files').addEventListener('change', function () {
+      var files = Array.prototype.slice.call($('preset-files').files || []);
+      $('preset-files').value = '';
+      if (!files.length) return;
+      var msg = $('preset-msg');
+      var category = presetCategory;
+      var done = 0, failed = [];
+      notice(msg, 'Uploading ' + plural(files.length, 'picture') + '…', 'info');
+      files.reduce(function (p, file) {
+        return p.then(function () {
+          var fd = new FormData();
+          fd.append('category', category);
+          fd.append('file', file, file.name);
+          return fileApiJson('avatars.php?action=preset', { method: 'POST', body: fd })
+            .then(function () { done++; notice(msg, 'Uploaded ' + done + ' of ' + files.length + '…', 'info'); })
+            .catch(function (err) { failed.push(file.name + ': ' + errorText(err)); });
+        });
+      }, Promise.resolve()).then(function () {
+        notice(msg, failed.length
+          ? esc(plural(done, 'picture')) + ' added. Not added:<br>' + failed.map(esc).join('<br>')
+          : esc(plural(done, 'picture')) + ' added. They show up in the app the next time someone opens the picture picker.', failed.length ? 'warn' : 'ok');
+        return loadPresets();
+      });
+    });
+    $('preset-grid').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-preset-delete]');
+      if (!b) return;
+      confirmDialog({ title: 'Delete this picture?', text: 'It disappears from the choices. Anyone already using it keeps it until they pick another; its file is deleted, so it will show as blank for them.', confirm: 'Delete picture', danger: true }).then(function (ok) {
+        if (!ok) return;
+        b.disabled = true;
+        fileApiJson('avatars.php?action=preset&id=' + encodeURIComponent(b.dataset.presetDelete), { method: 'DELETE' })
+          .then(function () { toast('Picture deleted.'); return loadPresets(); })
+          .catch(function (err) { b.disabled = false; toast(errorText(err)); });
+      });
+    });
+    $('user-photos').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-remove-photo]');
+      if (!b) return;
+      var u = userById(b.dataset.removePhoto) || {};
+      var who = u.display_name || u.email || 'this person';
+      confirmDialog({ title: 'Remove ' + who + '\'s photo?', text: 'Their profile picture is cleared everywhere (events, chats, groups) and the file is deleted. They can choose another picture.', confirm: 'Remove photo', danger: true }).then(function (ok) {
+        if (!ok) return;
+        busy(b, true, 'Removing…');
+        var fd = new FormData();
+        fd.append('user_id', b.dataset.removePhoto);
+        fileApiJson('avatars.php?action=remove-user-photo', { method: 'POST', body: fd })
+          .then(function () { toast('Removed ' + who + '\'s photo.'); return loadUsers(); })
+          .catch(function (err) { busy(b, false); toast(errorText(err)); });
+      });
+    });
+
+    // Hostinger files in backups: every stored attachment and picture.
+    function backupHostingerFiles(zip, onProgress) {
+      var areas = ['uploads', 'media'];
+      return Promise.all(areas.map(function (area) {
+        return fileApiJson('admin.php?action=list&area=' + area).then(function (r) {
+          return (r.files || []).map(function (f) { return { area: area, path: f.path }; });
+        });
+      })).then(function (lists) {
+        var items = lists[0].concat(lists[1]);
+        var count = 0, missing = [];
+        return items.reduce(function (p, item, i) {
+          return p.then(function () {
+            onProgress(i + 1, items.length);
+            return fileApiFetch('admin.php?action=get&area=' + item.area + '&path=' + encodeURIComponent(item.path))
+              .then(function (r) { if (!r.ok) throw new Error(r.status); return r.blob(); })
+              .then(function (blob) { zip.file('files/hostinger/' + item.area + '/' + item.path, blob); count++; })
+              .catch(function () { missing.push(item.area + '/' + item.path); });
+          });
+        }, Promise.resolve()).then(function () { return { count: count, missing: missing, error: null }; });
+      }).catch(function (err) { return { count: 0, missing: [], error: errorText(err) }; });
+    }
+    function restoreHostingerFiles(zip, problems, onProgress) {
+      var entries = [];
+      zip.forEach(function (path, entry) {
+        var m = /^files\/hostinger\/(uploads|media)\/(.+)$/.exec(path);
+        if (m && !entry.dir) entries.push({ area: m[1], path: m[2], entry: entry });
+      });
+      var restored = 0;
+      return entries.reduce(function (p, item, i) {
+        return p.then(function () {
+          onProgress(i + 1, entries.length);
+          return item.entry.async('blob').then(function (blob) {
+            var fd = new FormData();
+            fd.append('file', blob, item.path.split('/').pop());
+            return fileApiJson('admin.php?action=put&area=' + item.area + '&path=' + encodeURIComponent(item.path), { method: 'POST', body: fd });
+          }).then(function () { restored++; }).catch(function (err) { problems.push('Hostinger file ' + item.path + ': ' + errorText(err)); });
+        });
+      }, Promise.resolve()).then(function () { return restored; });
+    }
+
     // ---------- Backups ----------
     var BACKUP_FORMAT = 'ebongabong-calendar-backup';
     function settingNumber(key, fallback) {
@@ -2122,7 +2310,9 @@
         '- data/<table>.json and data/<table>.csv: every row of every app table,',
         '  as JSON (exact) and CSV (for spreadsheets). Times are as stored.',
         '- data/auth_users.json: login accounts (id, email, dates). No passwords.',
-        '- files/event-attachments/...: every file attached to an event.',
+        '- files/event-attachments/...: event files kept in Supabase Storage.',
+        '- files/hostinger/uploads/... and files/hostinger/media/...: event files',
+        '  and profile pictures kept on the Hostinger site.',
         '- schema.sql: the database structure this data belongs to (if it could',
         '  be downloaded when the backup was made).',
         '',
@@ -2145,6 +2335,7 @@
       busy(btn, true, 'Backing up…');
       setProgress('backup', 0.05, 'Collecting every table…');
       var data, zip = new JSZip(), counts = {}, fileCount = 0, missingFiles = [];
+      var hostinger = { count: 0, missing: [], error: null };
       sb.functions.invoke('admin-backup', { body: { action: 'export' } }).then(function (res) {
         if (res.error) throw res.error;
         data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
@@ -2173,6 +2364,11 @@
         }
         return next();
       }).then(function () {
+        setProgress('backup', 0.6, 'Downloading files from Hostinger…');
+        return backupHostingerFiles(zip, function (done, total) {
+          setProgress('backup', 0.6 + 0.12 * (done / Math.max(1, total)), 'Downloading files from Hostinger (' + done + ' of ' + total + ')…');
+        }).then(function (r) { hostinger = r; });
+      }).then(function () {
         setProgress('backup', 0.72, 'Adding the database structure…');
         return fetch(AVATAR_BASE + 'supabase/barangay_events.sql').then(function (r) { return r.ok ? r.text() : null; }).catch(function () { return null; });
       }).then(function (schema) {
@@ -2180,7 +2376,8 @@
         var manifest = {
           format: BACKUP_FORMAT, version: data.version, app: 'eBongabong Calendar', created_at: data.created_at, source: data.source,
           table_order: data.table_order, counts: counts, auth_users: data.auth_users.length,
-          files: fileCount, missing_files: missingFiles, includes_schema: !!schema
+          files: fileCount, missing_files: missingFiles, includes_schema: !!schema,
+          hostinger_files: hostinger.count, hostinger_missing: hostinger.missing, hostinger_error: hostinger.error
         };
         zip.file('manifest.json', JSON.stringify(manifest, null, 2));
         zip.file('README.txt', readmeText(manifest));
@@ -2194,9 +2391,11 @@
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(function () { URL.revokeObjectURL(a.href); }, 60000);
         var total = Object.keys(counts).reduce(function (sum, t) { return sum + counts[t]; }, 0);
-        notice(msg, 'Backup downloaded: ' + esc(plural(total, 'record')) + ' and ' + esc(plural(fileCount, 'file')) + '. Keep it somewhere safe, like a USB drive or cloud storage.' +
-          (missingFiles.length ? ' ' + esc(plural(missingFiles.length, 'attached file')) + ' couldn\'t be downloaded.' : ''), missingFiles.length ? 'warn' : 'ok');
-        return sb.rpc('admin_record_backup', { p_kind: 'export', p_mode: null, p_row_counts: counts, p_file_count: fileCount, p_note: missingFiles.length ? missingFiles.length + ' files missing' : null });
+        var problemCount = missingFiles.length + hostinger.missing.length;
+        notice(msg, 'Backup downloaded: ' + esc(plural(total, 'record')) + ' and ' + esc(plural(fileCount + hostinger.count, 'file')) + '. Keep it somewhere safe, like a USB drive or cloud storage.' +
+          (problemCount ? ' ' + esc(plural(problemCount, 'file')) + ' couldn\'t be downloaded.' : '') +
+          (hostinger.error ? '<br>Hostinger files were not included: ' + esc(hostinger.error) : ''), problemCount || hostinger.error ? 'warn' : 'ok');
+        return sb.rpc('admin_record_backup', { p_kind: 'export', p_mode: null, p_row_counts: counts, p_file_count: fileCount + hostinger.count, p_note: hostinger.error ? 'Hostinger files not included' : (problemCount ? problemCount + ' files missing' : null) });
       }).then(function () {
         return Promise.all([loadBackupHistory(), loadUsage()]);
       }).catch(function (err) {
@@ -2260,7 +2459,7 @@
           notice(box, 'Backup from <strong>' + esc(new Date(manifest.created_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })) + '</strong>: ' +
             esc(plural(manifest.counts.barangay_events || 0, 'event')) + ', ' + esc(plural(manifest.counts.profiles || 0, 'profile')) + ', ' +
             esc(plural(manifest.counts.groups || 0, 'group')) + ', ' + esc(plural(manifest.counts.event_comments || 0, 'chat message')) +
-            ' (' + esc(plural(total, 'record')) + ' in all) and ' + esc(plural(manifest.files || 0, 'file')) + '.', 'info');
+            ' (' + esc(plural(total, 'record')) + ' in all) and ' + esc(plural((manifest.files || 0) + (manifest.hostinger_files || 0), 'file')) + '.', 'info');
         });
       }).catch(function (err) { notice(box, esc(errorText(err)), 'error'); });
     });
@@ -2351,6 +2550,10 @@
             }).catch(function (err) { problems.push('Files: ' + errorText(err)); });
           });
         }).then(function () {
+          return restoreHostingerFiles(zip, problems, function (done, total) {
+            setProgress('restore', (totalSteps - 0.5) / totalSteps, 'Putting Hostinger files back (' + done + ' of ' + total + ')…');
+          }).then(function (n) { filesRestored += n; });
+        }).then(function () {
           setProgress('restore', 1, 'Done.');
           var total = Object.keys(restoredCounts).reduce(function (sum, t) { return sum + restoredCounts[t]; }, 0);
           notice(msg, (problems.length ? 'Restore finished with ' + esc(plural(problems.length, 'problem')) + ': ' : 'Restore finished: ') +
@@ -2395,7 +2598,11 @@
       var records = (usage.tables || []).reduce(function (sum, t) { return sum + Number(t.rows || 0); }, 0);
       $('usage-meters').innerHTML =
         meterHtml('Database', usage.database_bytes, usage.db_limit_mb, plural(records, 'record') + ' across ' + plural((usage.tables || []).length, 'table')) +
-        meterHtml('File storage', storageBytes, usage.storage_limit_mb, plural(storageFiles, 'file') + ' (event attachments)') +
+        meterHtml('Supabase file storage', storageBytes, usage.storage_limit_mb, plural(storageFiles, 'file') + ' (older event attachments)') +
+        (hostingerUsage
+          ? meterHtml('Hostinger storage', hostingerUsage.uploads.bytes + hostingerUsage.media.bytes, settingNumber('hostinger_limit_mb', 102400),
+              plural(hostingerUsage.uploads.files, 'attachment') + ', ' + plural(hostingerUsage.media.files, 'picture'))
+          : '<div class="meter"><div class="top"><strong>Hostinger storage</strong></div><div class="foot">' + esc(hostingerUsageError || 'Loading…') + '</div></div>') +
         '<div class="meter"><div class="top"><strong>Accounts</strong><span>' + esc(usage.auth_users) + '</span></div><div class="foot">Last backup: ' +
           esc(usage.last_backup_at ? new Date(usage.last_backup_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }) : 'never') + '</div></div>';
       $('usage-tables').innerHTML = '<li class="row row-head table-row" aria-hidden="true"><span>Table</span><span>Records</span><span>Size</span></li>' +
@@ -2404,6 +2611,7 @@
         }).join('');
       $('limit-db').value = usage.db_limit_mb;
       $('limit-storage').value = usage.storage_limit_mb;
+      $('limit-hostinger').value = settingNumber('hostinger_limit_mb', 102400);
     }
     function saveSetting(key, value) {
       return sb.from('app_settings').upsert({ key: key, value: value, updated_at: new Date().toISOString(), updated_by: me.id }, { onConflict: 'key' })
@@ -2411,11 +2619,11 @@
     }
     $('limits-form').addEventListener('submit', function (e) {
       e.preventDefault();
-      var db = parseInt($('limit-db').value, 10), st = parseInt($('limit-storage').value, 10);
-      if (!(db > 0) || !(st > 0)) { notice($('limits-msg'), 'Enter both limits in MB.', 'error'); return; }
+      var db = parseInt($('limit-db').value, 10), st = parseInt($('limit-storage').value, 10), ho = parseInt($('limit-hostinger').value, 10);
+      if (!(db > 0) || !(st > 0) || !(ho > 0)) { notice($('limits-msg'), 'Enter every limit in MB.', 'error'); return; }
       var btn = e.target.querySelector('button[type="submit"]');
       busy(btn, true, 'Saving…');
-      Promise.all([saveSetting('db_limit_mb', db), saveSetting('storage_limit_mb', st)]).then(function () {
+      Promise.all([saveSetting('db_limit_mb', db), saveSetting('storage_limit_mb', st), saveSetting('hostinger_limit_mb', ho)]).then(function () {
         notice($('limits-msg'), '', '');
         toast('Limits saved.');
         return loadUsage();
@@ -2497,7 +2705,7 @@
       return sb.rpc('list_all_users').then(function (res) {
         if (res.error) throw res.error;
         users = res.data || [];
-        renderUsers(); renderAdmins(); renderDashboard(); renderCategories();
+        renderUsers(); renderAdmins(); renderDashboard(); renderCategories(); renderPictures();
       });
     }
     function loadApplications() {
@@ -2579,7 +2787,27 @@
         renderBackupHistory(); renderDashboard();
       });
     }
+    function loadPresets() {
+      return sb.from('avatar_presets').select('*').order('sort_order').order('created_at').then(function (res) {
+        if (res.error) {
+          presets = [];
+          presetsError = missingBackend(res.error) ? SETUP_HINT : errorText(res.error);
+        } else {
+          presetsError = null;
+          presets = res.data || [];
+        }
+        renderPictures();
+      });
+    }
+    function loadHostingerUsage() {
+      return fileApiJson('admin.php?action=usage').then(function (r) {
+        hostingerUsage = r; hostingerUsageError = null;
+      }, function (err) {
+        hostingerUsage = null; hostingerUsageError = errorText(err);
+      }).then(renderUsage);
+    }
     function loadUsage() {
+      unawaited_(loadHostingerUsage());
       return sb.rpc('admin_database_usage').then(function (res) {
         if (res.error) {
           usage = null;
@@ -2594,7 +2822,7 @@
     function loadAll() {
       return Promise.all([
         loadUsers(), loadApplications(), loadEvents(), loadStats(), loadLocations(),
-        loadCategories(), loadSettings(), loadBackupHistory(), loadUsage()
+        loadCategories(), loadSettings(), loadBackupHistory(), loadUsage(), loadPresets()
       ]).catch(function (err) { toast(errorText(err)); });
     }
     $('refresh-btn').addEventListener('click', function () {

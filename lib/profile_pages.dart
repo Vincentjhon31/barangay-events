@@ -7,6 +7,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'about_page.dart';
 import 'app_update_service.dart';
 import 'auth_service.dart';
+import 'avatar_image.dart';
 import 'avatar_picker_page.dart';
 import 'create_group_page.dart';
 import 'event_store.dart';
@@ -191,8 +192,11 @@ class _ProfileTabState extends State<ProfileTab> {
                     radius: 38,
                     backgroundColor: colorScheme.primaryContainer,
                     backgroundImage: profile?.avatarUrl != null
-                        ? AssetImage(profile!.avatarUrl!)
+                        ? avatarImageProvider(profile!.avatarUrl!)
                         : null,
+                    // An uploaded photo that can't load (offline, removed by
+                    // the superadmin) just shows the plain circle.
+                    onBackgroundImageError: profile?.avatarUrl != null ? (_, __) {} : null,
                     child: profile?.avatarUrl == null
                         ? Text(
                             profile?.initials ?? 'B',

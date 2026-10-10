@@ -304,7 +304,17 @@
   "@typeHelperCalendar": {
     "placeholders": { "calendar": { "type": "String" } }
   },
-  "attachmentsUploadsOffHint": "Adding files is turned off to save storage. You can still remove files added before.",
+  "attachmentsHint": "Up to 5 files: pictures, PDFs, or Office documents. Pictures are made smaller automatically.",
+  "attachmentsSomeFailed": "{count, plural, =1{1 file couldn't be uploaded. You can add it again from Edit.} other{{count} files couldn't be uploaded. You can add them again from Edit.}}",
+  "@attachmentsSomeFailed": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "avatarOwnPhotoTitle": "Your own photo",
+  "avatarOwnPhotoHint": "Choose a photo from your gallery. It's cropped to a square and shown wherever your profile picture appears.",
+  "avatarUploadPhotoButton": "Upload a photo",
+  "avatarChangePhotoButton": "Change photo",
+  "avatarUploadFailed": "Couldn't upload your photo.",
+  "avatarNotAPicture": "That file isn't a picture the app can use. Try a JPG or PNG photo.",
   "eventChatYou": "You",
   "eventChatSomeone": "Someone",
   "eventChatToday": "Today",
@@ -558,7 +568,7 @@
   },
 
   "profilePictureTitle": "Profile Picture",
-  "profilePictureSubtitle": "Pick one — it saves right away.",
+  "profilePictureSubtitle": "Upload your own photo, or pick a picture — it saves right away.",
   "couldNotSaveAvatarError": "Could not save your profile picture. Please try again.",
   "avatarCategoryAnime": "Anime",
   "avatarCategoryAnimal": "Animal",
@@ -680,11 +690,11 @@
   "privacyPolicySubtitle": "How eBongabong Calendar handles your information.",
   "privacyIntro": "This Privacy Policy explains what information eBongabong Calendar collects, how it's used, and who can see it. It applies to everyone who uses the app, whether you're a resident, an LGU member, or an administrator.",
   "privacyCollectHeading": "Information We Collect",
-  "privacyCollectBody": "When you create an account, we collect your email address and the details you choose to add to your profile — display name, department, phone number, address, a short bio, and a profile picture chosen from a fixed set of avatars (the app never accesses your camera or photo library). We also store the events, groups, and preferences (language, theme, display size, reminders) you set up while using the app.",
+  "privacyCollectBody": "When you create an account, we collect your email address and the details you choose to add to your profile — display name, department, phone number, address, a short bio, and a profile picture: either one of the app's preset pictures, or a photo you choose from your device's gallery (the app only reads the one photo you pick, and never uses your camera). Uploaded photos and files you attach to events are stored on the municipality's own web server. We also store the events, groups, and preferences (language, theme, display size, reminders) you set up while using the app.",
   "privacyUseHeading": "How We Use Your Information",
   "privacyUseBody": "Your information is used only to run the app's own features: showing you relevant events, letting you join and manage groups, remembering your display and language preferences across devices, and sending the notifications you've asked for. We don't use your information for advertising, and we don't sell it to anyone.",
   "privacyVisibilityHeading": "Who Can See Your Information",
-  "privacyVisibilityBody": "Your profile details are visible only to you. If you join a group, that group's other members can see your display name and profile picture in the member list. Events follow their own visibility: Public events are visible to everyone, Group events only to that group's members, and Personal events only to you. Messages you post in an event's chat — along with your display name and profile picture — are visible to everyone who can see that event.",
+  "privacyVisibilityBody": "Your profile details are visible only to you. If you join a group, that group's other members can see your display name and profile picture in the member list. Your profile picture also appears next to events you post and messages you write, and is reachable by its web link. You can replace or remove an uploaded photo at any time, and the superadmin can remove one that breaks community rules. Events follow their own visibility: Public events are visible to everyone, Group events only to that group's members, and Personal events only to you. Messages you post in an event's chat — along with your display name and profile picture — are visible to everyone who can see that event.",
   "privacyThirdPartyHeading": "Third-Party Services",
   "privacyThirdPartyBody": "The app is built on Supabase, which hosts our database and handles sign-in, and Firebase Cloud Messaging, which delivers push notifications on Android. Both encrypt data in transit, and Supabase encrypts data at rest. These providers process data only to help the app function — they don't have their own separate use for it.",
   "privacyRetentionHeading": "Your Choices",

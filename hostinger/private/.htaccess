@@ -1,0 +1,3 @@
+# This folder must never be reachable from the web (it normally sits outside
+# public_html, so this is only a safety net if it's ever put inside it).
+Require all denied

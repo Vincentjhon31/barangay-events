@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'event_calendars.dart';
+import 'file_api.dart';
 
 /// Visibility levels for an event.
 abstract final class EventType {
@@ -536,6 +537,7 @@ class EventAttachment {
     required this.fileName,
     this.mimeType,
     this.sizeBytes,
+    this.storageProvider = 'supabase',
   });
 
   final String id;
@@ -544,6 +546,13 @@ class EventAttachment {
   final String fileName;
   final String? mimeType;
   final int? sizeBytes;
+
+  /// Where the file's bytes live: 'hostinger' (the file API — every new
+  /// attachment, see lib/file_api.dart) or 'supabase' (Supabase Storage,
+  /// files attached before the move).
+  final String storageProvider;
+
+  bool get isOnHostinger => storageProvider == 'hostinger';
 
   /// Whether this can be shown as an inline in-app preview — see
   /// [EventRepository.downloadEventAttachmentBytes].
@@ -562,6 +571,7 @@ class EventAttachment {
       // parsing via .toString() handles either shape PostgREST might hand
       // back.
       sizeBytes: row['size_bytes'] == null ? null : int.parse(row['size_bytes'].toString()),
+      storageProvider: row['storage_provider'] as String? ?? 'supabase',
     );
   }
 }
@@ -828,10 +838,11 @@ abstract class EventRepository {
   /// policy), regardless of who uploaded it.
   Future<List<EventAttachment>> listEventAttachments(String eventId);
 
-  /// Uploads [bytes] to the private `event-attachments` Storage bucket
-  /// and records it against [eventId] — creator-only server-side (see the
-  /// `event_attachments` insert policy). [mimeType] is best-effort,
-  /// derived from the picked file's extension by the caller.
+  /// Uploads [bytes] as an attachment of [eventId] and records it —
+  /// creator-only server-side. New files go to the Hostinger file API
+  /// (lib/file_api.dart), which checks the event's poster with Supabase
+  /// and records the row in `event_attachments`. [mimeType] is
+  /// best-effort; the server detects the real type from the contents.
   Future<void> uploadEventAttachment(
     String eventId,
     String fileName,
@@ -839,12 +850,12 @@ abstract class EventRepository {
     String? mimeType,
   });
 
-  /// Removes [attachment] from both Storage and the `event_attachments`
-  /// row — creator-only server-side.
+  /// Removes [attachment]'s file (from wherever it's stored) and its
+  /// `event_attachments` row — creator-only server-side.
   Future<void> deleteEventAttachment(EventAttachment attachment);
 
-  /// A time-limited URL to actually view/download [attachment] — the
-  /// bucket is private, so a plain public URL never works. Used only for
+  /// A time-limited URL to actually view/download [attachment] — files are
+  /// private, so a plain public URL never works. Used only for
   /// non-image attachments, opened externally via `launchUrl`; an image
   /// is shown in-app instead (see [downloadEventAttachmentBytes]) so no
   /// Storage URL — signed or not — is ever surfaced to the user.
@@ -1559,11 +1570,16 @@ class MemoryEventRepository implements EventRepository {
 }
 
 class SupabaseEventRepository implements EventRepository {
-  SupabaseEventRepository(this._client);
+  SupabaseEventRepository(SupabaseClient client, {FileApi? fileApi})
+      : _client = client,
+        _fileApi = fileApi ?? FileApi(accessToken: () => client.auth.currentSession?.accessToken);
 
   static const String tableName = 'barangay_events';
 
   final SupabaseClient _client;
+
+  /// Event attachments are stored on Hostinger (see lib/file_api.dart).
+  final FileApi _fileApi;
 
   @override
   Stream<List<BarangayEvent>> watchAllEvents() {
@@ -1995,31 +2011,29 @@ class SupabaseEventRepository implements EventRepository {
     Uint8List bytes, {
     String? mimeType,
   }) async {
-    final storagePath = '$eventId/${DateTime.now().microsecondsSinceEpoch}-$fileName';
-    await _client.storage.from('event-attachments').uploadBinary(storagePath, bytes);
-    await _client.from('event_attachments').insert({
-      'event_id': eventId,
-      'storage_path': storagePath,
-      'file_name': fileName,
-      'mime_type': mimeType,
-      'size_bytes': bytes.length,
-      'uploaded_by': _client.auth.currentUser?.id,
-    });
+    // The file API records the event_attachments row itself (as this user).
+    await _fileApi.uploadAttachment(eventId, fileName, bytes, mimeType: mimeType);
   }
 
   @override
   Future<void> deleteEventAttachment(EventAttachment attachment) async {
+    if (attachment.isOnHostinger) {
+      await _fileApi.deleteAttachment(attachment.id);
+      return;
+    }
     await _client.storage.from('event-attachments').remove([attachment.storagePath]);
     await _client.from('event_attachments').delete().eq('id', attachment.id);
   }
 
   @override
   Future<String> getAttachmentDownloadUrl(EventAttachment attachment) async {
+    if (attachment.isOnHostinger) return _fileApi.attachmentLink(attachment.id);
     return _client.storage.from('event-attachments').createSignedUrl(attachment.storagePath, 3600);
   }
 
   @override
   Future<Uint8List> downloadEventAttachmentBytes(EventAttachment attachment) {
+    if (attachment.isOnHostinger) return _fileApi.downloadAttachment(attachment.id);
     return _client.storage.from('event-attachments').download(attachment.storagePath);
   }
 

@@ -1,0 +1,29 @@
+# eBongabong Calendar file API
+
+Options -Indexes
+
+# Some servers drop the Authorization header before PHP sees it; pass it on.
+# (The apps also send the token as X-Auth-Token, so this is belt and braces.)
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTP:Authorization} .
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
+<IfModule mod_setenvif.c>
+  SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+</IfModule>
+
+# _lib.php is a helper, not a page.
+<Files "_lib.php">
+  Require all denied
+</Files>
+
+# Room for 10 MB attachments (the API itself enforces the real limits).
+<IfModule mod_php.c>
+  php_value upload_max_filesize 12M
+  php_value post_max_size 13M
+</IfModule>
+<IfModule lsapi_module>
+  php_value upload_max_filesize 12M
+  php_value post_max_size 13M
+</IfModule>

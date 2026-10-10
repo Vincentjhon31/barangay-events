@@ -3353,6 +3353,7 @@ begin
     when 'group_join_requests' then array['id']
     when 'event_calendars' then array['id']
     when 'event_calendar_handlers' then array['calendar_id', 'user_id']
+    when 'avatar_presets' then array['id']
     when 'lgu_locations' then array['id']
     when 'barangay_events' then array['id']
     when 'event_attachments' then array['id']
@@ -3439,6 +3440,10 @@ notify pgrst, 'reload schema';
 -- ============================================================
 -- Event attachment uploads turned off (October 2026). Safe to re-run.
 --
+-- (Superseded for NEW files by the "Files on Hostinger" block below:
+-- attachments came back, stored on the Hostinger site instead. What this
+-- block still does: Supabase Storage itself takes no new uploads.)
+--
 -- To keep the Supabase free tier's file storage from filling up, the
 -- app no longer lets anyone attach files to events. This also stops
 -- older app versions still in people's hands: their upload just fails
@@ -3454,3 +3459,83 @@ notify pgrst, 'reload schema';
 -- ============================================================
 drop policy if exists "creator can add attachments" on public.event_attachments;
 drop policy if exists "upload event attachment files" on storage.objects;
+
+-- ============================================================
+-- Files on Hostinger: event attachments + profile pictures (October 2026).
+-- Safe to re-run. Must come after the "uploads turned off" block above.
+--
+-- The file bytes now live on the Hostinger site (hostinger/ folder in this
+-- repo: a small PHP API at calendar.bongabong.gov.ph/api). Supabase keeps
+-- the records and decides who may do what — the PHP API checks every
+-- request by calling Supabase AS the signed-in user, so these RLS rules
+-- still apply. Supabase Storage uploads stay off (block above); files
+-- already there keep working.
+--
+--   * event_attachments.storage_provider says where a file lives
+--     ('supabase' for older files, 'hostinger' for new ones). Only the
+--     event's poster can add one, and only as a Hostinger file.
+--   * avatar_presets: profile pictures the superadmin adds to the
+--     Anime / Animal / Person choices (on top of the ones built into the
+--     app). Everyone signed in can read them.
+--   * Users can also upload their own photo: profiles.avatar_url then holds
+--     its Hostinger link instead of a built-in picture's name.
+--   * admin_reset_avatar: the superadmin removes someone's photo
+--     (moderation) — they go back to no picture.
+-- ============================================================
+
+alter table public.event_attachments
+  add column if not exists storage_provider text not null default 'supabase';
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'event_attachments_storage_provider_check') then
+    alter table public.event_attachments add constraint event_attachments_storage_provider_check
+      check (storage_provider in ('supabase', 'hostinger'));
+  end if;
+end $$;
+
+drop policy if exists "creator can add hostinger attachments" on public.event_attachments;
+create policy "creator can add hostinger attachments" on public.event_attachments
+  for insert
+  with check (
+    storage_provider = 'hostinger'
+    and uploaded_by = auth.uid()
+    and exists (select 1 from barangay_events be where be.id = event_attachments.event_id and be.created_by_id = auth.uid())
+  );
+
+create table if not exists public.avatar_presets (
+  id uuid primary key default gen_random_uuid(),
+  category text not null check (category in ('anime', 'animal', 'person')),
+  url text not null,
+  storage_path text,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  created_by uuid references public.profiles(id) on delete set null
+);
+alter table public.avatar_presets enable row level security;
+drop policy if exists "Signed-in users read avatar_presets" on public.avatar_presets;
+create policy "Signed-in users read avatar_presets" on public.avatar_presets
+  for select using (auth.uid() is not null);
+drop policy if exists "Superadmin manages avatar_presets" on public.avatar_presets;
+create policy "Superadmin manages avatar_presets" on public.avatar_presets
+  for all
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'superadmin'))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'superadmin'));
+
+-- Moderation: clears someone's profile picture. The existing avatar sync
+-- triggers update their events and chat messages to match.
+create or replace function public.admin_reset_avatar(p_user_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles where id = auth.uid() and role = 'superadmin') then
+    raise exception 'Only a superadmin can remove profile pictures';
+  end if;
+  update profiles set avatar_url = null where id = p_user_id;
+end $$;
+revoke all on function public.admin_reset_avatar(uuid) from public, anon;
+grant execute on function public.admin_reset_avatar(uuid) to authenticated;
+
+-- System page: Hostinger plan storage (Cloud Startup includes about 100 GB;
+-- check hPanel and adjust on the System page).
+insert into public.app_settings (key, value) values ('hostinger_limit_mb', '102400'::jsonb)
+on conflict (key) do nothing;
+
+notify pgrst, 'reload schema';

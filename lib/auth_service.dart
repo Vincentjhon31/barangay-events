@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'avatar_catalog.dart';
+import 'file_api.dart';
 
 /// Where a "Forgot password?" reset email's link sends the browser —
 /// Supabase's web SDK auto-detects the recovery token in that page's URL
@@ -244,11 +248,24 @@ abstract class AppAuthService {
   /// [updateEmail], there's no confirmation step.
   Future<void> updatePassword(String newPassword);
 
-  /// Sets the signed-in user's profile picture to one of the bundled
-  /// options in `lib/avatar_catalog.dart` (an asset path, e.g.
-  /// `assets/avatars/animal/animal_01.png`) — never an uploaded/captured
-  /// image, this app only offers picking from the fixed catalog.
+  /// Sets the signed-in user's profile picture: a built-in picture's asset
+  /// path (`lib/avatar_catalog.dart`, e.g. `assets/avatars/animal/animal_01.png`)
+  /// or the link of a superadmin-added preset (see [listAvatarPresets]).
   Future<void> updateAvatar(String assetPath);
+
+  /// Profile pictures the superadmin added to the Anime / Animal / Person
+  /// choices from the portal (stored on Hostinger), on top of the built-in
+  /// ones.
+  Future<List<AvatarOption>> listAvatarPresets();
+
+  /// Uploads the user's own photo (already cropped square and resized by
+  /// the app) to the Hostinger file API, which sets it as their profile
+  /// picture. Returns the photo's link.
+  Future<String> uploadProfilePhoto(Uint8List jpegBytes);
+
+  /// Deletes the user's previously uploaded photo file after they switch
+  /// back to a preset picture — best effort.
+  Future<void> deleteUploadedPhoto();
 
   /// Raw `theme_mode`/`ui_style`/`language`/`display_mode`/
   /// `reminder_preference` values from the signed-in user's profile
@@ -480,6 +497,24 @@ class SupabaseAuthService implements AppAuthService {
       ),
     );
   }
+
+  late final FileApi _fileApi = FileApi(accessToken: () => _client.auth.currentSession?.accessToken);
+
+  @override
+  Future<List<AvatarOption>> listAvatarPresets() async {
+    final rows = await _client.from('avatar_presets').select('url, category').order('sort_order').order('created_at');
+    return [
+      for (final row in rows)
+        if (AvatarCategory.fromKey(row['category'] as String?) case final category?)
+          AvatarOption(assetPath: row['url'] as String, category: category),
+    ];
+  }
+
+  @override
+  Future<String> uploadProfilePhoto(Uint8List jpegBytes) => _fileApi.uploadProfilePhoto(jpegBytes);
+
+  @override
+  Future<void> deleteUploadedPhoto() => _fileApi.deleteOwnPhoto();
 
   @override
   Future<
@@ -765,6 +800,27 @@ class MemoryAuthService implements AppAuthService {
     );
     _controller.add(true);
   }
+
+  /// Superadmin-added presets (see [listAvatarPresets]) — empty unless a
+  /// test adds some.
+  final List<AvatarOption> avatarPresets = [];
+
+  /// How many photos [uploadProfilePhoto] received (for tests).
+  int uploadedPhotoCount = 0;
+
+  @override
+  Future<List<AvatarOption>> listAvatarPresets() async => List.of(avatarPresets);
+
+  @override
+  Future<String> uploadProfilePhoto(Uint8List jpegBytes) async {
+    uploadedPhotoCount++;
+    final url = 'https://example.invalid/media/avatars/users/${_currentUser?.id ?? 'user'}-$uploadedPhotoCount.jpg';
+    await updateAvatar(url);
+    return url;
+  }
+
+  @override
+  Future<void> deleteUploadedPhoto() async {}
 
   @override
   Future<

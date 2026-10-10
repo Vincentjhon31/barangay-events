@@ -1,16 +1,21 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'auth_service.dart';
 import 'avatar_catalog.dart';
+import 'avatar_image.dart';
+import 'image_prep.dart';
 import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
 
-/// Profile-picture selection — a fixed catalog of bundled images grouped by
-/// category (Anime / Animal / Person), no upload or camera capture. Tapping
-/// an image saves it immediately and pops back with the updated profile.
+/// Profile-picture selection: the user's own photo (picked from the gallery,
+/// cropped square, stored on the Hostinger file server), or a picture from
+/// the Anime / Animal / Person categories — the built-in ones plus any the
+/// superadmin added from the portal. Picking saves immediately and pops back
+/// with the updated profile.
 class AvatarPickerPage extends StatefulWidget {
   const AvatarPickerPage({
     super.key,
@@ -28,39 +33,91 @@ class AvatarPickerPage extends StatefulWidget {
 class _AvatarPickerPageState extends State<AvatarPickerPage> {
   AvatarCategory _category = AvatarCategory.anime;
   String? _saving;
+  bool _uploading = false;
+  List<AvatarOption> _presets = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadPresets());
+  }
+
+  Future<void> _loadPresets() async {
+    try {
+      final presets = await widget.authService.listAvatarPresets();
+      if (mounted) setState(() => _presets = presets);
+    } catch (_) {
+      // No superadmin presets (or offline) — the built-in pictures remain.
+    }
+  }
+
+  /// [widget.initialProfile] with a new picture — every other field carried
+  /// over unchanged.
+  AppUserProfile _profileWith(String avatar) {
+    final p = widget.initialProfile;
+    return AppUserProfile(
+      id: p?.id ?? widget.authService.currentUser?.id ?? '',
+      email: p?.email ?? widget.authService.currentUser?.email ?? '',
+      displayName: p?.displayName,
+      department: p?.department,
+      phoneNumber: p?.phoneNumber,
+      streetAddress: p?.streetAddress,
+      barangay: p?.barangay,
+      city: p?.city,
+      bio: p?.bio,
+      avatarUrl: avatar,
+      role: p?.role ?? 'citizen',
+      lguRequestStatus: p?.lguRequestStatus,
+      isKioskAccount: p?.isKioskAccount ?? false,
+      calendarGroupFilterIds: p?.calendarGroupFilterIds ?? const [],
+      adminPermissions: p?.adminPermissions ?? const {},
+    );
+  }
+
+  bool get _hasUploadedPhoto {
+    final current = widget.initialProfile?.avatarUrl;
+    return current != null && current.contains('/avatars/users/');
+  }
 
   Future<void> _pick(AvatarOption option) async {
-    if (_saving != null) return;
+    if (_saving != null || _uploading) return;
     setState(() => _saving = option.assetPath);
+    final hadUploadedPhoto = _hasUploadedPhoto;
 
     try {
       await widget.authService.updateAvatar(option.assetPath);
+      // Their old photo file is no longer used anywhere.
+      if (hadUploadedPhoto) unawaited(widget.authService.deleteUploadedPhoto().catchError((_) {}));
       if (!mounted) return;
-
-      final updated = AppUserProfile(
-        id: widget.initialProfile?.id ?? widget.authService.currentUser?.id ?? '',
-        email: widget.initialProfile?.email ?? widget.authService.currentUser?.email ?? '',
-        displayName: widget.initialProfile?.displayName,
-        department: widget.initialProfile?.department,
-        phoneNumber: widget.initialProfile?.phoneNumber,
-        streetAddress: widget.initialProfile?.streetAddress,
-        barangay: widget.initialProfile?.barangay,
-        city: widget.initialProfile?.city,
-        bio: widget.initialProfile?.bio,
-        avatarUrl: option.assetPath,
-        role: widget.initialProfile?.role ?? 'citizen',
-        lguRequestStatus: widget.initialProfile?.lguRequestStatus,
-        isKioskAccount: widget.initialProfile?.isKioskAccount ?? false,
-        calendarGroupFilterIds: widget.initialProfile?.calendarGroupFilterIds ?? const [],
-        adminPermissions: widget.initialProfile?.adminPermissions ?? const {},
-      );
-      Navigator.of(context).pop(updated);
+      Navigator.of(context).pop(_profileWith(option.assetPath));
     } catch (_) {
       if (!mounted) return;
       setState(() => _saving = null);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(AppLocalizations.of(context)!.couldNotSaveAvatarError)),
       );
+    }
+  }
+
+  Future<void> _uploadPhoto() async {
+    if (_saving != null || _uploading) return;
+    final l10n = AppLocalizations.of(context)!;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final result = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
+      final bytes = result?.files.single.bytes;
+      if (bytes == null) return;
+      setState(() => _uploading = true);
+      final photo = await squareProfilePhoto(bytes);
+      final url = await widget.authService.uploadProfilePhoto(photo);
+      if (!mounted) return;
+      Navigator.of(context).pop(_profileWith(url));
+    } on FormatException {
+      messenger.showSnackBar(SnackBar(content: Text(l10n.avatarNotAPicture)));
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text('${l10n.avatarUploadFailed} $error')));
+    } finally {
+      if (mounted) setState(() => _uploading = false);
     }
   }
 
@@ -77,11 +134,61 @@ class _AvatarPickerPageState extends State<AvatarPickerPage> {
     final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
     final currentAvatar = widget.initialProfile?.avatarUrl;
+    final options = [
+      // Superadmin-added pictures first, so new ones are easy to spot.
+      ..._presets.where((p) => p.category == _category),
+      ...avatarsInCategory(_category),
+    ];
 
     return GlassSubPage(
       title: l10n.profilePictureTitle,
       subtitle: l10n.profilePictureSubtitle,
       children: [
+        GlassPanel(
+          child: Row(
+            children: [
+              ClipOval(
+                child: SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: _hasUploadedPhoto
+                      ? avatarImage(currentAvatar!, width: 56, height: 56)
+                      : ColoredBox(
+                          color: colorScheme.primary.withValues(alpha: 0.12),
+                          child: Center(child: FaIcon(FontAwesomeIcons.camera, size: 20, color: colorScheme.primary)),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l10n.avatarOwnPhotoTitle,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      l10n.avatarOwnPhotoHint,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton.tonalIcon(
+                      key: const Key('avatar-upload-photo'),
+                      onPressed: _uploading || _saving != null ? null : () => unawaited(_uploadPhoto()),
+                      icon: _uploading
+                          ? const SizedBox(height: 14, width: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const FaIcon(FontAwesomeIcons.upload, size: 14),
+                      label: Text(_hasUploadedPhoto ? l10n.avatarChangePhotoButton : l10n.avatarUploadPhotoButton),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
         GlassPanel(
           child: SegmentedButton<AvatarCategory>(
             style: SegmentedButton.styleFrom(
@@ -113,7 +220,7 @@ class _AvatarPickerPageState extends State<AvatarPickerPage> {
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
             children: [
-              for (final option in avatarsInCategory(_category))
+              for (final option in options)
                 _buildTile(option, colorScheme, isSelected: option.assetPath == currentAvatar),
             ],
           ),
@@ -142,11 +249,14 @@ class _AvatarPickerPageState extends State<AvatarPickerPage> {
             ),
             padding: const EdgeInsets.all(2),
             child: ClipOval(
-              child: Image.asset(
+              child: avatarImage(
                 option.assetPath,
-                fit: BoxFit.cover,
                 width: 64,
                 height: 64,
+                fallback: ColoredBox(
+                  color: colorScheme.onSurface.withValues(alpha: 0.08),
+                  child: const SizedBox(width: 64, height: 64),
+                ),
               ),
             ),
           ),

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 
+import 'avatar_image.dart';
 import 'event_store.dart';
 import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
@@ -560,7 +561,7 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
       role: member.accountRole,
       size: 40,
       child: avatarUrl != null && avatarUrl.isNotEmpty
-          ? Image.asset(avatarUrl, fit: BoxFit.cover)
+          ? avatarImage(avatarUrl)
           : IconBadge(
               icon: FontAwesomeIcons.circleUser,
               tint: colorScheme.primary,

@@ -16,6 +16,7 @@ import 'package:table_calendar/table_calendar.dart';
 
 import 'package:eCalendar/main.dart';
 import 'package:eCalendar/attachment_image_viewer.dart';
+import 'package:eCalendar/avatar_catalog.dart';
 import 'package:eCalendar/avatar_picker_page.dart';
 import 'package:eCalendar/day_detail_page.dart';
 import 'package:eCalendar/event_colors.dart';
@@ -23,6 +24,7 @@ import 'package:eCalendar/event_conflicts.dart';
 import 'package:eCalendar/event_store.dart';
 import 'package:eCalendar/auth_service.dart';
 import 'package:eCalendar/group_members_page.dart';
+import 'package:eCalendar/l10n/app_localizations.dart';
 import 'package:eCalendar/liquid_glass_components.dart';
 import 'package:eCalendar/profile_pages.dart';
 import 'package:eCalendar/push_notifications.dart';
@@ -1139,6 +1141,53 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('pictures the superadmin added show up in the picker and can be picked',
+      (WidgetTester tester) async {
+    const presetUrl = 'https://example.invalid/media/avatars/presets/anime/new-hero.jpg';
+    final auth = MemoryAuthService.signedIn();
+    auth.avatarPresets.add(const AvatarOption(assetPath: presetUrl, category: AvatarCategory.anime));
+    await tester.pumpWidget(
+      BarangayCalendarApp(
+        authServiceFactory: () async => auth,
+        eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Profile'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('profile-avatar-button')));
+    await tester.pumpAndSettle();
+
+    // Your own photo comes first; the superadmin's picture leads its category.
+    expect(find.byKey(const Key('avatar-upload-photo')), findsOneWidget);
+    const preset = Key('avatar-option-$presetUrl');
+    await tester.scrollUntilVisible(find.byKey(preset), 200, scrollable: find.byType(Scrollable).first);
+    await tester.tap(find.byKey(preset));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AvatarPickerPage), findsNothing);
+    expect(auth.currentUser?.avatarUrl, presetUrl);
+  });
+
+  testWidgets('a superadmin picture only shows in its own category', (WidgetTester tester) async {
+    const presetUrl = 'https://example.invalid/media/avatars/presets/animal/new-dog.jpg';
+    final auth = MemoryAuthService.signedIn();
+    auth.avatarPresets.add(const AvatarOption(assetPath: presetUrl, category: AvatarCategory.animal));
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: AvatarPickerPage(authService: auth, initialProfile: auth.currentUser),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('avatar-option-$presetUrl'), skipOffstage: false), findsNothing);
+    await tester.tap(find.text('Animal'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('avatar-option-$presetUrl'), skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('profile page shows the account role badge on the avatar',
@@ -2806,7 +2855,7 @@ void main() {
   });
 
   group('event attachments', () {
-    testWidgets('Add Event no longer offers adding attachments', (WidgetTester tester) async {
+    testWidgets('Add Event offers attaching files again', (WidgetTester tester) async {
       await tester.pumpWidget(
         BarangayCalendarApp(
           authServiceFactory: () async => MemoryAuthService.signedIn(),
@@ -2816,15 +2865,17 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('calendar-add-event-fab')));
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text('Save event'), 300, scrollable: find.byType(Scrollable).first);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('add-event-attachment-button')),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
 
-      expect(find.byKey(const Key('add-event-attachment-button')), findsNothing);
-      expect(find.text('Add attachment'), findsNothing);
-      // A new event has no old files, so there's no attachments panel at all.
-      expect(find.byKey(const Key('add-event-existing-attachments')), findsNothing);
+      expect(find.byKey(const Key('add-event-attachment-button')), findsOneWidget);
+      expect(find.textContaining('Pictures are made smaller automatically'), findsOneWidget);
     });
 
-    testWidgets('editing an event still lets you remove files attached before',
+    testWidgets('editing an event lists its files, and they can be removed',
         (WidgetTester tester) async {
       final repo = MemoryEventRepository.seeded();
       await repo.uploadEventAttachment(
@@ -2848,18 +2899,13 @@ void main() {
       await tester.tap(find.text('Edit'));
       await tester.pumpAndSettle();
 
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('add-event-existing-attachments')),
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
+      const row = Key('existing-attachment-attachment-1');
+      await tester.scrollUntilVisible(find.byKey(row), 300, scrollable: find.byType(Scrollable).first);
       expect(find.text('agenda.pdf'), findsOneWidget);
-      expect(find.byKey(const Key('add-event-attachment-button')), findsNothing);
+      // Attaching more is still possible while editing.
+      expect(find.byKey(const Key('add-event-attachment-button')), findsOneWidget);
 
-      await tester.tap(find.descendant(
-        of: find.byKey(const Key('existing-attachment-attachment-1')),
-        matching: find.byType(IconButton),
-      ));
+      await tester.tap(find.descendant(of: find.byKey(row), matching: find.byType(IconButton)));
       await tester.pumpAndSettle();
 
       expect(find.text('agenda.pdf'), findsNothing);
