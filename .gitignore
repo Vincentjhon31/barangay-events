@@ -65,3 +65,10 @@ supabase/.temp/
 # Raw source avatar images (1080x1080, ~20MB) — the app only ships the
 # resized/compressed copies actually bundled at assets/avatars/.
 /PixCons/
+
+# Local machine files / generated output
+.claude/settings.local.json
+.vscode/
+android/build/
+# 36 MB duplicate of reel.mp4 - regenerate with docs/promo/render.mjs
+docs/promo/reel.webm
