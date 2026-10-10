@@ -737,6 +737,24 @@
     </form>
   </dialog>
 
+  <!-- Edit user -->
+  <dialog id="user-dialog" aria-labelledby="user-dialog-title">
+    <form id="user-form" method="dialog">
+      <div class="dlg-head"><h2 id="user-dialog-title">Edit account</h2><p>Changing the email changes what they sign in with.</p></div>
+      <div class="dlg-body">
+        <div class="field"><label for="usr-name">Full name</label><input id="usr-name" type="text" required maxlength="120" autocomplete="off"></div>
+        <div class="field"><label for="usr-email">Email</label><input id="usr-email" type="email" required autocomplete="off"></div>
+        <div class="field"><label for="usr-department">Office or department</label><input id="usr-department" type="text" placeholder="Optional" autocomplete="off"></div>
+        <div class="field"><label for="usr-phone">Contact number</label><input id="usr-phone" type="tel" placeholder="Optional" autocomplete="off"></div>
+        <div id="user-msg"></div>
+      </div>
+      <div class="dlg-foot">
+        <button class="btn ghost" type="button" value="cancel" data-close>Cancel</button>
+        <button class="btn primary" type="submit" id="user-submit">Save changes</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Confirm -->
   <dialog id="confirm-dialog" aria-labelledby="confirm-title">
     <div class="dlg-head"><h2 id="confirm-title"></h2><p id="confirm-text"></p></div>
@@ -1104,8 +1122,10 @@
         '<div><dt>LGU application</dt><dd>' + esc(u.lgu_request_status || 'None') + '</dd></div>' +
         '</dl><div><dt style="font-size:12.5px;color:var(--ink-3);font-weight:700;margin-bottom:4px">Groups</dt><div data-groups>Loading…</div></div>' +
         '<div class="actions" style="justify-content:flex-start">' +
+          '<button class="btn ghost sm" type="button" data-edit-user="' + esc(u.user_id) + '">Edit details</button>' +
           '<button class="btn ghost sm" type="button" data-reset-password="' + esc(u.user_id) + '" data-email="' + esc(u.email) + '">Reset password</button>' +
           (u.is_kiosk_account ? '<button class="btn ghost sm" type="button" data-reset-passcode="' + esc(u.user_id) + '">Reset kiosk passcode</button>' : '') +
+          (me && u.user_id === me.id ? '' : '<button class="btn danger-ghost sm" type="button" data-delete-user="' + esc(u.user_id) + '">Delete account</button>') +
         '</div><div data-detail-msg></div></li>';
     }
     function loadUserGroups(userId) {
@@ -1132,6 +1152,10 @@
         resetPassword(btn, btn.dataset.resetPassword, btn.dataset.email);
       } else if (btn.dataset.resetPasscode) {
         resetPasscode(btn, btn.dataset.resetPasscode);
+      } else if (btn.dataset.editUser) {
+        openUserForm(btn.dataset.editUser);
+      } else if (btn.dataset.deleteUser) {
+        deleteUser(btn, btn.dataset.deleteUser);
       }
     });
     $('users-list').addEventListener('change', function (e) {
@@ -1187,6 +1211,63 @@
         }).catch(function (err) {
           return functionErrorText(err).then(function (t) { notice(msg, esc(t), 'error'); });
         }).then(function () { busy(btn, false); });
+      });
+    }
+
+    var editingUser = null;
+    function openUserForm(userId) {
+      var u = userById(userId);
+      if (!u) return;
+      editingUser = u;
+      $('usr-name').value = u.display_name || '';
+      $('usr-email').value = u.email || '';
+      $('usr-department').value = u.department || '';
+      $('usr-phone').value = u.phone_number || '';
+      notice($('user-msg'), '', '');
+      $('user-dialog').showModal();
+      $('usr-name').focus();
+    }
+    $('user-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var u = editingUser;
+      var name = $('usr-name').value.trim();
+      var email = $('usr-email').value.trim();
+      var msg = $('user-msg');
+      if (!name) { notice(msg, 'Add a name.', 'error'); return; }
+      var btn = $('user-submit');
+      busy(btn, true, 'Saving…');
+      sb.functions.invoke('admin-update-user', {
+        body: { userId: u.user_id, email: email, displayName: name, department: $('usr-department').value.trim(), phoneNumber: $('usr-phone').value.trim() }
+      }).then(function (res) {
+        if (res.error) throw res.error;
+        $('user-dialog').close();
+        toast('Saved changes to ' + name + '.');
+        return loadUsers();
+      }).catch(function (err) {
+        return functionErrorText(err).then(function (t) { notice(msg, esc(t), 'error'); });
+      }).then(function () { busy(btn, false); });
+    });
+    function deleteUser(btn, userId) {
+      var u = userById(userId);
+      if (!u) return;
+      var who = u.display_name || u.email;
+      confirmDialog({
+        title: 'Delete ' + who + '\'s account?',
+        text: 'This can\'t be undone. They can no longer sign in, and any groups they created are deleted. Events they posted stay.',
+        confirm: 'Delete account', danger: true
+      }).then(function (ok) {
+        if (!ok) return;
+        var msg = btn.closest('.detail').querySelector('[data-detail-msg]');
+        busy(btn, true, 'Deleting…');
+        sb.functions.invoke('admin-delete-user', { body: { userId: userId } }).then(function (res) {
+          if (res.error) throw res.error;
+          expandedUser = null;
+          toast('Deleted ' + who + '.');
+          return Promise.all([loadUsers(), loadApplications(), loadStats()]);
+        }).catch(function (err) {
+          busy(btn, false);
+          return functionErrorText(err).then(function (t) { notice(msg, esc(t), 'error'); });
+        });
       });
     }
 
