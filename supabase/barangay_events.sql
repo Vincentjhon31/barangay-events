@@ -2105,3 +2105,341 @@ begin
 end $$;
 
 notify pgrst, 'reload schema';
+
+-- ============================================================
+-- Event chat (October 2026). Safe to re-run on an existing database.
+--
+-- Every public/group event gets a chat (event_comments) shown from the
+-- chat button on its details sheet. Who can do what:
+--   * read  — anyone who can see the event itself (the barangay_events
+--             RLS policies apply inside the exists() subquery, same as
+--             event_attachments);
+--   * post  — the same people, only as themselves;
+--   * edit  — the message's author only (edit_event_comment RPC), which
+--             stamps edited_at so the chat can show "Edited";
+--   * delete — the message's author, the event's creator (moderating
+--             their own event), or a superadmin (delete_event_comment
+--             RPC). Messenger-style: the row stays with its text wiped and
+--             deleted_at/deleted_by set, so the chat shows "X deleted a
+--             message" in its place. Clients have no UPDATE or DELETE
+--             policy at all — both changes only happen through the RPCs,
+--             so nobody can erase a message without leaving that trace.
+--
+-- author_name/author_avatar_url/author_role are denormalized like
+-- barangay_events.created_by_name, but filled by a trigger from the
+-- poster's own profile (a client can't post under someone else's name)
+-- and kept current when they edit their profile — profiles are only
+-- readable by their owner, so other readers couldn't look them up.
+--
+-- created_at is a real instant (plain now()), NOT the Philippine
+-- wall-clock-labeled-UTC convention event start/end times use; the app
+-- converts it to Asia/Manila time for display.
+-- ============================================================
+
+create table if not exists public.event_comments (
+  id uuid primary key default gen_random_uuid(),
+  event_id text not null references public.barangay_events(id) on delete cascade,
+  user_id uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  body text not null check (char_length(body) between 1 and 1000),
+  author_name text,
+  author_avatar_url text,
+  author_role text not null default 'citizen',
+  created_at timestamptz not null default now()
+);
+create index if not exists event_comments_event_created_idx
+  on public.event_comments (event_id, created_at desc);
+alter table public.event_comments enable row level security;
+
+alter table public.event_comments add column if not exists edited_at timestamptz;
+alter table public.event_comments add column if not exists deleted_at timestamptz;
+alter table public.event_comments add column if not exists deleted_by uuid references public.profiles(id) on delete set null;
+
+-- A deleted message's text is wiped, so the original 1-1000 character rule
+-- only applies while it's live. (event_comments_body_check is the name
+-- Postgres gave the column's inline check above.)
+alter table public.event_comments drop constraint if exists event_comments_body_check;
+alter table public.event_comments add constraint event_comments_body_check check (
+  (deleted_at is null and char_length(body) between 1 and 1000)
+  or (deleted_at is not null and body = '')
+);
+
+do $$ begin
+  if not exists (select 1 from pg_policies where tablename = 'event_comments' and policyname = 'read chat of visible events') then
+    create policy "read chat of visible events" on public.event_comments for select
+      using (exists (select 1 from barangay_events be where be.id = event_comments.event_id));
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'event_comments' and policyname = 'post to chat of visible events') then
+    create policy "post to chat of visible events" on public.event_comments for insert
+      with check (
+        user_id = auth.uid()
+        and exists (select 1 from barangay_events be where be.id = event_comments.event_id)
+      );
+  end if;
+end $$;
+
+-- An earlier draft of this block let clients hard-delete rows, which would
+-- skip the "deleted a message" trace. Deleting now only goes through
+-- delete_event_comment below.
+drop policy if exists "author, event creator or superadmin can delete chat messages" on public.event_comments;
+
+-- Runs before RLS's WITH CHECK and the body length check, so both see the
+-- trimmed body and the caller's own user id.
+create or replace function public.fill_event_comment_author()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_name text;
+  v_email text;
+  v_avatar text;
+  v_role text;
+begin
+  new.user_id := auth.uid();
+  new.body := trim(coalesce(new.body, ''));
+  new.created_at := now();
+  -- A new message is never born edited or deleted.
+  new.edited_at := null;
+  new.deleted_at := null;
+  new.deleted_by := null;
+  select p.display_name, p.email, p.avatar_url, p.role
+    into v_name, v_email, v_avatar, v_role
+    from profiles p where p.id = new.user_id;
+  new.author_name := coalesce(nullif(trim(v_name), ''), nullif(split_part(coalesce(v_email, ''), '@', 1), ''), 'Someone');
+  new.author_avatar_url := v_avatar;
+  new.author_role := coalesce(v_role, 'citizen');
+  return new;
+end $$;
+
+drop trigger if exists fill_event_comment_author on public.event_comments;
+create trigger fill_event_comment_author
+  before insert on public.event_comments
+  for each row execute function public.fill_event_comment_author();
+
+-- Security definer: one person's profile edit must reach all of their
+-- messages, including ones on events they didn't create.
+create or replace function public.sync_event_comment_author()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.display_name is distinct from old.display_name
+     or new.avatar_url is distinct from old.avatar_url
+     or new.role is distinct from old.role then
+    update event_comments c set
+      author_name = coalesce(nullif(trim(new.display_name), ''), nullif(split_part(coalesce(new.email, ''), '@', 1), ''), 'Someone'),
+      author_avatar_url = new.avatar_url,
+      author_role = coalesce(new.role, 'citizen')
+    where c.user_id = new.id;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists sync_event_comment_author on public.profiles;
+create trigger sync_event_comment_author
+  after update of display_name, avatar_url, role on public.profiles
+  for each row execute function public.sync_event_comment_author();
+
+-- Author-only edit. Security definer because clients have no UPDATE
+-- policy on event_comments.
+create or replace function public.edit_event_comment(p_comment_id uuid, p_body text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_body text := trim(coalesce(p_body, ''));
+  v_author uuid;
+  v_deleted_at timestamptz;
+begin
+  select c.user_id, c.deleted_at into v_author, v_deleted_at
+    from event_comments c where c.id = p_comment_id;
+  if not found then
+    raise exception 'Message not found';
+  end if;
+  if auth.uid() is null or v_author is distinct from auth.uid() then
+    raise exception 'Only the author can edit this message';
+  end if;
+  if v_deleted_at is not null then
+    raise exception 'A deleted message cannot be edited';
+  end if;
+  if v_body = '' then
+    raise exception 'Message cannot be empty';
+  end if;
+  if char_length(v_body) > 1000 then
+    raise exception 'Message is too long (1000 characters max)';
+  end if;
+
+  update event_comments c set body = v_body, edited_at = now()
+    where c.id = p_comment_id and c.body is distinct from v_body;
+end $$;
+
+-- Delete with a trace: wipes the text, keeps the row. Allowed for the
+-- author, the event's creator, or a superadmin. Deleting an already
+-- deleted message is a no-op.
+create or replace function public.delete_event_comment(p_comment_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_author uuid;
+  v_deleted_at timestamptz;
+  v_event_creator uuid;
+begin
+  select c.user_id, c.deleted_at, e.created_by_id
+    into v_author, v_deleted_at, v_event_creator
+    from event_comments c
+    join barangay_events e on e.id = c.event_id
+    where c.id = p_comment_id;
+  if not found then
+    raise exception 'Message not found';
+  end if;
+  if v_deleted_at is not null then
+    return;
+  end if;
+  if auth.uid() is null or not (
+    v_author = auth.uid()
+    or v_event_creator is not distinct from auth.uid()
+    or exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin')
+  ) then
+    raise exception 'Only the author, the event creator, or a superadmin can delete this message';
+  end if;
+
+  update event_comments c
+    set body = '', deleted_at = now(), deleted_by = auth.uid()
+    where c.id = p_comment_id;
+end $$;
+
+revoke all on function public.edit_event_comment(uuid, text) from public, anon;
+revoke all on function public.delete_event_comment(uuid) from public, anon;
+grant execute on function public.edit_event_comment(uuid, text) to authenticated;
+grant execute on function public.delete_event_comment(uuid) to authenticated;
+
+-- The chat page streams new messages live. Guarded, because adding a
+-- table that's already in the publication is an error.
+do $$ begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'event_comments'
+  ) then
+    alter publication supabase_realtime add table public.event_comments;
+  end if;
+end $$;
+
+notify pgrst, 'reload schema';
+
+-- ============================================================
+-- Event chat push notifications + chat indicators (October 2026).
+-- Safe to re-run. Needs the "Event chat (October 2026)" block above.
+--
+-- PUSH: every new chat message calls the send-chat-notification Edge
+-- Function straight from the database (pg_net, like the reminder cron
+-- job) — no dashboard webhook to set up. Who gets notified:
+--   * a GROUP event's chat  -> every member of that group (it's their
+--                              group's conversation);
+--   * a PUBLIC event's chat -> the event's creator plus everyone who has
+--                              written in that chat (not the whole town);
+--   * never the sender, and never for a personal event.
+-- Pushes go to each recipient's own user-<uid> FCM topic (which every
+-- signed-in phone already subscribes to), never to a broadcast topic.
+-- Edits and deletes don't notify anyone.
+--
+-- The function authenticates with the SAME shared secret the reminder
+-- cron job uses: vault secret 'reminder_cron_secret' here, and the
+-- REMINDER_CRON_SECRET Edge Function secret on the other end — both are
+-- already set up, so nothing new to configure. Deploy once:
+--   supabase functions deploy send-chat-notification --use-api --no-verify-jwt
+-- (--no-verify-jwt is REQUIRED: the bearer token is that random secret,
+-- not a JWT, so Supabase's gateway would reject it with a 401.)
+--
+-- If anything here fails (vault secret missing, pg_net down), the message
+-- is still posted — a notification is never worth losing a message over.
+-- ============================================================
+
+create or replace function public.notify_event_comment()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_event record;
+  v_recipients jsonb;
+  v_secret text;
+begin
+  select e.id, e.title, e.event_type, e.group_id, e.group_name, e.created_by_id
+    into v_event
+    from barangay_events e where e.id = new.event_id;
+  if not found or v_event.event_type = 'personal' then
+    return new;
+  end if;
+
+  select coalesce(jsonb_agg(distinct r.uid), '[]'::jsonb)
+    into v_recipients
+    from (
+      select gm.user_id as uid
+        from group_members gm
+        where v_event.event_type = 'shared' and gm.group_id = v_event.group_id
+      union
+      select v_event.created_by_id
+        where v_event.event_type = 'public'
+      union
+      select c.user_id
+        from event_comments c
+        where v_event.event_type = 'public' and c.event_id = new.event_id
+    ) r
+    where r.uid is not null and r.uid <> new.user_id;
+
+  if jsonb_array_length(v_recipients) = 0 then
+    return new;
+  end if;
+
+  select ds.decrypted_secret into v_secret
+    from vault.decrypted_secrets ds where ds.name = 'reminder_cron_secret';
+  if v_secret is null then
+    raise warning 'notify_event_comment: vault secret reminder_cron_secret is missing; no push sent';
+    return new;
+  end if;
+
+  perform net.http_post(
+    url := 'https://xuxnoydakqembrytdbyz.supabase.co/functions/v1/send-chat-notification',
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || v_secret,
+      'Content-Type', 'application/json'
+    ),
+    body := jsonb_build_object(
+      'comment_id', new.id,
+      'event_id', new.event_id,
+      'event_title', v_event.title,
+      'event_type', v_event.event_type,
+      'group_name', v_event.group_name,
+      'author_id', new.user_id,
+      'author_name', new.author_name,
+      'body', new.body,
+      'recipients', v_recipients
+    ),
+    timeout_milliseconds := 30000
+  );
+  return new;
+exception when others then
+  raise warning 'notify_event_comment failed: %', sqlerrm;
+  return new;
+end $$;
+
+drop trigger if exists notify_event_comment on public.event_comments;
+create trigger notify_event_comment
+  after insert on public.event_comments
+  for each row execute function public.notify_event_comment();
+
+-- CHAT INDICATORS: one row per event chat the caller can see (message
+-- count, when the latest message was posted and by whom), for the chat
+-- pill on event cards. Security INVOKER on purpose: the event_comments
+-- RLS policies apply, so it only ever covers chats this user can read.
+-- Deleted messages don't count.
+create or replace function public.event_chat_summaries()
+returns table(
+  out_event_id text,
+  out_message_count integer,
+  out_last_message_at timestamptz,
+  out_last_author_id uuid
+)
+language sql stable security invoker set search_path = public as $$
+  select c.event_id,
+         count(*)::integer,
+         max(c.created_at),
+         (array_agg(c.user_id order by c.created_at desc))[1]
+  from event_comments c
+  where c.deleted_at is null
+  group by c.event_id;
+$$;
+
+revoke all on function public.event_chat_summaries() from public, anon;
+grant execute on function public.event_chat_summaries() to authenticated;
+
+notify pgrst, 'reload schema';

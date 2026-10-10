@@ -636,6 +636,154 @@ class AppLocalizationsEn extends AppLocalizations {
   String get callButtonTooltip => 'Call';
 
   @override
+  String get manilaClockTooltip => 'Philippine Standard Time (Asia/Manila)';
+
+  @override
+  String manilaClockSemantics(String time, String date) {
+    return 'Philippine time $time, $date';
+  }
+
+  @override
+  String get eventChatButtonTooltip => 'Open event chat';
+
+  @override
+  String get eventChatTitle => 'Event chat';
+
+  @override
+  String get eventChatSubtitle =>
+      'Everyone who can see this event can read and join in.';
+
+  @override
+  String get eventChatEmpty => 'No messages yet. Say hello! 👋';
+
+  @override
+  String get eventChatInputHint => 'Write a message…';
+
+  @override
+  String get eventChatSendTooltip => 'Send';
+
+  @override
+  String get eventChatLikeTooltip => 'Send a thumbs up';
+
+  @override
+  String get eventChatEmojiTooltip => 'Emoji';
+
+  @override
+  String get eventChatKeyboardTooltip => 'Keyboard';
+
+  @override
+  String get eventChatSendFailed =>
+      'Couldn\'t send your message. Check your connection and try again.';
+
+  @override
+  String get eventChatLoadFailed =>
+      'Couldn\'t load the chat. Check your connection and try again.';
+
+  @override
+  String get eventChatRetry => 'Try again';
+
+  @override
+  String get eventChatCopyMessage => 'Copy text';
+
+  @override
+  String get eventChatCopied => 'Message copied.';
+
+  @override
+  String get eventChatDeleteMessage => 'Delete message';
+
+  @override
+  String get eventChatMessageDeleted => 'Message deleted.';
+
+  @override
+  String get eventChatDeleteFailed => 'Couldn\'t delete the message.';
+
+  @override
+  String get eventChatEditMessage => 'Edit message';
+
+  @override
+  String get eventChatEditing => 'Editing message';
+
+  @override
+  String get eventChatCancelEdit => 'Cancel editing';
+
+  @override
+  String get eventChatSaveEdit => 'Save changes';
+
+  @override
+  String get eventChatEdited => 'Edited';
+
+  @override
+  String get eventChatEditFailed =>
+      'Couldn\'t save your changes. Check your connection and try again.';
+
+  @override
+  String get eventChatYouDeleted => 'You deleted a message';
+
+  @override
+  String eventChatUserDeleted(String name) {
+    return '$name deleted a message';
+  }
+
+  @override
+  String get eventChatRemovedByYou => 'You removed this message';
+
+  @override
+  String get eventChatRemovedByModerator =>
+      'This message was removed by a moderator';
+
+  @override
+  String get eventChatDeleteConfirmTitle => 'Delete this message?';
+
+  @override
+  String get eventChatDeleteConfirmBody =>
+      'It will be removed for everyone. The chat will show that a message was deleted.';
+
+  @override
+  String get eventChatDeleteConfirmButton => 'Delete';
+
+  @override
+  String eventChatNoticeLabel(String event) {
+    return 'New message · $event';
+  }
+
+  @override
+  String get eventChatNoticeGenericLabel => 'New chat message';
+
+  @override
+  String eventChatIndicatorTooltip(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count chat messages',
+      one: '1 chat message',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String eventChatIndicatorUnreadTooltip(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count chat messages · new',
+      one: '1 chat message · new',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get eventChatYou => 'You';
+
+  @override
+  String get eventChatSomeone => 'Someone';
+
+  @override
+  String get eventChatToday => 'Today';
+
+  @override
+  String get eventChatYesterday => 'Yesterday';
+
+  @override
   String get callLinkError => 'Could not open the phone dialer.';
 
   @override
@@ -1514,7 +1662,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get privacyVisibilityBody =>
-      'Your profile details are visible only to you. If you join a group, that group\'s other members can see your display name and profile picture in the member list. Events follow their own visibility: Public events are visible to everyone, Group events only to that group\'s members, and Personal events only to you.';
+      'Your profile details are visible only to you. If you join a group, that group\'s other members can see your display name and profile picture in the member list. Events follow their own visibility: Public events are visible to everyone, Group events only to that group\'s members, and Personal events only to you. Messages you post in an event\'s chat — along with your display name and profile picture — are visible to everyone who can see that event.';
 
   @override
   String get privacyThirdPartyHeading => 'Third-Party Services';

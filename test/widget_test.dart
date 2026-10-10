@@ -3209,6 +3209,9 @@ class _TappedNotificationPushService implements PushNotificationService {
     void Function()? onAppUpdateAvailable,
     void Function(String eventId)? onEventReminder,
     void Function(String eventId)? onNotificationTapped,
+    void Function(ChatPushMessage message)? onChatMessage,
+    void Function(String eventId)? onChatNotificationTapped,
+    bool Function(String eventId)? isChatOpen,
   }) async {
     onNotificationTapped?.call(eventId);
   }

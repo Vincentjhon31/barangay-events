@@ -642,6 +642,154 @@ class AppLocalizationsFil extends AppLocalizations {
   String get callButtonTooltip => 'Tumawag';
 
   @override
+  String get manilaClockTooltip => 'Oras sa Pilipinas (Asia/Manila)';
+
+  @override
+  String manilaClockSemantics(String time, String date) {
+    return 'Oras sa Pilipinas $time, $date';
+  }
+
+  @override
+  String get eventChatButtonTooltip => 'Buksan ang chat ng kaganapan';
+
+  @override
+  String get eventChatTitle => 'Chat ng kaganapan';
+
+  @override
+  String get eventChatSubtitle =>
+      'Makakabasa at makakasali ang lahat ng nakakakita sa kaganapang ito.';
+
+  @override
+  String get eventChatEmpty => 'Wala pang mensahe. Mag-hello ka! 👋';
+
+  @override
+  String get eventChatInputHint => 'Sumulat ng mensahe…';
+
+  @override
+  String get eventChatSendTooltip => 'Ipadala';
+
+  @override
+  String get eventChatLikeTooltip => 'Magpadala ng thumbs up';
+
+  @override
+  String get eventChatEmojiTooltip => 'Emoji';
+
+  @override
+  String get eventChatKeyboardTooltip => 'Keyboard';
+
+  @override
+  String get eventChatSendFailed =>
+      'Hindi naipadala ang iyong mensahe. Suriin ang iyong koneksyon at subukang muli.';
+
+  @override
+  String get eventChatLoadFailed =>
+      'Hindi ma-load ang chat. Suriin ang iyong koneksyon at subukang muli.';
+
+  @override
+  String get eventChatRetry => 'Subukang muli';
+
+  @override
+  String get eventChatCopyMessage => 'Kopyahin ang teksto';
+
+  @override
+  String get eventChatCopied => 'Nakopya ang mensahe.';
+
+  @override
+  String get eventChatDeleteMessage => 'Burahin ang mensahe';
+
+  @override
+  String get eventChatMessageDeleted => 'Nabura ang mensahe.';
+
+  @override
+  String get eventChatDeleteFailed => 'Hindi mabura ang mensahe.';
+
+  @override
+  String get eventChatEditMessage => 'I-edit ang mensahe';
+
+  @override
+  String get eventChatEditing => 'Ine-edit ang mensahe';
+
+  @override
+  String get eventChatCancelEdit => 'Kanselahin ang pag-edit';
+
+  @override
+  String get eventChatSaveEdit => 'I-save ang mga pagbabago';
+
+  @override
+  String get eventChatEdited => 'Na-edit';
+
+  @override
+  String get eventChatEditFailed =>
+      'Hindi na-save ang mga pagbabago. Suriin ang iyong koneksyon at subukang muli.';
+
+  @override
+  String get eventChatYouDeleted => 'Binura mo ang isang mensahe';
+
+  @override
+  String eventChatUserDeleted(String name) {
+    return 'Binura ni $name ang isang mensahe';
+  }
+
+  @override
+  String get eventChatRemovedByYou => 'Tinanggal mo ang mensaheng ito';
+
+  @override
+  String get eventChatRemovedByModerator =>
+      'Tinanggal ng moderator ang mensaheng ito';
+
+  @override
+  String get eventChatDeleteConfirmTitle => 'Burahin ang mensaheng ito?';
+
+  @override
+  String get eventChatDeleteConfirmBody =>
+      'Mabubura ito para sa lahat. Makikita sa chat na may binurang mensahe.';
+
+  @override
+  String get eventChatDeleteConfirmButton => 'Burahin';
+
+  @override
+  String eventChatNoticeLabel(String event) {
+    return 'Bagong mensahe · $event';
+  }
+
+  @override
+  String get eventChatNoticeGenericLabel => 'Bagong mensahe sa chat';
+
+  @override
+  String eventChatIndicatorTooltip(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count na mensahe sa chat',
+      one: '1 mensahe sa chat',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String eventChatIndicatorUnreadTooltip(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count na mensahe sa chat · may bago',
+      one: '1 mensahe sa chat · bago',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get eventChatYou => 'Ikaw';
+
+  @override
+  String get eventChatSomeone => 'Isang user';
+
+  @override
+  String get eventChatToday => 'Ngayon';
+
+  @override
+  String get eventChatYesterday => 'Kahapon';
+
+  @override
   String get callLinkError => 'Hindi mabuksan ang phone dialer.';
 
   @override
@@ -1534,7 +1682,7 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get privacyVisibilityBody =>
-      'Ikaw lang ang makakakita ng mga detalye ng iyong profile. Kung sumali ka sa isang grupo, makikita ng ibang miyembro ng grupong iyon ang iyong pangalan at larawan sa listahan ng miyembro. Sinusunod ng mga kaganapan ang sarili nilang visibility: makikita ng lahat ang mga Pampublikong kaganapan, ng mga miyembro lang ng grupo ang mga kaganapan ng Grupo, at ikaw lang ang makakakita ng mga Personal na kaganapan.';
+      'Ikaw lang ang makakakita ng mga detalye ng iyong profile. Kung sumali ka sa isang grupo, makikita ng ibang miyembro ng grupong iyon ang iyong pangalan at larawan sa listahan ng miyembro. Sinusunod ng mga kaganapan ang sarili nilang visibility: makikita ng lahat ang mga Pampublikong kaganapan, ng mga miyembro lang ng grupo ang mga kaganapan ng Grupo, at ikaw lang ang makakakita ng mga Personal na kaganapan. Ang mga mensaheng ipo-post mo sa chat ng isang kaganapan — kasama ang iyong pangalan at larawan — ay makikita ng lahat ng nakakakita sa kaganapang iyon.';
 
   @override
   String get privacyThirdPartyHeading => 'Mga Serbisyo ng Ikatlong Partido';

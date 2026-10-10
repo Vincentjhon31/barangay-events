@@ -29,6 +29,25 @@ const AndroidNotificationChannel _eventUpdatesChannel = AndroidNotificationChann
   importance: Importance.high,
 );
 
+/// Chat messages get their own channel, so someone can mute (or change
+/// the sound of) event chats in Android's settings without losing event
+/// announcements and reminders. send-chat-notification targets this id.
+const AndroidNotificationChannel _eventChatChannel = AndroidNotificationChannel(
+  'event_chat',
+  'Event chat',
+  description: 'New messages in the chats of events you posted, joined in, or belong to the group of.',
+  importance: Importance.high,
+);
+
+/// What a chat push carries (see supabase/functions/send-chat-notification).
+class ChatPushMessage {
+  const ChatPushMessage({required this.eventId, this.authorName, this.preview});
+
+  final String eventId;
+  final String? authorName;
+  final String? preview;
+}
+
 /// Keeps this device's push subscriptions in sync with what the signed-in
 /// user can see, and displays incoming notifications.
 ///
@@ -58,10 +77,20 @@ abstract class PushNotificationService {
   /// (`getInitialMessage`), unlike [onEventReminder]/[onAppUpdateAvailable]
   /// which only fire for a push arriving while already in the foreground.
   /// The caller uses it to open that event's detail sheet directly.
+  ///
+  /// [onChatMessage] fires for a chat push arriving while the app is in
+  /// the foreground (for the in-app toast), unless [isChatOpen] says that
+  /// chat is already on screen — then the push is dropped entirely, with
+  /// no system notification either. [onChatNotificationTapped] replaces
+  /// [onNotificationTapped] for a tapped chat notification, so the caller
+  /// can open the chat itself rather than the event's details.
   Future<void> initialize({
     void Function()? onAppUpdateAvailable,
     void Function(String eventId)? onEventReminder,
     void Function(String eventId)? onNotificationTapped,
+    void Function(ChatPushMessage message)? onChatMessage,
+    void Function(String eventId)? onChatNotificationTapped,
+    bool Function(String eventId)? isChatOpen,
   });
 
   /// Subscribes to [publicEventsTopic] plus one topic per id in [groupIds],
@@ -119,16 +148,25 @@ class FirebasePushNotificationService implements PushNotificationService {
   void Function()? _onAppUpdateAvailable;
   void Function(String eventId)? _onEventReminder;
   void Function(String eventId)? _onNotificationTapped;
+  void Function(ChatPushMessage message)? _onChatMessage;
+  void Function(String eventId)? _onChatNotificationTapped;
+  bool Function(String eventId)? _isChatOpen;
 
   @override
   Future<void> initialize({
     void Function()? onAppUpdateAvailable,
     void Function(String eventId)? onEventReminder,
     void Function(String eventId)? onNotificationTapped,
+    void Function(ChatPushMessage message)? onChatMessage,
+    void Function(String eventId)? onChatNotificationTapped,
+    bool Function(String eventId)? isChatOpen,
   }) async {
     _onAppUpdateAvailable = onAppUpdateAvailable;
     _onEventReminder = onEventReminder;
     _onNotificationTapped = onNotificationTapped;
+    _onChatMessage = onChatMessage;
+    _onChatNotificationTapped = onChatNotificationTapped;
+    _isChatOpen = isChatOpen;
 
     // Always (re)attach, replacing whatever listener was there before —
     // see the static fields above. Background/terminated delivery is
@@ -152,9 +190,10 @@ class FirebasePushNotificationService implements PushNotificationService {
       android: AndroidInitializationSettings('@mipmap/ic_launcher'),
     );
     await _localNotifications.initialize(settings: initSettings);
-    await _localNotifications
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(_eventUpdatesChannel);
+    final android = _localNotifications
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    await android?.createNotificationChannel(_eventUpdatesChannel);
+    await android?.createNotificationChannel(_eventChatChannel);
 
     await _resetStaleTopicsOnce(await SharedPreferences.getInstance());
     await _messaging.subscribeToTopic(publicEventsTopic);
@@ -195,6 +234,9 @@ class FirebasePushNotificationService implements PushNotificationService {
     final key = switch (data['type']) {
       'event_reminder' => 'reminder:$eventId:${data['window']}',
       'app_update' => 'app_update:${data['version']}',
+      // One tray entry per chat, showing its latest message (matches the
+      // server's `chat-<eventId>` tag for background delivery).
+      'chat_message' => 'chat:$eventId',
       _ => eventId != null
           ? 'event:$eventId:${data['changeType']}'
           : (message.messageId ?? '${message.hashCode}'),
@@ -204,15 +246,31 @@ class FirebasePushNotificationService implements PushNotificationService {
 
   void _handleNotificationTap(RemoteMessage message) {
     final eventId = message.data['eventId'] as String?;
-    if (eventId != null) _onNotificationTapped?.call(eventId);
+    if (eventId == null) return;
+    if (message.data['type'] == 'chat_message' && _onChatNotificationTapped != null) {
+      _onChatNotificationTapped!(eventId);
+    } else {
+      _onNotificationTapped?.call(eventId);
+    }
   }
 
   Future<void> _showForegroundNotification(RemoteMessage message) async {
+    final isChat = message.data['type'] == 'chat_message';
     if (message.data['type'] == 'app_update') {
       _onAppUpdateAvailable?.call();
     } else if (message.data['type'] == 'event_reminder') {
       final eventId = message.data['eventId'] as String?;
       if (eventId != null) _onEventReminder?.call(eventId);
+    } else if (isChat) {
+      final eventId = message.data['eventId'] as String?;
+      if (eventId == null) return;
+      // Already reading this chat — the message is right there on screen.
+      if (_isChatOpen?.call(eventId) ?? false) return;
+      _onChatMessage?.call(ChatPushMessage(
+        eventId: eventId,
+        authorName: message.data['authorName'] as String?,
+        preview: message.data['preview'] as String?,
+      ));
     }
 
     final notification = message.notification;
@@ -222,17 +280,28 @@ class FirebasePushNotificationService implements PushNotificationService {
       id: _notificationIdFor(message),
       title: notification.title,
       body: notification.body,
-      notificationDetails: const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'event_updates',
-          'Event updates',
-          channelDescription: 'New public and group events posted to the barangay calendar.',
-          importance: Importance.high,
-          priority: Priority.high,
-          // A duplicate that replaces an already-showing notification
-          // (same id, see _notificationIdFor) updates it silently.
-          onlyAlertOnce: true,
-        ),
+      notificationDetails: NotificationDetails(
+        android: isChat
+            ? AndroidNotificationDetails(
+                _eventChatChannel.id,
+                _eventChatChannel.name,
+                channelDescription: _eventChatChannel.description,
+                importance: Importance.high,
+                priority: Priority.high,
+                // Every new message in a chat should alert, even though it
+                // replaces that chat's previous notification in the tray.
+                onlyAlertOnce: false,
+              )
+            : const AndroidNotificationDetails(
+                'event_updates',
+                'Event updates',
+                channelDescription: 'New public and group events posted to the barangay calendar.',
+                importance: Importance.high,
+                priority: Priority.high,
+                // A duplicate that replaces an already-showing notification
+                // (same id, see _notificationIdFor) updates it silently.
+                onlyAlertOnce: true,
+              ),
       ),
     );
   }
@@ -284,6 +353,9 @@ class NoopPushNotificationService implements PushNotificationService {
     void Function()? onAppUpdateAvailable,
     void Function(String eventId)? onEventReminder,
     void Function(String eventId)? onNotificationTapped,
+    void Function(ChatPushMessage message)? onChatMessage,
+    void Function(String eventId)? onChatNotificationTapped,
+    bool Function(String eventId)? isChatOpen,
   }) async {}
 
   @override

@@ -22,11 +22,14 @@ import 'attachment_image_viewer.dart';
 import 'auth_service.dart';
 import 'day_detail_page.dart';
 import 'day_timeline_view.dart';
+import 'event_chat_activity.dart';
+import 'event_chat_page.dart';
 import 'event_colors.dart';
 import 'event_conflicts.dart';
 import 'event_store.dart';
 import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
+import 'manila_clock.dart';
 import 'numeric_keypad.dart';
 import 'profile_pages.dart';
 import 'push_notifications.dart';
@@ -1014,8 +1017,9 @@ class CalendarScreen extends StatefulWidget {
 /// in _buildNewEventBanner. [newEvent]/[newEvents] come from the realtime
 /// event stream (_detectNewlyPostedEvents); [reminder] comes from a
 /// foreground `user-<uid>` FCM push (see send-event-reminders and
-/// PushNotificationService.onEventReminder).
-enum _NoticeKind { newEvent, newEvents, reminder }
+/// PushNotificationService.onEventReminder); [chat] from a foreground chat
+/// push (send-chat-notification / PushNotificationService.onChatMessage).
+enum _NoticeKind { newEvent, newEvents, reminder, chat }
 
 /// A single toast is either about one specific event (tapping opens it) —
 /// whether that's a freshly-posted event or a reminder for an
@@ -1024,17 +1028,26 @@ enum _NoticeKind { newEvent, newEvents, reminder }
 class _NewEventNotice {
   const _NewEventNotice.single(this.event)
       : count = 1,
-        kind = _NoticeKind.newEvent;
+        kind = _NoticeKind.newEvent,
+        chat = null;
   const _NewEventNotice.multiple(this.count)
       : event = null,
-        kind = _NoticeKind.newEvents;
+        kind = _NoticeKind.newEvents,
+        chat = null;
   const _NewEventNotice.reminder(this.event)
       : count = 1,
-        kind = _NoticeKind.reminder;
+        kind = _NoticeKind.reminder,
+        chat = null;
+  const _NewEventNotice.chat(this.event, ChatPushMessage this.chat)
+      : count = 1,
+        kind = _NoticeKind.chat;
 
   final BarangayEvent? event;
   final int count;
   final _NoticeKind kind;
+
+  /// Who wrote what, for a [_NoticeKind.chat] toast.
+  final ChatPushMessage? chat;
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
@@ -1089,6 +1102,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
   List<BarangayEvent> _events = const [];
   bool _eventsLoaded = false;
   late StreamSubscription<List<BarangayEvent>> _eventSubscription;
+
+  /// Chat counts/unread state behind every chat indicator, chat button and
+  /// chat page — null in a guest session, which has no chat at all.
+  EventChatActivity? _chatActivity;
 
   /// Watches this account's own `group_members` rows so a newly-approved
   /// join request (accepted from someone ELSE's session — see
@@ -1184,6 +1201,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
     unawaited(_loadFeedLastSeen());
     unawaited(_initializePushNotifications());
     unawaited(_loadKioskModeState());
+    if (widget.authService != null) {
+      _chatActivity = EventChatActivity(
+        repository: widget.eventRepository,
+        currentUserId: _currentUserId,
+      );
+      unawaited(_chatActivity!.start());
+    }
     if (_isGuestMode) _armGuestExitShrinkTimer();
     _eventSubscription = _listenToEvents();
     _groupMembershipSubscription = _listenToGroupMemberships();
@@ -1333,6 +1357,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
         onAppUpdateAvailable: () => unawaited(_checkForUpdates()),
         onEventReminder: _handleReminderPush,
         onNotificationTapped: (eventId) => unawaited(_openEventById(eventId)),
+        onChatMessage: _handleChatPush,
+        onChatNotificationTapped: (eventId) => unawaited(_openChatById(eventId)),
+        isChatOpen: (eventId) => _chatActivity?.openChatEventId == eventId,
       );
     } catch (_) {
       // Firebase not configured yet, or the user denied the permission —
@@ -1440,6 +1467,65 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _enqueueNewEventNotice(_NewEventNotice.reminder(event));
   }
 
+  /// Foreground handler for a chat push (see send-chat-notification and
+  /// PushNotificationService.onChatMessage) — the same toast as new events
+  /// and reminders, in a chat style, and a refresh so the event's chat
+  /// indicator lights up right away. Never called for the chat that's
+  /// already open (the push service checks isChatOpen first).
+  void _handleChatPush(ChatPushMessage message) {
+    unawaited(_chatActivity?.refresh());
+    if (_isReadOnlySession) return;
+    BarangayEvent? event;
+    for (final candidate in _events) {
+      if (candidate.id == message.eventId) {
+        event = candidate;
+        break;
+      }
+    }
+    _enqueueNewEventNotice(_NewEventNotice.chat(event, message));
+  }
+
+  /// Whether [event] has a chat this session can open: public and group
+  /// events only (a personal event has no one else to talk to), and not
+  /// in a read-only kiosk/guest session, which has no one to post as.
+  bool _canChatAbout(BarangayEvent event) =>
+      _currentUserId != null && !_isReadOnlySession && event.eventType != EventType.personal;
+
+  /// Opens [event]'s chat page directly — from its card's chat indicator,
+  /// a chat toast, or a tapped chat notification.
+  Future<void> _openEventChat(BarangayEvent event) async {
+    final userId = _currentUserId;
+    if (userId == null || !_canChatAbout(event)) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => EventChatPage(
+          event: event,
+          repository: widget.eventRepository,
+          currentUserId: userId,
+          canModerate: event.createdById == userId || _isSuperadmin,
+          activity: _chatActivity,
+        ),
+      ),
+    );
+  }
+
+  /// [_openEventChat] by id, for a tapped chat notification — same lookup
+  /// as [_openEventById].
+  Future<void> _openChatById(String eventId) async {
+    BarangayEvent? event;
+    for (final candidate in _events) {
+      if (candidate.id == eventId) {
+        event = candidate;
+        break;
+      }
+    }
+    event ??= await widget.eventRepository.getEventById(eventId);
+    if (event == null || !mounted) return;
+    // Already reading it (e.g. the tap landed while that chat was open).
+    if (_chatActivity?.openChatEventId == eventId) return;
+    await _openEventChat(event);
+  }
+
   /// Opens [eventId]'s detail sheet in response to a tapped push
   /// notification (see PushNotificationService.onNotificationTapped) —
   /// checks the already-loaded [_events] list first (the common case,
@@ -1516,6 +1602,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   /// something, matching the Groups tab's own pull-to-refresh.
   Future<void> _refreshEvents() async {
     _resubscribeEvents();
+    unawaited(_chatActivity?.refresh());
     await Future.delayed(const Duration(milliseconds: 400));
   }
 
@@ -1531,6 +1618,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
 
     if (!mounted) return;
+    if (profile != null) _chatActivity?.currentUserId = profile.id;
     setState(() {
       _userProfile = profile;
       // Seed the Group filter from the account's synced preference (see
@@ -1557,6 +1645,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void dispose() {
     unawaited(_eventSubscription.cancel());
     unawaited(_groupMembershipSubscription?.cancel());
+    _chatActivity?.dispose();
     _newEventNoticeTimer?.cancel();
     _kioskExitShrinkTimer?.cancel();
     _guestExitShrinkTimer?.cancel();
@@ -2799,24 +2888,37 @@ class _CalendarScreenState extends State<CalendarScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'MUNICIPALITY OF BONGABONG',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      letterSpacing: 1.2,
-                      fontWeight: FontWeight.w700,
-                    ),
+              // Both lines shrink to fit rather than wrap, so the live
+              // clock beside the avatar still fits on a narrow phone.
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'MUNICIPALITY OF BONGABONG',
+                  maxLines: 1,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        letterSpacing: 1.2,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
               ),
               const SizedBox(height: 2),
-              Text(
-                'eBongabong Calendar',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'eBongabong Calendar',
+                  maxLines: 1,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
               ),
             ],
           ),
         ),
+        const SizedBox(width: 8),
         if (!kiosk && profile?.isKioskAccount == true)
           IconButton(
             key: const Key('enable-kiosk-mode-button'),
@@ -2824,7 +2926,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
             onPressed: () => unawaited(_setKioskModeActive(true)),
             icon: const FaIcon(FontAwesomeIcons.tv, size: 20),
           ),
-        if (!kiosk && widget.authService != null)
+        // Live Philippine time, whatever the device's own timezone is —
+        // also on the kiosk display, where there's no avatar beside it.
+        const ManilaClock(),
+        if (!kiosk && widget.authService != null) ...[
+          const SizedBox(width: 8),
           InkWell(
             onTap: () => _handleTabSelected(_profileTabIndex),
             borderRadius: BorderRadius.circular(28),
@@ -2841,6 +2947,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     ),
             ),
           ),
+        ],
       ],
     );
   }
@@ -3308,10 +3415,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ],
               ),
             ),
-            FaIcon(
-              FontAwesomeIcons.chevronRight,
-              size: 14,
-              color: colorScheme.onSurfaceVariant,
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _buildChatIndicator(event),
+                const SizedBox(height: 8),
+                FaIcon(
+                  FontAwesomeIcons.chevronRight,
+                  size: 14,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ],
             ),
           ],
         ),
@@ -3382,22 +3497,37 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     final event = notice.event;
     final isReminder = notice.kind == _NoticeKind.reminder;
-    final tint = isReminder
-        ? const Color(0xFFFFA726)
-        : event != null
-            ? (colorForKey(event.colorKey) ?? _getEventTint(event.title))
-            : colorScheme.primary;
-    final icon = isReminder
-        ? FontAwesomeIcons.bell
-        : event != null
-            ? _getEventIcon(event.title)
-            : FontAwesomeIcons.calendarDays;
-    final label = isReminder ? l10n.eventReminderNoticeLabel : 'New event posted';
-    final title = event != null
-        ? event.title
+    final chat = notice.kind == _NoticeKind.chat ? notice.chat : null;
+    final tint = chat != null
+        ? colorScheme.primary
         : isReminder
-            ? l10n.eventReminderGenericTitle
-            : '${notice.count} new events posted';
+            ? const Color(0xFFFFA726)
+            : event != null
+                ? (colorForKey(event.colorKey) ?? _getEventTint(event.title))
+                : colorScheme.primary;
+    final icon = chat != null
+        ? FontAwesomeIcons.solidComment
+        : isReminder
+            ? FontAwesomeIcons.bell
+            : event != null
+                ? _getEventIcon(event.title)
+                : FontAwesomeIcons.calendarDays;
+    final String label;
+    final String title;
+    if (chat != null) {
+      // "New message · Mayor Staff Meeting" over "Juan: See you there!"
+      label = event != null ? l10n.eventChatNoticeLabel(event.title) : l10n.eventChatNoticeGenericLabel;
+      final author = chat.authorName?.trim();
+      final preview = chat.preview?.trim() ?? '';
+      title = author != null && author.isNotEmpty ? '$author: $preview' : preview;
+    } else {
+      label = isReminder ? l10n.eventReminderNoticeLabel : 'New event posted';
+      title = event != null
+          ? event.title
+          : isReminder
+              ? l10n.eventReminderGenericTitle
+              : '${notice.count} new events posted';
+    }
 
     return Material(
       color: Colors.transparent,
@@ -3406,10 +3536,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
           child: InkWell(
+            key: Key('new-event-notice-${notice.kind.name}'),
             borderRadius: BorderRadius.circular(20),
             onTap: () {
               _dismissNewEventNotice();
-              if (event != null) {
+              if (chat != null) {
+                unawaited(_openChatById(chat.eventId));
+              } else if (event != null) {
                 unawaited(_showEventDetails(event));
               } else if (!isReminder) {
                 _handleTabSelected(1);
@@ -4037,6 +4170,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
     ];
 
+    // Public and group events each get a chat. Not personal ones (only the
+    // creator can see those, so there'd be no one to talk to), and not in
+    // a read-only kiosk/guest session, which has no one to post as.
+    final chatUserId = _currentUserId;
+    final showChat = chatUserId != null && _canChatAbout(event);
+
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -4051,203 +4190,221 @@ class _CalendarScreenState extends State<CalendarScreen> {
             color: Theme.of(context).colorScheme.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           ),
-          child: CustomScrollView(
-            controller: scrollController,
-            slivers: [
-              // Header with close button
-              SliverAppBar(
-                pinned: true,
-                elevation: 0,
-                backgroundColor: Theme.of(context).colorScheme.surface,
-                title: Text(
-                  l10n.eventDetailsTitle,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                centerTitle: true,
-                leading: IconButton(
-                  icon: const FaIcon(FontAwesomeIcons.xmark),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                actions: [
-                  // Both hand off to another app, so both stay behind the same
-                  // kiosk guard that keeps a shared device inside this app.
-                  if (!_kioskModeActive) ...[
-                    IconButton(
-                      tooltip: l10n.addToGoogleCalendar,
-                      icon: const FaIcon(FontAwesomeIcons.calendarPlus, size: 18),
-                      onPressed: () => unawaited(_addToGoogleCalendar(event)),
+          child: Stack(
+            children: [
+              CustomScrollView(
+                controller: scrollController,
+                slivers: [
+                  // Header with close button
+                  SliverAppBar(
+                    pinned: true,
+                    elevation: 0,
+                    backgroundColor: Theme.of(context).colorScheme.surface,
+                    title: Text(
+                      l10n.eventDetailsTitle,
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    IconButton(
-                      tooltip: l10n.shareEvent,
-                      icon: const FaIcon(FontAwesomeIcons.shareNodes, size: 18),
-                      onPressed: () => unawaited(_shareEvent(event)),
+                    centerTitle: true,
+                    leading: IconButton(
+                      icon: const FaIcon(FontAwesomeIcons.xmark),
+                      onPressed: () => Navigator.pop(context),
                     ),
-                  ],
-                ],
-              ),
-              // Event details content
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Event title with icon — carries the event's own
-                      // type color/icon, matching the card that opened this.
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          IconBadge(
-                            icon: _getEventIcon(event.title),
-                            tint: eventTint,
-                            size: 52,
-                            iconSize: 22,
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  event.title,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .headlineSmall
-                                      ?.copyWith(fontWeight: FontWeight.bold),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  formattedDate,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium
-                                      ?.copyWith(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurfaceVariant,
-                                      ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Time/Location/Posted-by/Group, one card.
-                      GlassPanel(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Column(
-                          children: [
-                            for (var i = 0; i < infoRows.length; i++) ...[
-                              Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                child: infoRows[i],
-                              ),
-                              if (i != infoRows.length - 1)
-                                Divider(
-                                  height: 1,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .outlineVariant
-                                      .withValues(alpha: 0.5),
-                                ),
-                            ],
-                          ],
+                    actions: [
+                      // Both hand off to another app, so both stay behind the same
+                      // kiosk guard that keeps a shared device inside this app.
+                      if (!_kioskModeActive) ...[
+                        IconButton(
+                          tooltip: l10n.addToGoogleCalendar,
+                          icon: const FaIcon(FontAwesomeIcons.calendarPlus, size: 18),
+                          onPressed: () => unawaited(_addToGoogleCalendar(event)),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Description section (if not empty) — the one place
-                      // that keeps a heavier, bordered treatment, since it's
-                      // free-form text rather than a label/value pair.
-                      if (event.description.isNotEmpty) ...[
-                        Text(
-                          l10n.detailDescription,
-                          style:
-                              Theme.of(context).textTheme.labelMedium?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
-                        ),
-                        const SizedBox(height: 8),
-                        GlassPanel(
-                          borderRadius: 12,
-                          padding: const EdgeInsets.all(12),
-                          child: Text(
-                            event.description,
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-
-                      // Attachments (loaded on demand — see
-                      // _EventAttachmentsSection).
-                      _EventAttachmentsSection(
-                        eventId: event.id,
-                        repository: widget.eventRepository,
-                        tint: eventTint,
-                        iconFor: _getFileIcon,
-                      ),
-
-                      // Edit (creator, or an admin of the event's group)
-                      // and Delete (creator only) — Edit is the far more
-                      // common action, so it gets the primary (filled)
-                      // treatment; Delete stays a secondary, error-tinted
-                      // outline. Hidden in kiosk mode regardless of
-                      // permission — that mode is meant to be read-only
-                      // even for an account that could otherwise edit.
-                      if (!_kioskModeActive && (_canEditEvent(event) || _canDeleteEvent(event))) ...[
-                        Row(
-                          children: [
-                            if (_canEditEvent(event))
-                              Expanded(
-                                child: FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                  ),
-                                  onPressed: () {
-                                    Navigator.pop(context);
-                                    unawaited(_openEditEvent(event));
-                                  },
-                                  icon: const FaIcon(FontAwesomeIcons.penToSquare, size: 16),
-                                  label: Text(l10n.edit),
-                                ),
-                              ),
-                            if (_canEditEvent(event) && _canDeleteEvent(event))
-                              const SizedBox(width: 10),
-                            if (_canDeleteEvent(event))
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor:
-                                        Theme.of(context).colorScheme.error,
-                                    side: BorderSide(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .error
-                                          .withValues(alpha: 0.6),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                  ),
-                                  onPressed: () {
-                                    Navigator.pop(context);
-                                    unawaited(_confirmDeleteEvent(event));
-                                  },
-                                  icon: const FaIcon(FontAwesomeIcons.trashCan,
-                                      size: 16),
-                                  label: Text(l10n.deleteEventMenuItem),
-                                ),
-                              ),
-                          ],
+                        IconButton(
+                          tooltip: l10n.shareEvent,
+                          icon: const FaIcon(FontAwesomeIcons.shareNodes, size: 18),
+                          onPressed: () => unawaited(_shareEvent(event)),
                         ),
                       ],
                     ],
                   ),
-                ),
+                  // Event details content
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      // Extra bottom room so the chat button never covers the
+                      // Edit/Delete buttons once scrolled to the end.
+                      padding: EdgeInsets.fromLTRB(20, 20, 20, showChat ? 104 : 40),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Event title with icon — carries the event's own
+                          // type color/icon, matching the card that opened this.
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              IconBadge(
+                                icon: _getEventIcon(event.title),
+                                tint: eventTint,
+                                size: 52,
+                                iconSize: 22,
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      event.title,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .headlineSmall
+                                          ?.copyWith(fontWeight: FontWeight.bold),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      formattedDate,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+
+                          // Time/Location/Posted-by/Group, one card.
+                          GlassPanel(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Column(
+                              children: [
+                                for (var i = 0; i < infoRows.length; i++) ...[
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    child: infoRows[i],
+                                  ),
+                                  if (i != infoRows.length - 1)
+                                    Divider(
+                                      height: 1,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .outlineVariant
+                                          .withValues(alpha: 0.5),
+                                    ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Description section (if not empty) — the one place
+                          // that keeps a heavier, bordered treatment, since it's
+                          // free-form text rather than a label/value pair.
+                          if (event.description.isNotEmpty) ...[
+                            Text(
+                              l10n.detailDescription,
+                              style:
+                                  Theme.of(context).textTheme.labelMedium?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                      ),
+                            ),
+                            const SizedBox(height: 8),
+                            GlassPanel(
+                              borderRadius: 12,
+                              padding: const EdgeInsets.all(12),
+                              child: Text(
+                                event.description,
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+
+                          // Attachments (loaded on demand — see
+                          // _EventAttachmentsSection).
+                          _EventAttachmentsSection(
+                            eventId: event.id,
+                            repository: widget.eventRepository,
+                            tint: eventTint,
+                            iconFor: _getFileIcon,
+                          ),
+
+                          // Edit (creator, or an admin of the event's group)
+                          // and Delete (creator only) — Edit is the far more
+                          // common action, so it gets the primary (filled)
+                          // treatment; Delete stays a secondary, error-tinted
+                          // outline. Hidden in kiosk mode regardless of
+                          // permission — that mode is meant to be read-only
+                          // even for an account that could otherwise edit.
+                          if (!_kioskModeActive && (_canEditEvent(event) || _canDeleteEvent(event))) ...[
+                            Row(
+                              children: [
+                                if (_canEditEvent(event))
+                                  Expanded(
+                                    child: FilledButton.icon(
+                                      style: FilledButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(vertical: 14),
+                                      ),
+                                      onPressed: () {
+                                        Navigator.pop(context);
+                                        unawaited(_openEditEvent(event));
+                                      },
+                                      icon: const FaIcon(FontAwesomeIcons.penToSquare, size: 16),
+                                      label: Text(l10n.edit),
+                                    ),
+                                  ),
+                                if (_canEditEvent(event) && _canDeleteEvent(event))
+                                  const SizedBox(width: 10),
+                                if (_canDeleteEvent(event))
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor:
+                                            Theme.of(context).colorScheme.error,
+                                        side: BorderSide(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .error
+                                              .withValues(alpha: 0.6),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(vertical: 14),
+                                      ),
+                                      onPressed: () {
+                                        Navigator.pop(context);
+                                        unawaited(_confirmDeleteEvent(event));
+                                      },
+                                      icon: const FaIcon(FontAwesomeIcons.trashCan,
+                                          size: 16),
+                                      label: Text(l10n.deleteEventMenuItem),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
+              if (showChat)
+                Positioned(
+                  right: 20,
+                  bottom: 20 + MediaQuery.paddingOf(context).bottom,
+                  child: EventChatButton(
+                    event: event,
+                    repository: widget.eventRepository,
+                    currentUserId: chatUserId,
+                    canModerate: event.createdById == chatUserId || _isSuperadmin,
+                    activity: _chatActivity,
+                  ),
+                ),
             ],
           ),
         ),
@@ -4379,36 +4536,60 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
             ),
             if (!_kioskModeActive && (_canEditEvent(event) || _canDeleteEvent(event)))
-              PopupMenuButton<String>(
-                onSelected: (value) {
-                  if (value == 'edit') {
-                    unawaited(_openEditEvent(event));
-                  } else if (value == 'delete') {
-                    unawaited(_confirmDeleteEvent(event));
-                  }
-                },
-                itemBuilder: (context) => [
-                  if (_canEditEvent(event))
-                    PopupMenuItem(value: 'edit', child: Text(l10n.editEventMenuItem)),
-                  if (_canDeleteEvent(event))
-                    PopupMenuItem(
-                      value: 'delete',
-                      child: Text(
-                        l10n.deleteEventMenuItem,
-                        style:
-                            TextStyle(color: Theme.of(context).colorScheme.error),
-                      ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  PopupMenuButton<String>(
+                    onSelected: (value) {
+                      if (value == 'edit') {
+                        unawaited(_openEditEvent(event));
+                      } else if (value == 'delete') {
+                        unawaited(_confirmDeleteEvent(event));
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      if (_canEditEvent(event))
+                        PopupMenuItem(value: 'edit', child: Text(l10n.editEventMenuItem)),
+                      if (_canDeleteEvent(event))
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Text(
+                            l10n.deleteEventMenuItem,
+                            style:
+                                TextStyle(color: Theme.of(context).colorScheme.error),
+                          ),
+                        ),
+                    ],
+                    icon: FaIcon(
+                      FontAwesomeIcons.ellipsisVertical,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
+                  ),
+                  _buildChatIndicator(event),
                 ],
-                icon: FaIcon(
-                  FontAwesomeIcons.ellipsisVertical,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: _buildChatIndicator(event),
               ),
           ],
         ),
       ),
+    );
+  }
+
+  /// The chat pill on an event card (see [EventChatIndicator]) — nothing
+  /// for an event without a chat, or before anyone has written in it.
+  /// Tapping it goes straight to the chat.
+  Widget _buildChatIndicator(BarangayEvent event) {
+    final activity = _chatActivity;
+    if (activity == null || !_canChatAbout(event)) return const SizedBox.shrink();
+    return EventChatIndicator(
+      eventId: event.id,
+      activity: activity,
+      onTap: () => unawaited(_openEventChat(event)),
     );
   }
 

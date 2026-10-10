@@ -1226,6 +1226,246 @@ abstract class AppLocalizations {
   /// **'Call'**
   String get callButtonTooltip;
 
+  /// No description provided for @manilaClockTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Philippine Standard Time (Asia/Manila)'**
+  String get manilaClockTooltip;
+
+  /// No description provided for @manilaClockSemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'Philippine time {time}, {date}'**
+  String manilaClockSemantics(String time, String date);
+
+  /// No description provided for @eventChatButtonTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Open event chat'**
+  String get eventChatButtonTooltip;
+
+  /// No description provided for @eventChatTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Event chat'**
+  String get eventChatTitle;
+
+  /// No description provided for @eventChatSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Everyone who can see this event can read and join in.'**
+  String get eventChatSubtitle;
+
+  /// No description provided for @eventChatEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No messages yet. Say hello! 👋'**
+  String get eventChatEmpty;
+
+  /// No description provided for @eventChatInputHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Write a message…'**
+  String get eventChatInputHint;
+
+  /// No description provided for @eventChatSendTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get eventChatSendTooltip;
+
+  /// No description provided for @eventChatLikeTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Send a thumbs up'**
+  String get eventChatLikeTooltip;
+
+  /// No description provided for @eventChatEmojiTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Emoji'**
+  String get eventChatEmojiTooltip;
+
+  /// No description provided for @eventChatKeyboardTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Keyboard'**
+  String get eventChatKeyboardTooltip;
+
+  /// No description provided for @eventChatSendFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t send your message. Check your connection and try again.'**
+  String get eventChatSendFailed;
+
+  /// No description provided for @eventChatLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the chat. Check your connection and try again.'**
+  String get eventChatLoadFailed;
+
+  /// No description provided for @eventChatRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get eventChatRetry;
+
+  /// No description provided for @eventChatCopyMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy text'**
+  String get eventChatCopyMessage;
+
+  /// No description provided for @eventChatCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Message copied.'**
+  String get eventChatCopied;
+
+  /// No description provided for @eventChatDeleteMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete message'**
+  String get eventChatDeleteMessage;
+
+  /// No description provided for @eventChatMessageDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Message deleted.'**
+  String get eventChatMessageDeleted;
+
+  /// No description provided for @eventChatDeleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t delete the message.'**
+  String get eventChatDeleteFailed;
+
+  /// No description provided for @eventChatEditMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit message'**
+  String get eventChatEditMessage;
+
+  /// No description provided for @eventChatEditing.
+  ///
+  /// In en, this message translates to:
+  /// **'Editing message'**
+  String get eventChatEditing;
+
+  /// No description provided for @eventChatCancelEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel editing'**
+  String get eventChatCancelEdit;
+
+  /// No description provided for @eventChatSaveEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Save changes'**
+  String get eventChatSaveEdit;
+
+  /// No description provided for @eventChatEdited.
+  ///
+  /// In en, this message translates to:
+  /// **'Edited'**
+  String get eventChatEdited;
+
+  /// No description provided for @eventChatEditFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save your changes. Check your connection and try again.'**
+  String get eventChatEditFailed;
+
+  /// No description provided for @eventChatYouDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'You deleted a message'**
+  String get eventChatYouDeleted;
+
+  /// No description provided for @eventChatUserDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} deleted a message'**
+  String eventChatUserDeleted(String name);
+
+  /// No description provided for @eventChatRemovedByYou.
+  ///
+  /// In en, this message translates to:
+  /// **'You removed this message'**
+  String get eventChatRemovedByYou;
+
+  /// No description provided for @eventChatRemovedByModerator.
+  ///
+  /// In en, this message translates to:
+  /// **'This message was removed by a moderator'**
+  String get eventChatRemovedByModerator;
+
+  /// No description provided for @eventChatDeleteConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this message?'**
+  String get eventChatDeleteConfirmTitle;
+
+  /// No description provided for @eventChatDeleteConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'It will be removed for everyone. The chat will show that a message was deleted.'**
+  String get eventChatDeleteConfirmBody;
+
+  /// No description provided for @eventChatDeleteConfirmButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get eventChatDeleteConfirmButton;
+
+  /// No description provided for @eventChatNoticeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'New message · {event}'**
+  String eventChatNoticeLabel(String event);
+
+  /// No description provided for @eventChatNoticeGenericLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'New chat message'**
+  String get eventChatNoticeGenericLabel;
+
+  /// No description provided for @eventChatIndicatorTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 chat message} other{{count} chat messages}}'**
+  String eventChatIndicatorTooltip(int count);
+
+  /// No description provided for @eventChatIndicatorUnreadTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 chat message · new} other{{count} chat messages · new}}'**
+  String eventChatIndicatorUnreadTooltip(int count);
+
+  /// No description provided for @eventChatYou.
+  ///
+  /// In en, this message translates to:
+  /// **'You'**
+  String get eventChatYou;
+
+  /// No description provided for @eventChatSomeone.
+  ///
+  /// In en, this message translates to:
+  /// **'Someone'**
+  String get eventChatSomeone;
+
+  /// No description provided for @eventChatToday.
+  ///
+  /// In en, this message translates to:
+  /// **'Today'**
+  String get eventChatToday;
+
+  /// No description provided for @eventChatYesterday.
+  ///
+  /// In en, this message translates to:
+  /// **'Yesterday'**
+  String get eventChatYesterday;
+
   /// No description provided for @callLinkError.
   ///
   /// In en, this message translates to:
@@ -2723,7 +2963,7 @@ abstract class AppLocalizations {
   /// No description provided for @privacyVisibilityBody.
   ///
   /// In en, this message translates to:
-  /// **'Your profile details are visible only to you. If you join a group, that group\'s other members can see your display name and profile picture in the member list. Events follow their own visibility: Public events are visible to everyone, Group events only to that group\'s members, and Personal events only to you.'**
+  /// **'Your profile details are visible only to you. If you join a group, that group\'s other members can see your display name and profile picture in the member list. Events follow their own visibility: Public events are visible to everyone, Group events only to that group\'s members, and Personal events only to you. Messages you post in an event\'s chat — along with your display name and profile picture — are visible to everyone who can see that event.'**
   String get privacyVisibilityBody;
 
   /// No description provided for @privacyThirdPartyHeading.

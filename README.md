@@ -119,6 +119,18 @@ A new tagged release also pushes a "New version available" notification (topic `
 
 How it works: `.github/workflows/release.yml` calls this function right after publishing a GitHub Release, passing the version tag; the function checks `Authorization: Bearer <RELEASE_NOTIFY_SECRET>` itself (since there's no Supabase webhook auto-auth here) and sends one push to the `app-updates` topic. If `RELEASE_NOTIFY_SECRET` isn't set yet, that workflow step is skipped without failing the release.
 
+### Event chat notifications
+
+A new message in an event's chat pushes a notification (Android "Event chat" channel, so people can mute chats separately from event announcements) and, if the app is open, shows an in-app toast — skipped for the chat that's already on screen. Recipients: every member of a **group** event's group; for a **public** event, its creator plus everyone who has written in that chat; never the sender, never personal events. Each push goes to the recipient's own `user-<uid>` topic. Tapping it opens that chat.
+
+No new secrets — it reuses `FCM_SERVICE_ACCOUNT_JSON_B64` and the reminder job's `REMINDER_CRON_SECRET` / vault secret `reminder_cron_secret`. One-time setup:
+
+1. Run the "Event chat" blocks at the end of [supabase/barangay_events.sql](supabase/barangay_events.sql) (they add the `notify_event_comment` trigger, which calls the function through `pg_net` — no dashboard webhook needed).
+2. Deploy the function **without** JWT verification (the bearer token is the shared secret, not a JWT):
+   ```powershell
+   supabase functions deploy send-chat-notification --use-api --no-verify-jwt
+   ```
+
 ## LGU Admin Portal
 
 The superadmin's "Add account" card (docs/lgu-admin/, signed in as superadmin) creates an LGU member or another superadmin account directly — no self-registration/approval step. One-time setup:

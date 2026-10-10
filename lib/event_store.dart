@@ -541,6 +541,138 @@ class EventAttachment {
   }
 }
 
+/// Longest chat message accepted — mirrors the `event_comments.body`
+/// check constraint, so the composer can stop people before the server
+/// rejects the insert.
+const int maxEventCommentLength = 1000;
+
+/// One message in an event's chat (see [EventRepository.watchEventComments]).
+/// Readable by anyone who can see the event itself, same as its
+/// attachments. The author's name/avatar/role are filled server-side from
+/// their profile (a client can't post under someone else's name) and kept
+/// current when they edit their profile.
+///
+/// Deleting is Messenger-style: the row stays, its text is wiped, and the
+/// chat shows "X deleted a message" in its place ([isDeleted]).
+class EventComment {
+  const EventComment({
+    required this.id,
+    required this.eventId,
+    required this.userId,
+    required this.body,
+    required this.createdAt,
+    this.authorName,
+    this.authorAvatarUrl,
+    this.authorRole = 'citizen',
+    this.editedAt,
+    this.deletedAt,
+    this.deletedBy,
+  });
+
+  final String id;
+  final String eventId;
+  final String userId;
+  final String body;
+
+  /// A real instant (the server's `now()` at insert), always UTC-flagged —
+  /// unlike event start/end times, which are Philippine wall-clock labeled
+  /// UTC (see [[project-time-convention]]). Display it with `toManila()`
+  /// from `manila_clock.dart`, never by reading its fields directly.
+  final DateTime createdAt;
+  final String? authorName;
+  final String? authorAvatarUrl;
+
+  /// The author's app-wide account role ('citizen' | 'lgu_member' |
+  /// 'superadmin'), for the same RoleAvatarFrame ring used elsewhere.
+  final String authorRole;
+
+  /// When the author last edited the text — null if never edited. A real
+  /// instant, like [createdAt].
+  final DateTime? editedAt;
+
+  /// When the message was deleted — null if it wasn't. A deleted message
+  /// keeps its place in the chat but its [body] is empty.
+  final DateTime? deletedAt;
+
+  /// Who deleted it: the author themselves, or (when different) the
+  /// event's creator or a superadmin moderating the chat.
+  final String? deletedBy;
+
+  bool get isDeleted => deletedAt != null;
+  bool get isEdited => editedAt != null && !isDeleted;
+
+  /// Whether someone other than the author removed it.
+  bool get wasRemovedByModerator => isDeleted && deletedBy != null && deletedBy != userId;
+
+  EventComment copyWith({
+    String? body,
+    DateTime? editedAt,
+    DateTime? deletedAt,
+    String? deletedBy,
+  }) {
+    return EventComment(
+      id: id,
+      eventId: eventId,
+      userId: userId,
+      body: body ?? this.body,
+      createdAt: createdAt,
+      authorName: authorName,
+      authorAvatarUrl: authorAvatarUrl,
+      authorRole: authorRole,
+      editedAt: editedAt ?? this.editedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      deletedBy: deletedBy ?? this.deletedBy,
+    );
+  }
+
+  factory EventComment.fromSupabase(Map<String, dynamic> row) {
+    return EventComment(
+      id: row['id'] as String,
+      eventId: row['event_id'] as String,
+      userId: row['user_id'] as String,
+      body: row['body'] as String,
+      createdAt: DateTime.parse(row['created_at'] as String).toUtc(),
+      authorName: row['author_name'] as String?,
+      authorAvatarUrl: row['author_avatar_url'] as String?,
+      authorRole: (row['author_role'] as String?) ?? 'citizen',
+      editedAt: _readInstant(row['edited_at']),
+      deletedAt: _readInstant(row['deleted_at']),
+      deletedBy: row['deleted_by'] as String?,
+    );
+  }
+
+  static DateTime? _readInstant(Object? value) =>
+      value == null ? null : DateTime.parse(value as String).toUtc();
+}
+
+/// A one-line summary of one event's chat, for the chat indicator on event
+/// cards (see [EventRepository.fetchEventChatSummaries]). Counts only
+/// non-deleted messages.
+class EventChatSummary {
+  const EventChatSummary({
+    required this.eventId,
+    required this.messageCount,
+    required this.lastMessageAt,
+    this.lastAuthorId,
+  });
+
+  final String eventId;
+  final int messageCount;
+
+  /// A real instant, like [EventComment.createdAt].
+  final DateTime lastMessageAt;
+  final String? lastAuthorId;
+
+  factory EventChatSummary.fromSupabase(Map<String, dynamic> row) {
+    return EventChatSummary(
+      eventId: row['out_event_id'] as String,
+      messageCount: (row['out_message_count'] as num).toInt(),
+      lastMessageAt: DateTime.parse(row['out_last_message_at'] as String).toUtc(),
+      lastAuthorId: row['out_last_author_id'] as String?,
+    );
+  }
+}
+
 abstract class EventRepository {
   Stream<List<BarangayEvent>> watchAllEvents();
 
@@ -692,8 +824,46 @@ abstract class EventRepository {
   /// [getAttachmentDownloadUrl] instead.
   Future<Uint8List> downloadEventAttachmentBytes(EventAttachment attachment);
 
+  /// Live chat for [eventId], newest message first, capped to the most
+  /// recent [eventCommentWindow]. Visible to anyone who can see the event
+  /// (see the `event_comments` RLS policies); re-emits on every new or
+  /// deleted message.
+  Stream<List<EventComment>> watchEventComments(String eventId);
+
+  /// Posts [body] to [eventId]'s chat as the signed-in user.
+  Future<void> addEventComment(String eventId, String body);
+
+  /// Replaces the text of one of the signed-in user's own messages and
+  /// marks it edited — author-only, and not once it's deleted (enforced
+  /// server-side by the `edit_event_comment` RPC).
+  Future<void> editEventComment(String commentId, String body);
+
+  /// Deletes one chat message, leaving a "deleted a message" trace in its
+  /// place rather than removing the row — allowed for its author, the
+  /// event's creator, or a superadmin (`delete_event_comment` RPC).
+  Future<void> deleteEventComment(String commentId);
+
+  /// How many (non-deleted) chat messages [eventId] has, for the chat
+  /// button's badge.
+  Future<int> countEventComments(String eventId);
+
+  /// Message count and latest-message info for every event chat the
+  /// caller can see (only events that have at least one message), keyed
+  /// by event id — drives the chat indicator on event cards.
+  Future<Map<String, EventChatSummary>> fetchEventChatSummaries();
+
+  /// Emits whenever any chat message the caller can see is posted,
+  /// edited, or deleted — a "go re-fetch [fetchEventChatSummaries]" signal
+  /// (the value carries no data), like [watchMyGroupMemberships].
+  Stream<void> watchEventChatActivity();
+
   Future<void> dispose();
 }
+
+/// How many of the latest chat messages [EventRepository.watchEventComments]
+/// keeps — a long-running event chat shouldn't stream its whole history
+/// into memory on every open.
+const int eventCommentWindow = 300;
 
 class MemoryEventRepository implements EventRepository {
   MemoryEventRepository._(this._events);
@@ -1175,10 +1345,118 @@ class MemoryEventRepository implements EventRepository {
     return bytes;
   }
 
+  // Seeded with one message from someone else on today's "Mayor Staff
+  // Meeting", so the chat has an other-person bubble to show (and test)
+  // without any setup.
+  final List<EventComment> _comments = [
+    EventComment(
+      id: 'comment-seed-1',
+      eventId: 'seed-mayor-meeting',
+      userId: 'mayor-1',
+      body: 'Please be on time, everyone!',
+      createdAt: DateTime.now().toUtc().subtract(const Duration(minutes: 30)),
+      authorName: 'Juan Dela Cruz',
+      authorRole: 'lgu_member',
+    ),
+  ];
+  final StreamController<void> _commentChanges = StreamController<void>.broadcast();
+  int _commentCounter = 0;
+
+  List<EventComment> _commentsFor(String eventId) {
+    final comments = _comments.where((c) => c.eventId == eventId).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return comments.take(eventCommentWindow).toList();
+  }
+
+  @override
+  Stream<List<EventComment>> watchEventComments(String eventId) async* {
+    yield _commentsFor(eventId);
+    yield* _commentChanges.stream.map((_) => _commentsFor(eventId));
+  }
+
+  @override
+  Future<void> addEventComment(String eventId, String body) =>
+      addEventCommentAs(eventId, body, userId: _mockUserId, authorName: 'You');
+
+  /// Dev/test helper (not part of [EventRepository]): posts as someone
+  /// other than the signed-in mock user, to simulate another person
+  /// writing in a chat.
+  Future<void> addEventCommentAs(
+    String eventId,
+    String body, {
+    required String userId,
+    String? authorName,
+  }) async {
+    _commentCounter++;
+    _comments.add(EventComment(
+      id: 'comment-local-$_commentCounter',
+      eventId: eventId,
+      userId: userId,
+      body: body,
+      // Keeps same-millisecond test posts in insertion order.
+      createdAt: DateTime.now().toUtc().add(Duration(microseconds: _commentCounter)),
+      authorName: authorName ?? userId,
+    ));
+    _commentChanges.add(null);
+  }
+
+  @override
+  Future<void> editEventComment(String commentId, String body) async {
+    final index = _comments.indexWhere((c) => c.id == commentId);
+    if (index == -1) throw Exception('Message not found');
+    final comment = _comments[index];
+    if (comment.userId != _mockUserId) throw Exception('Only the author can edit this message');
+    if (comment.isDeleted) throw Exception('A deleted message cannot be edited');
+    final trimmed = body.trim();
+    if (trimmed.isEmpty) throw Exception('Message cannot be empty');
+    if (trimmed == comment.body) return;
+    _comments[index] = comment.copyWith(body: trimmed, editedAt: DateTime.now().toUtc());
+    _commentChanges.add(null);
+  }
+
+  // Role-blind like the rest of this repo (the server's RPC is the real
+  // permission check) — the chat UI only offers Delete to people allowed.
+  @override
+  Future<void> deleteEventComment(String commentId) async {
+    final index = _comments.indexWhere((c) => c.id == commentId);
+    if (index == -1 || _comments[index].isDeleted) return;
+    _comments[index] = _comments[index].copyWith(
+      body: '',
+      deletedAt: DateTime.now().toUtc(),
+      deletedBy: _mockUserId,
+    );
+    _commentChanges.add(null);
+  }
+
+  @override
+  Future<int> countEventComments(String eventId) async {
+    return _comments.where((c) => c.eventId == eventId && !c.isDeleted).length;
+  }
+
+  @override
+  Future<Map<String, EventChatSummary>> fetchEventChatSummaries() async {
+    final summaries = <String, EventChatSummary>{};
+    for (final comment in _comments.where((c) => !c.isDeleted)) {
+      final existing = summaries[comment.eventId];
+      final isLatest = existing == null || comment.createdAt.isAfter(existing.lastMessageAt);
+      summaries[comment.eventId] = EventChatSummary(
+        eventId: comment.eventId,
+        messageCount: (existing?.messageCount ?? 0) + 1,
+        lastMessageAt: isLatest ? comment.createdAt : existing.lastMessageAt,
+        lastAuthorId: isLatest ? comment.userId : existing.lastAuthorId,
+      );
+    }
+    return summaries;
+  }
+
+  @override
+  Stream<void> watchEventChatActivity() => _commentChanges.stream;
+
   @override
   Future<void> dispose() async {
     await _updates.close();
     await _membershipChanges.close();
+    await _commentChanges.close();
   }
 
   List<BarangayEvent> get _sortedEvents {
@@ -1608,6 +1886,89 @@ class SupabaseEventRepository implements EventRepository {
   @override
   Future<Uint8List> downloadEventAttachmentBytes(EventAttachment attachment) {
     return _client.storage.from('event-attachments').download(attachment.storagePath);
+  }
+
+  @override
+  Stream<List<EventComment>> watchEventComments(String eventId) {
+    return _client
+        .from('event_comments')
+        .stream(primaryKey: ['id'])
+        .eq('event_id', eventId)
+        .order('created_at', ascending: false)
+        .limit(eventCommentWindow)
+        .map((rows) => rows.map(EventComment.fromSupabase).toList());
+  }
+
+  @override
+  Future<void> addEventComment(String eventId, String body) async {
+    // user_id and the author_* columns are filled in by the
+    // fill_event_comment_author trigger from the caller's own profile.
+    await _client.from('event_comments').insert({
+      'event_id': eventId,
+      'body': body,
+    });
+  }
+
+  @override
+  Future<void> editEventComment(String commentId, String body) async {
+    await _client.rpc('edit_event_comment', params: {
+      'p_comment_id': commentId,
+      'p_body': body,
+    });
+  }
+
+  @override
+  Future<void> deleteEventComment(String commentId) async {
+    await _client.rpc('delete_event_comment', params: {'p_comment_id': commentId});
+  }
+
+  @override
+  Future<int> countEventComments(String eventId) async {
+    return _client
+        .from('event_comments')
+        .count()
+        .eq('event_id', eventId)
+        .isFilter('deleted_at', null);
+  }
+
+  @override
+  Future<Map<String, EventChatSummary>> fetchEventChatSummaries() async {
+    final rows = await _client.rpc('event_chat_summaries') as List<dynamic>;
+    return {
+      for (final row in rows.cast<Map<String, dynamic>>())
+        row['out_event_id'] as String: EventChatSummary.fromSupabase(row),
+    };
+  }
+
+  @override
+  Stream<void> watchEventChatActivity() {
+    // A plain realtime channel rather than .stream(): this only needs a
+    // "something changed" ping, not a snapshot of every message the caller
+    // can see. Realtime applies the event_comments RLS policies per
+    // subscriber, so it only fires for chats this user can read.
+    RealtimeChannel? channel;
+    late final StreamController<void> controller;
+    controller = StreamController<void>(
+      onListen: () {
+        channel = _client
+            .channel('event-chat-activity-${DateTime.now().microsecondsSinceEpoch}')
+            .onPostgresChanges(
+              event: PostgresChangeEvent.all,
+              schema: 'public',
+              table: 'event_comments',
+              callback: (_) {
+                if (!controller.isClosed) controller.add(null);
+              },
+            )
+            .subscribe();
+      },
+      onCancel: () async {
+        final active = channel;
+        channel = null;
+        if (active != null) await _client.removeChannel(active);
+      },
+    );
+    return controller.stream;
   }
 
   @override
