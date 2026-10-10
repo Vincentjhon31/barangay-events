@@ -39,8 +39,9 @@ flutter build web --no-tree-shake-icons
 which `font_awesome_flutter` glyphs are actually used (it wrongly stripped
 `shieldHalved`, `userShield`, and `mapLocationDot` down to 33 surviving
 glyphs out of 2000+, showing as broken-glyph boxes in the app). Upload the
-contents of `build/web` to the Hostinger site root — **without deleting the
-`api/` and `media/` folders** that live there too (see below).
+contents of `build/web` into the subdomain's `calendar` folder — **without
+deleting the `api/`, `media/`, and `private/` folders** that live there too
+(see below).
 
 ## Files on Hostinger (attachments and profile pictures)
 

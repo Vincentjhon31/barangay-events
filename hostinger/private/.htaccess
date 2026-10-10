@@ -1,3 +1,23 @@
-# This folder must never be reachable from the web (it normally sits outside
-# public_html, so this is only a safety net if it's ever put inside it).
-Require all denied
+# Nothing in this folder may ever be opened from the web: it holds the API's
+# settings and every event attachment (uploads/). The API reads these files
+# directly from disk; browsers must always get "403 Forbidden" here.
+# Check: open https://calendar.bongabong.gov.ph/api/ — "private_protected"
+# must say true.
+
+Options -Indexes
+
+# Apache 2.4 / LiteSpeed
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+
+# Older servers
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>
+
+# Never run anything stored here as a script, even if it were reachable.
+<IfModule mod_php.c>
+  php_flag engine off
+</IfModule>

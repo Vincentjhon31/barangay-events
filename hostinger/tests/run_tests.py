@@ -24,6 +24,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.dirname(HERE)
 MOCK_PORT = 8798
 PHP_PORT = 8799
+# A second copy of the site server, so the health check can try to read
+# private/ over HTTP (PHP's built-in server handles one request at a time,
+# so it can't call itself).
+PROBE_PORT = 8800
 API = f'http://127.0.0.1:{PHP_PORT}/api'
 
 failures = []
@@ -72,22 +76,28 @@ def php(code):
 
 
 def main():
+    # Laid out like the subdomain's own folder on Hostinger ("calendar"):
+    # api/, media/ and private/ all inside the site folder.
     root = tempfile.mkdtemp(prefix='hostinger-test-')
-    shutil.copytree(os.path.join(SRC, 'public_html'), os.path.join(root, 'public_html'))
-    os.makedirs(os.path.join(root, 'private'))
+    site = os.path.join(root, 'calendar')
+    shutil.copytree(os.path.join(SRC, 'public_html'), site)
+    shutil.copytree(os.path.join(SRC, 'private'), os.path.join(site, 'private'))
     with open(os.path.join(SRC, 'private', 'api-config.example.php'), encoding='utf-8') as f:
         config = f.read()
     config = config.replace('https://xuxnoydakqembrytdbyz.supabase.co', f'http://127.0.0.1:{MOCK_PORT}')
     config = config.replace('https://calendar.bongabong.gov.ph/api', API)
     config = config.replace('https://calendar.bongabong.gov.ph/media', f'http://127.0.0.1:{PHP_PORT}/media')
-    with open(os.path.join(root, 'private', 'api-config.php'), 'w', encoding='utf-8') as f:
+    config = config.replace('https://calendar.bongabong.gov.ph/private', f'http://127.0.0.1:{PROBE_PORT}/private')
+    with open(os.path.join(site, 'private', 'api-config.php'), 'w', encoding='utf-8') as f:
         f.write(config)
-    uploads = os.path.join(root, 'private', 'uploads')
-    media = os.path.join(root, 'public_html', 'media')
+    uploads = os.path.join(site, 'private', 'uploads')
+    media = os.path.join(site, 'media')
 
     mock = subprocess.Popen([sys.executable, os.path.join(HERE, 'mock_supabase.py'), str(MOCK_PORT)])
-    server = subprocess.Popen(['php', '-S', f'127.0.0.1:{PHP_PORT}', '-t', os.path.join(root, 'public_html')],
+    server = subprocess.Popen(['php', '-S', f'127.0.0.1:{PHP_PORT}', '-t', site],
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    probe = subprocess.Popen(['php', '-S', f'127.0.0.1:{PROBE_PORT}', '-t', site],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1.5)
     try:
         png = php('$i=imagecreatetruecolor(800,600);imagefill($i,0,0,imagecolorallocate($i,30,120,200));ob_start();imagepng($i);echo ob_get_clean();')
@@ -95,7 +105,12 @@ def main():
         fake = b'<?php echo "pwned"; ?>'
 
         s, b, _ = request('GET', API + '/')
-        check('health check', s == 200 and jbody(b).get('ok') is True and jbody(b).get('gd') is True, b)
+        health = jbody(b)
+        check('health check runs', s == 200 and health.get('gd') is True and health.get('uploads_writable') is True, b)
+        # PHP's test server ignores .htaccess, so private/ IS readable here —
+        # the health check must notice and say so (on Hostinger it's true).
+        check('health check detects an unprotected private folder',
+              health.get('private_protected') is False and health.get('ok') is False and 'warning' in health, b)
 
         # ---------- Attachments ----------
         s, b, _ = request('POST', API + '/attachments.php', fields={'event_id': 'ev1'}, files={'file': ('a.png', png, 'image/png')})
@@ -108,7 +123,7 @@ def main():
         row = jbody(b)
         check('poster uploads a picture', s == 201 and row.get('storage_provider') == 'hostinger' and row.get('mime_type') == 'image/png', (s, b))
         stored = os.path.join(uploads, row.get('storage_path', 'missing').replace('/', os.sep))
-        check('file is stored privately outside public_html', os.path.isfile(stored) and 'public_html' not in stored, stored)
+        check('file is stored in the private folder', os.path.isfile(stored) and os.sep + 'private' + os.sep in stored, stored)
         check('original file name is kept for display', row.get('file_name') == 'Agenda photo.png', row.get('file_name'))
         s, b, _ = request('POST', API + '/attachments.php', 'tok-poster', fields={'event_id': 'ev1'}, files={'file': ('evil.jpg', fake, 'image/jpeg')})
         check('a script disguised as a picture is refused', s == 415, (s, b))
@@ -196,12 +211,13 @@ def main():
         check('get downloads a stored file', s == 200 and len(b) > 0, s)
         s, b, _ = request('POST', API + '/admin.php?action=put&area=uploads&path=restored/r.png', 'tok-super', files={'file': ('r.png', png, 'image/png')})
         check('put restores a file', s == 201 and os.path.isfile(os.path.join(uploads, 'restored', 'r.png')), (s, b))
-        s, b, _ = request('GET', API + '/admin.php?action=get&area=uploads&path=../private/api-config.php', 'tok-super')
+        s, b, _ = request('GET', API + '/admin.php?action=get&area=uploads&path=../api-config.php', 'tok-super')
         check('path traversal is refused', s == 400, (s, b))
         s, b, _ = request('POST', API + '/admin.php?action=put&area=media&path=avatars/x.php', 'tok-super', files={'file': ('x.php', fake, 'text/plain')})
         check('restore never writes a script', s == 400, (s, b))
     finally:
         server.terminate()
+        probe.terminate()
         mock.terminate()
         shutil.rmtree(root, ignore_errors=True)
 

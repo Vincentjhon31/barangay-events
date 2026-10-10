@@ -13,8 +13,9 @@
 //          another app or the browser (which can't send the login token).
 //   DELETE attachments.php?id=<uuid>       the poster removes a file.
 //
-// Files live in private/uploads, outside public_html, so they can never be
-// opened directly — only through this script.
+// Files live in private/uploads, which its .htaccess blocks from the web
+// (the health check in index.php confirms it), so they can only be opened
+// through this script.
 
 declare(strict_types=1);
 require __DIR__ . '/_lib.php';

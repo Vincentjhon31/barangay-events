@@ -12,8 +12,17 @@
 
 declare(strict_types=1);
 
-$configPath = __DIR__ . '/../../private/api-config.php';
-if (!is_file($configPath)) {
+// The settings file lives in a "private" folder: either inside the site's
+// folder next to api/ (e.g. calendar/private — a subdomain whose folder
+// can't have anything outside it), or one level above the site's folder.
+$configPath = null;
+foreach ([__DIR__ . '/../private/api-config.php', __DIR__ . '/../../private/api-config.php'] as $candidate) {
+    if (is_file($candidate)) {
+        $configPath = $candidate;
+        break;
+    }
+}
+if ($configPath === null) {
     http_response_code(500);
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['error' => 'Server not configured: private/api-config.php is missing.']);
