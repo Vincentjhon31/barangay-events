@@ -112,6 +112,18 @@ def main():
         check('health check detects an unprotected private folder',
               health.get('private_protected') is False and health.get('ok') is False and 'warning' in health, b)
 
+        # ---------- CORS (browser callers) ----------
+        def preflight(origin):
+            _, _, h = request('OPTIONS', API + '/avatars.php', headers={
+                'Origin': origin, 'Access-Control-Request-Method': 'POST',
+                'Access-Control-Request-Headers': 'authorization,x-auth-token'})
+            return {k.lower(): v for k, v in h.items()}.get('access-control-allow-origin')
+        check('Flutter web debug (localhost, any port) may call the API', preflight('http://localhost:16690') == 'http://localhost:16690')
+        check('127.0.0.1 with a port may call the API', preflight('http://127.0.0.1:5500') == 'http://127.0.0.1:5500')
+        check('the live web app may call the API', preflight('https://calendar.bongabong.gov.ph') == 'https://calendar.bongabong.gov.ph')
+        check("a stranger's website may not", preflight('https://evil.example') is None)
+        check('a look-alike localhost domain may not', preflight('http://localhost.evil.example') is None)
+
         # ---------- Attachments ----------
         s, b, _ = request('POST', API + '/attachments.php', fields={'event_id': 'ev1'}, files={'file': ('a.png', png, 'image/png')})
         check('upload needs a login', s == 401, (s, b))

@@ -64,10 +64,29 @@ const OFFICE_ZIP_EXTENSIONS = [
 const STORED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
 
 /** CORS for the browser-based callers (web app, admin portal). */
+/**
+ * Whether a browser page at [$origin] may call the API: the sites listed in
+ * ALLOWED_ORIGINS, plus any localhost address (Flutter web debug runs on a
+ * random port, e.g. http://localhost:16690). Allowing localhost is safe here:
+ * the API never relies on cookies — every request must carry the user's own
+ * Supabase login token — so CORS isn't what protects it.
+ */
+function origin_allowed(string $origin): bool
+{
+    if ($origin === '') {
+        return false;
+    }
+    if (in_array($origin, ALLOWED_ORIGINS, true)) {
+        return true;
+    }
+    $allowLocalhost = defined('ALLOW_LOCALHOST_ORIGINS') ? (bool) constant('ALLOW_LOCALHOST_ORIGINS') : true;
+    return $allowLocalhost && (bool) preg_match('#^http://(localhost|127\.0\.0\.1)(:[0-9]{1,5})?$#', $origin);
+}
+
 function cors(): void
 {
     $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-    if ($origin !== '' && in_array($origin, ALLOWED_ORIGINS, true)) {
+    if (origin_allowed($origin)) {
         header('Access-Control-Allow-Origin: ' . $origin);
         header('Vary: Origin');
         header('Access-Control-Allow-Headers: Authorization, X-Auth-Token, Content-Type');
