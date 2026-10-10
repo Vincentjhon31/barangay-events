@@ -120,12 +120,13 @@ Some stray paragraph.
   });
 
   group('after an update', () {
-    Future<void> pumpHost(WidgetTester tester, String version) async {
+    Future<void> pumpHost(WidgetTester tester, String version, {bool updatedSinceInstall = false}) async {
       await _cacheBundledNotes(tester);
       await tester.pumpWidget(_localizedApp(Builder(
         builder: (context) => Center(
           child: TextButton(
-            onPressed: () => showWhatsNewAfterUpdateIfNeeded(context, version),
+            onPressed: () =>
+                showWhatsNewAfterUpdateIfNeeded(context, version, updatedSinceInstall: updatedSinceInstall),
             child: const Text('go'),
           ),
         ),
@@ -137,6 +138,11 @@ Some stray paragraph.
     testWidgets('a fresh install shows nothing', (tester) async {
       await pumpHost(tester, '1.17.0+29');
       expect(find.byKey(const Key('whats-new-sheet')), findsNothing);
+    });
+
+    testWidgets('updating from a version that never saved one still shows the notes', (tester) async {
+      await pumpHost(tester, '1.17.0+29', updatedSinceInstall: true);
+      expect(find.byKey(const Key('whats-new-sheet')), findsOneWidget);
     });
 
     testWidgets('the first open after updating shows the notes once', (tester) async {

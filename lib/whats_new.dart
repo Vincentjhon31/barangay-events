@@ -109,12 +109,20 @@ const String _seenVersionKey = 'whats_new_seen_version';
 /// Shows "What's new in version X" once, the first time the app opens after
 /// an update — not on a fresh install (there's nothing "new" to someone who
 /// just installed it), and not again after it's been seen.
-Future<void> showWhatsNewAfterUpdateIfNeeded(BuildContext context, String installedVersion) async {
+///
+/// Versions before this feature never saved a seen version, so with none
+/// saved, [updatedSinceInstall] (the system's install vs. last-update time)
+/// tells someone who updated from one of those apart from a fresh install.
+Future<void> showWhatsNewAfterUpdateIfNeeded(
+  BuildContext context,
+  String installedVersion, {
+  bool updatedSinceInstall = false,
+}) async {
   final version = installedVersion.split('+').first;
   final prefs = await SharedPreferences.getInstance();
   final seen = prefs.getString(_seenVersionKey);
   await prefs.setString(_seenVersionKey, version);
-  if (seen == null || seen == version) return;
+  if (seen == version || (seen == null && !updatedSinceInstall)) return;
   final entry = await bundledWhatsNewFor(version);
   if (entry == null || !context.mounted) return;
   await showWhatsNewSheet(context, entry.version, entry.items);

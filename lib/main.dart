@@ -1321,7 +1321,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
     try {
       final info = await PackageInfo.fromPlatform();
       if (!mounted) return;
-      await showWhatsNewAfterUpdateIfNeeded(context, info.version);
+      final installed = info.installTime;
+      final updated = info.updateTime;
+      await showWhatsNewAfterUpdateIfNeeded(
+        context,
+        info.version,
+        updatedSinceInstall:
+            installed != null && updated != null && updated.difference(installed) > const Duration(minutes: 1),
+      );
     } catch (_) {
       // Version unavailable (e.g. tests) — nothing to compare against.
     }
