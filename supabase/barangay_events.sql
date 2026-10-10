@@ -3539,3 +3539,70 @@ insert into public.app_settings (key, value) values ('hostinger_limit_mb', '1024
 on conflict (key) do nothing;
 
 notify pgrst, 'reload schema';
+
+-- ============================================================
+-- New sign-ups (Oct 2026). Safe to re-run.
+--   * notify_new_signup: when someone creates an account in the app, every
+--     superadmin gets a push (send-signup-notification) so authorized staff
+--     can be promoted to LGU member from the portal's Users -> New sign-ups.
+--     Only self sign-ups: those start as 'citizen'; accounts the portal
+--     creates (admin-create-account) are inserted with their role already
+--     set, and kiosk accounts are skipped.
+--   * The portal remembers what was already reviewed in app_settings
+--     ('signups_reviewed_at'), so nothing else is needed here.
+--   Deploy: supabase functions deploy send-signup-notification --use-api --no-verify-jwt
+-- ============================================================
+
+create or replace function public.notify_new_signup()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_recipients jsonb;
+  v_secret text;
+begin
+  if new.role <> 'citizen' or coalesce(new.is_kiosk_account, false) then
+    return new;
+  end if;
+
+  select coalesce(jsonb_agg(p.id), '[]'::jsonb) into v_recipients
+    from profiles p where p.role = 'superadmin' and p.id <> new.id;
+  if jsonb_array_length(v_recipients) = 0 then
+    return new;
+  end if;
+
+  select ds.decrypted_secret into v_secret
+    from vault.decrypted_secrets ds where ds.name = 'reminder_cron_secret';
+  if v_secret is null then
+    raise warning 'notify_new_signup: vault secret reminder_cron_secret is missing; no push sent';
+    return new;
+  end if;
+
+  perform net.http_post(
+    url := 'https://xuxnoydakqembrytdbyz.supabase.co/functions/v1/send-signup-notification',
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || v_secret,
+      'Content-Type', 'application/json'
+    ),
+    body := jsonb_build_object(
+      'user_id', new.id,
+      'display_name', new.display_name,
+      'email', new.email,
+      'recipients', v_recipients
+    ),
+    timeout_milliseconds := 30000
+  );
+  return new;
+exception when others then
+  -- Never block someone's sign-up over a notification.
+  raise warning 'notify_new_signup failed: %', sqlerrm;
+  return new;
+end $$;
+revoke all on function public.notify_new_signup() from public, anon, authenticated;
+
+-- AFTER INSERT only: the app's profile save is an upsert, and an upsert
+-- that updates an existing row fires UPDATE triggers, not this one.
+drop trigger if exists notify_new_signup on public.profiles;
+create trigger notify_new_signup
+  after insert on public.profiles
+  for each row execute function public.notify_new_signup();
+
+notify pgrst, 'reload schema';

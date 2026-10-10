@@ -647,6 +647,7 @@
         <section id="view-users" class="hidden">
           <nav class="tabs" id="users-tabs" aria-label="Users sections">
             <a href="#users">All users</a>
+            <a href="#users/new">New sign-ups <span class="count hidden" id="tab-new-count"></span></a>
             <a href="#users/admins">Admins</a>
             <a href="#users/applications">Applications <span class="count hidden" id="tab-app-count"></span></a>
             <a href="#users/add">Add account</a>
@@ -665,6 +666,11 @@
               <label class="check"><input type="checkbox" id="users-kiosk-filter"> Kiosk accounts only</label>
             </div>
             <ul class="rows" id="users-list"></ul>
+          </div>
+
+          <div id="users-new" class="panel hidden">
+            <div class="panel-head"><div><h2>New sign-ups</h2><p>People who made an account in the app in the last 30 days. If someone is LGU staff, make them an LGU member so they can create groups and post group events.</p></div><button class="btn ghost sm" type="button" id="signups-mark-seen">Mark all as seen</button></div>
+            <ul class="rows" id="signups-list"></ul>
           </div>
 
           <div id="users-admins" class="panel hidden">
@@ -1230,7 +1236,8 @@
     ];
     function navHtml() {
       return NAV.map(function (n) {
-        var count = n.id === 'users' && applications.length ? '<span class="count">' + applications.length + '</span>' : '';
+        var waiting = n.id === 'users' ? applications.length + newSignups().length : 0;
+        var count = waiting ? '<span class="count">' + waiting + '</span>' : '';
         return '<a href="#' + n.id + '" data-nav="' + n.id + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + n.icon + '</svg><span>' + n.label + '</span>' + count + '</a>';
       }).join('');
     }
@@ -1257,8 +1264,9 @@
       document.title = nav.label + ' · eBongabong Calendar Admin';
       renderNav();
       if (route.view === 'users') {
-        var tab = ['admins', 'applications', 'add'].indexOf(route.tab) >= 0 ? route.tab : 'all';
+        var tab = ['new', 'admins', 'applications', 'add'].indexOf(route.tab) >= 0 ? route.tab : 'all';
         $('users-all').classList.toggle('hidden', tab !== 'all');
+        $('users-new').classList.toggle('hidden', tab !== 'new');
         $('users-admins').classList.toggle('hidden', tab !== 'admins');
         $('users-applications').classList.toggle('hidden', tab !== 'applications');
         $('users-add').classList.toggle('hidden', tab !== 'add');
@@ -1289,7 +1297,14 @@
       // Needs attention
       var attentionIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/></svg>';
       var due = backupDue();
-      $('attention').innerHTML = (applications.length
+      var fresh = newSignups();
+      $('attention').innerHTML = (fresh.length
+        ? '<div class="attention" style="margin-bottom:10px">' + attentionIcon +
+          '<div><strong>' + plural(fresh.length, 'new sign-up') + ' since you last checked</strong>' +
+          '<span>If any of them are LGU staff, make them LGU members.</span></div>' +
+          '<a class="btn primary" href="#users/new">Review sign-ups</a></div>'
+        : '') +
+        (applications.length
         ? '<div class="attention">' + attentionIcon +
           '<div><strong>' + applications.length + (applications.length === 1 ? ' LGU application is' : ' LGU applications are') + ' waiting for review</strong>' +
           '<span>Approved staff can create groups and post group events.</span></div>' +
@@ -1610,6 +1625,76 @@
         sb.rpc('admin_set_user_role', { p_user_id: u.user_id, p_role: 'lgu_member' }).then(function (res) {
           if (res.error) throw res.error;
           toast(who + ' is no longer an admin.');
+          return Promise.all([loadUsers(), loadStats()]);
+        }).catch(function (err) { busy(btn, false); toast(errorText(err)); });
+      });
+    });
+
+    // New sign-ups: people who made their own account in the app (portal-made
+    // accounts already have a role). The database pushes each one to the
+    // superadmin's phone (notify_new_signup); "seen" is remembered in
+    // app_settings so it's the same on every device.
+    var SIGNUP_WINDOW_DAYS = 30;
+    function signupsReviewedAt() {
+      var v = settings.signups_reviewed_at;
+      var t = v ? Date.parse(v) : NaN;
+      // Never reviewed yet: treat the last 7 days as new.
+      return isNaN(t) ? Date.now() - 7 * 86400000 : t;
+    }
+    function recentSignups() {
+      var since = Date.now() - SIGNUP_WINDOW_DAYS * 86400000;
+      return users.filter(function (u) {
+        // Pending LGU applicants are already on the Applications tab.
+        return u.role === 'citizen' && !u.is_kiosk_account && u.lgu_request_status !== 'pending' &&
+          Date.parse(u.created_at) >= since;
+      }).sort(function (a, b) { return Date.parse(b.created_at) - Date.parse(a.created_at); });
+    }
+    function newSignups() {
+      var seen = signupsReviewedAt();
+      return recentSignups().filter(function (u) { return Date.parse(u.created_at) > seen; });
+    }
+    function renderSignups() {
+      var list = recentSignups();
+      var seen = signupsReviewedAt();
+      var fresh = newSignups().length;
+      var c = $('tab-new-count');
+      c.textContent = fresh;
+      c.classList.toggle('hidden', !fresh);
+      $('signups-mark-seen').classList.toggle('hidden', !fresh);
+      $('signups-list').innerHTML = list.length ? list.map(function (u) {
+        var isNew = Date.parse(u.created_at) > seen;
+        return '<li class="row app-row">' + whoCell(u) +
+          '<span class="muted"><span class="label-sm">Joined</span>' + (isNew ? '<span class="pill public" style="margin-right:6px">New</span>' : '') +
+            esc(formatJoined(u.created_at)) + (u.department ? ' · ' + esc(u.department) : '') + '</span>' +
+          '<div class="actions"><button class="btn primary sm" type="button" data-make-lgu="' + esc(u.user_id) + '">Make LGU member</button></div></li>';
+      }).join('') : '<li class="empty"><strong>No new sign-ups</strong>People who make an account in the app show up here.</li>';
+    }
+    $('signups-mark-seen').addEventListener('click', function () {
+      var btn = $('signups-mark-seen');
+      busy(btn, true, 'Saving…');
+      saveSetting('signups_reviewed_at', new Date().toISOString()).then(function () {
+        renderSignups(); renderNav(); renderDashboard();
+      }).catch(function (err) {
+        toast(missingBackend(err) ? SETUP_HINT : errorText(err));
+      }).then(function () { busy(btn, false); });
+    });
+    $('signups-list').addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-make-lgu]');
+      if (!btn) return;
+      var u = userById(btn.dataset.makeLgu);
+      if (!u) return;
+      var who = u.display_name || u.email;
+      confirmDialog({
+        title: 'Make ' + who + ' an LGU member?',
+        text: "Only do this for authorized LGU staff. They'll be able to create groups and post group events in the app." +
+          (u.department ? '' : " They haven't added an office yet; you can add it from Details on the All users tab."),
+        confirm: 'Make LGU member'
+      }).then(function (ok) {
+        if (!ok) return;
+        busy(btn, true, 'Saving…');
+        sb.rpc('admin_set_user_role', { p_user_id: u.user_id, p_role: 'lgu_member' }).then(function (res) {
+          if (res.error) throw res.error;
+          toast(who + ' is now an LGU member.');
           return Promise.all([loadUsers(), loadStats()]);
         }).catch(function (err) { busy(btn, false); toast(errorText(err)); });
       });
@@ -2705,7 +2790,7 @@
       return sb.rpc('list_all_users').then(function (res) {
         if (res.error) throw res.error;
         users = res.data || [];
-        renderUsers(); renderAdmins(); renderDashboard(); renderCategories(); renderPictures();
+        renderUsers(); renderAdmins(); renderSignups(); renderNav(); renderDashboard(); renderCategories(); renderPictures();
       });
     }
     function loadApplications() {
@@ -2771,7 +2856,7 @@
       return sb.from('app_settings').select('key, value').then(function (res) {
         settings = {};
         (res.data || []).forEach(function (r) { settings[r.key] = r.value; });
-        renderBackupHistory(); renderDashboard();
+        renderBackupHistory(); renderSignups(); renderNav(); renderDashboard();
       });
     }
     function loadBackupHistory() {

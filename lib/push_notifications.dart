@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// One FCM topic every device always listens to; public events are pushed
 /// here regardless of who created them.
@@ -21,6 +22,10 @@ String userTopic(String userId) => 'user-$userId';
 /// One FCM topic every device always listens to; a new app release is
 /// announced here (sent by the release GitHub Action, not by the app).
 const String appUpdatesTopic = 'app-updates';
+
+/// The superadmin portal's list of new sign-ups — where tapping a "new
+/// account" notification (sent only to superadmins) takes them.
+const String newSignupsPortalUrl = 'https://vincentjhon31.github.io/barangay-events/lgu-admin/#users/new';
 
 /// The app's own notification sound: android/app/src/main/res/raw/
 /// in_app_notify.mp3 (copied from assets/in-app-notify2.mp3). The push
@@ -263,6 +268,13 @@ class FirebasePushNotificationService implements PushNotificationService {
   }
 
   void _handleNotificationTap(RemoteMessage message) {
+    if (message.data['type'] == 'new_signup') {
+      // Only superadmins get these (send-signup-notification); promoting
+      // someone happens in the portal. The address is fixed here, never
+      // taken from the message.
+      unawaited(launchUrl(Uri.parse(newSignupsPortalUrl), mode: LaunchMode.externalApplication));
+      return;
+    }
     final eventId = message.data['eventId'] as String?;
     if (eventId == null) return;
     if (message.data['type'] == 'chat_message' && _onChatNotificationTapped != null) {
