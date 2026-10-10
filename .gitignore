@@ -72,3 +72,5 @@ supabase/.temp/
 android/build/
 # 36 MB duplicate of reel.mp4 - regenerate with docs/promo/render.mjs
 docs/promo/reel.webm
+/installer_output/
+/e-calendar-*-web.zip
