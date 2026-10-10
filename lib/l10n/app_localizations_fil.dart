@@ -778,6 +778,15 @@ class AppLocalizationsFil extends AppLocalizations {
   }
 
   @override
+  String typeHelperCalendar(String calendar) {
+    return 'Makikita ito ng lahat sa tab na $calendar, at aabisuhan ang lahat.';
+  }
+
+  @override
+  String get attachmentsUploadsOffHint =>
+      'Naka-off ang pagdagdag ng file para makatipid sa storage. Puwede mo pa ring tanggalin ang mga file na naidagdag dati.';
+
+  @override
   String get eventChatYou => 'Ikaw';
 
   @override
@@ -838,7 +847,7 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get manageLocationsSubtitle =>
-      'Superadmin lang. Makikita bilang mabilisang pagpipilian sa Lokasyon ng Magdagdag ng Kaganapan para sa lahat ng account.';
+      'Para lang sa mga admin. Makikita bilang mabilisang pagpipilian sa Lokasyon ng Magdagdag ng Kaganapan para sa lahat ng account.';
 
   @override
   String get manageLocationsEmpty => 'Wala pang lokasyon. Magdagdag sa itaas.';
@@ -1586,7 +1595,7 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get faqA1 =>
-      'Ang mga Pampublikong kaganapan ay opisyal na anunsyo para sa buong barangay na ang superadmin lang ang puwedeng mag-post — makikita ito ng lahat ng gumagamit ng app. Ang mga kaganapan ng Grupo ay ibinabahagi lang sa mga miyembro ng partikular na grupo, tulad ng iyong opisina sa barangay o isang klub — ang mga miyembro lang ang makakakita. Ang mga Personal na kaganapan ay pribadong tala na ikaw lang ang makakakita, para sa sarili mong paalala.';
+      'Ang mga Pampublikong kaganapan ay opisyal na anunsyo para sa buong barangay na ang mga administrator lang ang puwedeng mag-post — makikita ito ng lahat ng gumagamit ng app. Ang mga kaganapan ng Grupo ay ibinabahagi lang sa mga miyembro ng partikular na grupo, tulad ng iyong opisina sa barangay o isang klub — ang mga miyembro lang ang makakakita. Ang mga Personal na kaganapan ay pribadong tala na ikaw lang ang makakakita, para sa sarili mong paalala.';
 
   @override
   String get faqQ2 => 'Paano ako sasali sa isang grupo?';
@@ -1600,14 +1609,14 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get faqA3 =>
-      'Ang paggawa ng grupo ay para lang sa mga beripikadong LGU member at ang superadmin. Kung isa kang citizen, magtanong sa iyong opisina sa barangay o sa superadmin tungkol sa pag-apply para sa access bilang LGU mula sa tab na Mga Grupo.';
+      'Ang paggawa ng grupo ay para lang sa mga beripikadong LGU member at mga administrator. Kung isa kang citizen, magtanong sa iyong opisina sa barangay tungkol sa pag-apply para sa access bilang LGU mula sa tab na Mga Grupo.';
 
   @override
   String get faqQ4 => 'Bakit hindi ako makapag-post ng Pampublikong kaganapan?';
 
   @override
   String get faqA4 =>
-      'Naaabot ng mga Pampublikong kaganapan ang buong komunidad, kaya ang superadmin lang ang puwedeng mag-post nito — nakakatulong ito para hindi malunod ang opisyal na mga anunsyo sa gitna ng mga kaganapan ng komunidad. Puwede pa ring mag-post ang mga LGU member ng mga kaganapan ng Grupo sa mga miyembro ng sarili nilang grupo.';
+      'Naaabot ng mga Pampublikong kaganapan ang buong komunidad, kaya ang mga administrator lang ang puwedeng mag-post nito — nakakatulong ito para hindi malunod ang opisyal na mga anunsyo sa gitna ng mga kaganapan ng komunidad. Puwede pa ring mag-post ang mga LGU member ng mga kaganapan ng Grupo sa mga miyembro ng sarili nilang grupo.';
 
   @override
   String get faqQ5 => 'Paano gumagana ang mga paalala sa kaganapan?';
@@ -1660,7 +1669,7 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get privacyIntro =>
-      'Ipinapaliwanag ng Patakaran sa Privacy na ito kung anong impormasyon ang kinokolekta ng eBongabong Calendar, paano ito ginagamit, at sino ang makakakita nito. Ito ay para sa lahat ng gumagamit ng app, maging ikaw ay isang residente, LGU member, o superadmin.';
+      'Ipinapaliwanag ng Patakaran sa Privacy na ito kung anong impormasyon ang kinokolekta ng eBongabong Calendar, paano ito ginagamit, at sino ang makakakita nito. Ito ay para sa lahat ng gumagamit ng app, maging ikaw ay isang residente, LGU member, o administrator.';
 
   @override
   String get privacyCollectHeading => 'Impormasyong Kinokolekta Namin';

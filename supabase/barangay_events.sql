@@ -852,8 +852,10 @@ create policy "LGU members create groups"
 -- the RPCs above, since guard_profile_role_columns otherwise resets any
 -- UPDATE's role/lgu_request_status back to their old value — including a
 -- plain SQL-editor UPDATE, not just app-side writes.
-select set_config('app.bypass_role_guard', 'on', true);
-update public.profiles set role = 'superadmin' where email = 'anime10315466@gmail.com';
+-- (Retired October 2026 — the superadmin is now set once by the "Admin role +
+-- one real superadmin" block at the end of this file, and every former
+-- superadmin became an admin. Re-promoting the old account here would undo
+-- that on a full re-run of this file.)
 
 -- ============================================================
 -- Event editing (July 2026).
@@ -2443,3 +2445,1012 @@ revoke all on function public.event_chat_summaries() from public, anon;
 grant execute on function public.event_chat_summaries() to authenticated;
 
 notify pgrst, 'reload schema';
+
+-- ============================================================
+-- Admin role + one real superadmin (October 2026).
+-- Safe to re-run on an existing database.
+--
+-- Roles are now: citizen < lgu_member < admin < superadmin.
+--   * admin — what "superadmin" used to mean inside the app: Public
+--     events, managing groups (verified badge, ownership takeover),
+--     event locations, chat moderation. Each of the first three can be
+--     switched off per admin by the superadmin (profiles.admin_permissions;
+--     a missing key counts as ON). Admins CANNOT use the LGU-admin portal.
+--   * superadmin — the system owner (vincentjhon1031@gmail.com): the only
+--     role every portal RPC accepts (accounts, admins, backups,
+--     monitoring, categories). Has every admin power in the app too.
+--
+-- Not to be confused with group_members.role 'admin' — that's a person's
+-- standing inside ONE group and is unrelated to their account role.
+-- ============================================================
+
+-- App-wide settings (key/value), superadmin-only. Also used below as the
+-- one-time marker for the role migration.
+create table if not exists public.app_settings (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now(),
+  updated_by uuid references public.profiles(id) on delete set null
+);
+alter table public.app_settings enable row level security;
+drop policy if exists "Superadmin manages app_settings" on public.app_settings;
+create policy "Superadmin manages app_settings" on public.app_settings
+  for all
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'superadmin'))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'superadmin'));
+
+alter table public.profiles add column if not exists admin_permissions jsonb not null default '{}'::jsonb;
+
+-- Was ('citizen','lgu_member','superadmin').
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles add constraint profiles_role_check
+  check (role in ('citizen', 'lgu_member', 'admin', 'superadmin'));
+
+-- Same guard as before, now also covering admin_permissions: a normal
+-- "save my profile" write can never change any of these three.
+create or replace function public.guard_profile_role_columns()
+returns trigger language plpgsql as $$
+begin
+  if coalesce(current_setting('app.bypass_role_guard', true), 'off') <> 'on' then
+    new.role := old.role;
+    new.lgu_request_status := old.lgu_request_status;
+    new.admin_permissions := old.admin_permissions;
+  end if;
+  return new;
+end $$;
+
+-- ---- Permission helpers (one place instead of inline role checks) ----
+
+-- Whether the caller holds an admin permission ('public_events',
+-- 'manage_groups', 'locations'): always for the superadmin, per-toggle
+-- for an admin (missing = on), never for anyone else.
+create or replace function public.has_admin_permission(p_perm text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((
+    select case
+      when p.role = 'superadmin' then true
+      when p.role = 'admin' then coalesce((p.admin_permissions ->> p_perm)::boolean, true)
+      else false
+    end
+    from profiles p where p.id = auth.uid()
+  ), false);
+$$;
+
+-- Admin or superadmin — powers that aren't a per-admin toggle.
+create or replace function public.is_staff_admin()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from profiles p where p.id = auth.uid() and p.role in ('admin', 'superadmin'));
+$$;
+
+-- ---- In-app powers: superadmin-only -> admin permissions ----
+
+drop policy if exists "Role-gated event creation" on public.barangay_events;
+create policy "Role-gated event creation"
+  on public.barangay_events
+  for insert
+  with check (
+    auth.uid() is not null
+    and created_by_id = auth.uid()
+    and (
+      event_type = 'personal'
+      or (event_type = 'shared' and (
+            public.is_staff_admin()
+            or exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'lgu_member')))
+      or (event_type = 'public' and public.has_admin_permission('public_events'))
+    )
+  );
+
+drop policy if exists "LGU members create groups" on public.groups;
+create policy "LGU members create groups"
+  on public.groups
+  for insert
+  with check (
+    auth.uid() = created_by
+    and (
+      public.has_admin_permission('manage_groups')
+      or exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'lgu_member')
+    )
+  );
+
+create or replace function public.admin_set_group_verified(p_group_id uuid, p_verified boolean)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.has_admin_permission('manage_groups') then
+    raise exception 'Only an admin with the Manage groups permission can verify a group';
+  end if;
+  update groups set is_verified = p_verified where id = p_group_id;
+end $$;
+
+create or replace function public.transfer_group_ownership(p_group_id uuid, p_new_owner_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  current_owner uuid;
+begin
+  select created_by into current_owner from groups where id = p_group_id;
+  if current_owner is null then
+    raise exception 'Group not found';
+  end if;
+
+  if auth.uid() is distinct from current_owner and not public.has_admin_permission('manage_groups') then
+    raise exception 'Only the group''s current owner (or an admin who manages groups) can transfer ownership';
+  end if;
+
+  if p_new_owner_id = current_owner then
+    raise exception 'That member is already the owner';
+  end if;
+
+  if not exists (
+    select 1 from group_members where group_id = p_group_id and user_id = p_new_owner_id
+  ) then
+    raise exception 'The new owner must already be a member of this group';
+  end if;
+
+  update groups set created_by = p_new_owner_id where id = p_group_id;
+  update group_members set role = 'admin' where group_id = p_group_id and user_id = p_new_owner_id;
+end $$;
+
+-- The older block creates this policy inside "if not exists", so it has
+-- to be dropped explicitly here rather than redefined.
+drop policy if exists "Superadmin can manage lgu_locations" on public.lgu_locations;
+drop policy if exists "Admins manage lgu_locations" on public.lgu_locations;
+create policy "Admins manage lgu_locations" on public.lgu_locations
+  for all
+  using (public.has_admin_permission('locations'))
+  with check (public.has_admin_permission('locations'));
+
+-- Chat moderation: any admin (not a toggle), plus author and event creator.
+create or replace function public.delete_event_comment(p_comment_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_author uuid;
+  v_deleted_at timestamptz;
+  v_event_creator uuid;
+begin
+  select c.user_id, c.deleted_at, e.created_by_id
+    into v_author, v_deleted_at, v_event_creator
+    from event_comments c
+    join barangay_events e on e.id = c.event_id
+    where c.id = p_comment_id;
+  if not found then
+    raise exception 'Message not found';
+  end if;
+  if v_deleted_at is not null then
+    return;
+  end if;
+  if auth.uid() is null or not (
+    v_author = auth.uid()
+    or v_event_creator is not distinct from auth.uid()
+    or public.is_staff_admin()
+  ) then
+    raise exception 'Only the author, the event creator, or an admin can delete this message';
+  end if;
+
+  update event_comments c
+    set body = '', deleted_at = now(), deleted_by = auth.uid()
+    where c.id = p_comment_id;
+end $$;
+
+-- ---- Portal (superadmin-only) RPCs ----
+
+create or replace function public.admin_set_user_role(p_user_id uuid, p_role text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  target_current_role text;
+begin
+  if not exists (select 1 from profiles where id = auth.uid() and role = 'superadmin') then
+    raise exception 'Only a superadmin can change roles';
+  end if;
+  if p_role not in ('citizen', 'lgu_member', 'admin', 'superadmin') then
+    raise exception 'Invalid role: %', p_role;
+  end if;
+  if p_user_id = auth.uid() then
+    raise exception 'You cannot change your own role';
+  end if;
+
+  select role into target_current_role from profiles where id = p_user_id;
+  if target_current_role is null then
+    raise exception 'User not found';
+  end if;
+
+  if target_current_role = 'superadmin' and p_role <> 'superadmin'
+     and (select count(*) from profiles where role = 'superadmin') <= 1 then
+    raise exception 'Cannot remove the last remaining superadmin';
+  end if;
+
+  perform set_config('app.bypass_role_guard', 'on', true);
+  update profiles
+    set role = p_role,
+        lgu_request_status = case
+          when p_role = 'lgu_member' then 'approved'
+          when p_role = 'citizen' then null
+          else lgu_request_status
+        end,
+        -- Leaving the admin role clears the toggles, so being made an
+        -- admin again later starts from "everything on".
+        admin_permissions = case when p_role = 'admin' then admin_permissions else '{}'::jsonb end
+    where id = p_user_id;
+end $$;
+
+-- Sets an admin's permission toggles, e.g.
+-- {"public_events": true, "manage_groups": false, "locations": true}.
+create or replace function public.admin_set_admin_permissions(p_user_id uuid, p_permissions jsonb)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_key text;
+  v_value jsonb;
+begin
+  if not exists (select 1 from profiles where id = auth.uid() and role = 'superadmin') then
+    raise exception 'Only a superadmin can change admin permissions';
+  end if;
+  if p_permissions is null or jsonb_typeof(p_permissions) <> 'object' then
+    raise exception 'Permissions must be an object';
+  end if;
+  for v_key, v_value in select * from jsonb_each(p_permissions) loop
+    if v_key not in ('public_events', 'manage_groups', 'locations') then
+      raise exception 'Unknown permission: %', v_key;
+    end if;
+    if jsonb_typeof(v_value) <> 'boolean' then
+      raise exception 'Permission % must be true or false', v_key;
+    end if;
+  end loop;
+  if not exists (select 1 from profiles where id = p_user_id and role = 'admin') then
+    raise exception 'Permissions only apply to admin accounts';
+  end if;
+
+  perform set_config('app.bypass_role_guard', 'on', true);
+  update profiles set admin_permissions = p_permissions where id = p_user_id;
+end $$;
+
+revoke all on function public.admin_set_admin_permissions(uuid, jsonb) from public, anon;
+grant execute on function public.admin_set_admin_permissions(uuid, jsonb) to authenticated;
+
+-- Now also returns avatar_url (portal shows real pictures, not initials)
+-- and admin_permissions. Output shape changes need a drop first.
+drop function if exists public.list_all_users();
+create function public.list_all_users()
+returns table(
+  user_id uuid, email text, display_name text, department text,
+  phone_number text, role text, lgu_request_status text, created_at timestamptz,
+  is_kiosk_account boolean, avatar_url text, admin_permissions jsonb
+)
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can list all users';
+  end if;
+  return query
+    select p.id, p.email, p.display_name, p.department, p.phone_number,
+           p.role, p.lgu_request_status, p.created_at, p.is_kiosk_account,
+           p.avatar_url, p.admin_permissions
+    from profiles p
+    order by p.created_at desc;
+end $$;
+
+drop function if exists public.list_pending_lgu_applications();
+create function public.list_pending_lgu_applications()
+returns table(
+  user_id uuid, email text, display_name text, department text, requested_at timestamptz,
+  avatar_url text
+)
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles where id = auth.uid() and role = 'superadmin') then
+    raise exception 'Only a superadmin can view LGU applications';
+  end if;
+  return query
+    select p.id, p.email, p.display_name, p.department, p.updated_at, p.avatar_url
+    from profiles p
+    where p.lgu_request_status = 'pending'
+    order by p.updated_at asc;
+end $$;
+
+create or replace function public.admin_dashboard_stats()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  -- Event times are Philippine wall-clock labeled UTC (see the "Reminder
+  -- timing fix" block), so "now" is expressed the same way.
+  v_now timestamptz := (now() at time zone 'Asia/Manila') at time zone 'UTC';
+  v_month_start timestamptz := date_trunc('month', v_now at time zone 'UTC') at time zone 'UTC';
+begin
+  if not exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can view dashboard stats';
+  end if;
+  return jsonb_build_object(
+    'users_total', (select count(*) from profiles),
+    'users_citizen', (select count(*) from profiles where role = 'citizen'),
+    'users_lgu', (select count(*) from profiles where role = 'lgu_member'),
+    'users_admin', (select count(*) from profiles where role = 'admin'),
+    'users_superadmin', (select count(*) from profiles where role = 'superadmin'),
+    'users_new_7d', (select count(*) from profiles where created_at > now() - interval '7 days'),
+    'pending_applications', (select count(*) from profiles where lgu_request_status = 'pending'),
+    'events_public', (select count(*) from barangay_events where event_type = 'public'),
+    'events_group', (select count(*) from barangay_events where event_type = 'shared'),
+    'events_personal', (select count(*) from barangay_events where event_type = 'personal'),
+    'events_upcoming_7d', (select count(*) from barangay_events
+      where event_type <> 'personal' and end_time >= v_now and start_time < v_now + interval '7 days'),
+    'events_this_month', (select count(*) from barangay_events
+      where event_type <> 'personal' and start_time >= v_month_start
+        and start_time < v_month_start + interval '1 month'),
+    'groups_total', (select count(*) from groups),
+    'reminders_sent_24h', (select count(*) from event_reminders_sent where sent_at > now() - interval '24 hours')
+  );
+end $$;
+
+-- ---- One-time migration ----
+-- Makes vincentjhon1031@gmail.com the superadmin and turns every OTHER
+-- existing superadmin into an admin (keeping all their in-app powers).
+-- Runs once, recorded in app_settings — so a superadmin added later from
+-- the portal is never demoted by re-running this file. If that account
+-- hasn't signed up yet, nothing changes (the portal is never left without
+-- a superadmin) and the next run tries again.
+do $$
+begin
+  if exists (select 1 from public.app_settings where key = 'migration_admin_role_split') then
+    return;
+  end if;
+  if not exists (select 1 from public.profiles where lower(email) = 'vincentjhon1031@gmail.com') then
+    raise notice 'Role split skipped: vincentjhon1031@gmail.com has no profile yet. Sign up with it, then re-run this block.';
+    return;
+  end if;
+  perform set_config('app.bypass_role_guard', 'on', true);
+  update public.profiles set role = 'superadmin', admin_permissions = '{}'::jsonb
+    where lower(email) = 'vincentjhon1031@gmail.com';
+  update public.profiles set role = 'admin'
+    where role = 'superadmin' and lower(email) <> 'vincentjhon1031@gmail.com';
+  insert into public.app_settings (key, value) values ('migration_admin_role_split', to_jsonb(now()));
+end $$;
+
+notify pgrst, 'reload schema';
+
+-- ============================================================
+-- Custom calendars — e.g. a "Sports" calendar (October 2026).
+-- Safe to re-run. Replaces the short-lived "Event categories" version of
+-- this block: its table and column are renamed below, keeping any rows.
+--
+-- The superadmin creates a calendar on the portal's Calendars page and
+-- assigns the people who handle it (any account). In the app:
+--   * everyone sees a filter tab for it after All / Public / Group /
+--     Personal, showing that calendar's events — not under Public;
+--   * its handlers get it as a choice in Add Event next to Public / Group /
+--     Personal; only they (and the superadmin) can post to it, and any of
+--     them can edit its events (deleting stays with each event's poster);
+--   * a new event in it notifies everyone, like a Public event, and it
+--     gets reminders and chat like a Public event too.
+-- Such an event has event_type = 'calendar' plus calendar_id; its
+-- calendar_name is denormalized (like group_name) and kept current.
+--
+-- Removing a calendar asks first:
+--   * Archive — the tab is hidden and nobody can post to it; its events
+--     stay (under All) and restoring brings the tab back;
+--   * Delete permanently — the calendar goes, and its events become
+--     ordinary Public events, so nothing is lost.
+-- ============================================================
+
+-- From the categories version (if it was run): rename, keep the rows.
+do $$ begin
+  if to_regclass('public.event_calendars') is null and to_regclass('public.event_categories') is not null then
+    alter table public.event_categories rename to event_calendars;
+  end if;
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'barangay_events' and column_name = 'category_id')
+     and not exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'barangay_events' and column_name = 'calendar_id') then
+    alter table public.barangay_events rename column category_id to calendar_id;
+  end if;
+  if exists (select 1 from pg_constraint where conname = 'barangay_events_category_id_fkey') then
+    alter table public.barangay_events rename constraint barangay_events_category_id_fkey to barangay_events_calendar_id_fkey;
+  end if;
+  if exists (select 1 from pg_constraint where conname = 'event_categories_name_check') then
+    alter table public.event_calendars rename constraint event_categories_name_check to event_calendars_name_check;
+  end if;
+end $$;
+alter index if exists public.event_categories_pkey rename to event_calendars_pkey;
+alter index if exists public.event_categories_name_key rename to event_calendars_name_key;
+alter index if exists public.barangay_events_category_idx rename to barangay_events_calendar_idx;
+drop function if exists public.admin_update_event(text, text, text, text, timestamptz, timestamptz, text, text, uuid);
+
+create table if not exists public.event_calendars (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(trim(name)) between 1 and 40),
+  icon text not null default 'tag',
+  color_key text,
+  sort_order integer not null default 0,
+  archived_at timestamptz,
+  created_at timestamptz not null default now(),
+  created_by uuid references public.profiles(id) on delete set null
+);
+create unique index if not exists event_calendars_name_key on public.event_calendars (lower(trim(name)));
+alter table public.event_calendars enable row level security;
+
+drop policy if exists "Signed-in users read event_categories" on public.event_calendars;
+drop policy if exists "Superadmin manages event_categories" on public.event_calendars;
+drop policy if exists "Signed-in users read event_calendars" on public.event_calendars;
+create policy "Signed-in users read event_calendars" on public.event_calendars
+  for select using (auth.uid() is not null);
+drop policy if exists "Superadmin manages event_calendars" on public.event_calendars;
+create policy "Superadmin manages event_calendars" on public.event_calendars
+  for all
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'superadmin'))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'superadmin'));
+
+-- Who handles which calendar. Readable by the handler themselves (so the
+-- app knows what they can post to) and the superadmin.
+create table if not exists public.event_calendar_handlers (
+  calendar_id uuid not null references public.event_calendars(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  added_at timestamptz not null default now(),
+  added_by uuid references public.profiles(id) on delete set null,
+  primary key (calendar_id, user_id)
+);
+alter table public.event_calendar_handlers enable row level security;
+drop policy if exists "Handlers see their own assignments" on public.event_calendar_handlers;
+create policy "Handlers see their own assignments" on public.event_calendar_handlers
+  for select using (
+    user_id = auth.uid()
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'superadmin')
+  );
+drop policy if exists "Superadmin manages calendar handlers" on public.event_calendar_handlers;
+create policy "Superadmin manages calendar handlers" on public.event_calendar_handlers
+  for all
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'superadmin'))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'superadmin'));
+
+alter table public.barangay_events
+  add column if not exists calendar_id uuid references public.event_calendars(id) on delete set null;
+alter table public.barangay_events add column if not exists calendar_name text;
+create index if not exists barangay_events_calendar_idx on public.barangay_events (calendar_id);
+
+-- Whether the caller may post to / edit events in a calendar: one of its
+-- handlers, or the superadmin. Archived calendars take no new posts.
+create or replace function public.is_calendar_handler(p_calendar_id uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select p_calendar_id is not null and (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin')
+    or exists (select 1 from event_calendar_handlers h where h.calendar_id = p_calendar_id and h.user_id = auth.uid())
+  );
+$$;
+
+-- The calendars the caller may post to (for the app's Add Event).
+create or replace function public.my_calendar_ids()
+returns table(calendar_id uuid) language sql stable security definer set search_path = public as $$
+  select c.id from event_calendars c
+  where c.archived_at is null
+    and (
+      exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin')
+      or exists (select 1 from event_calendar_handlers h where h.calendar_id = c.id and h.user_id = auth.uid())
+    );
+$$;
+revoke all on function public.my_calendar_ids() from public, anon;
+grant execute on function public.my_calendar_ids() to authenticated;
+
+-- Keeps calendar_name in step with calendar_id, and calendar_id only on
+-- calendar events.
+create or replace function public.fill_event_calendar_name()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.event_type <> 'calendar' then
+    new.calendar_id := null;
+  end if;
+  new.calendar_name := (select c.name from event_calendars c where c.id = new.calendar_id);
+  return new;
+end $$;
+drop trigger if exists fill_event_calendar_name on public.barangay_events;
+create trigger fill_event_calendar_name
+  before insert or update of calendar_id, event_type on public.barangay_events
+  for each row execute function public.fill_event_calendar_name();
+
+create or replace function public.sync_event_calendar_name()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.name is distinct from old.name then
+    update barangay_events e set calendar_name = new.name where e.calendar_id = new.id;
+  end if;
+  return new;
+end $$;
+drop trigger if exists sync_event_calendar_name on public.event_calendars;
+create trigger sync_event_calendar_name
+  after update of name on public.event_calendars
+  for each row execute function public.sync_event_calendar_name();
+
+-- Delete permanently: the calendar's events become ordinary Public events.
+create or replace function public.release_calendar_events()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  update barangay_events e
+    set event_type = 'public', calendar_id = null, calendar_name = null
+    where e.calendar_id = old.id;
+  return old;
+end $$;
+drop trigger if exists release_calendar_events on public.event_calendars;
+create trigger release_calendar_events
+  before delete on public.event_calendars
+  for each row execute function public.release_calendar_events();
+
+-- ---- Event rules: calendar events behave like Public ones ----
+
+drop policy if exists "Read visible events" on public.barangay_events;
+create policy "Read visible events"
+  on public.barangay_events
+  for select
+  using (
+    event_type in ('public', 'calendar')
+    or created_by_id = auth.uid()
+    or (event_type = 'shared' and group_id is not null and exists (
+          select 1 from group_members gm
+          where gm.group_id = barangay_events.group_id
+            and gm.user_id = auth.uid()))
+  );
+
+drop policy if exists "Role-gated event creation" on public.barangay_events;
+create policy "Role-gated event creation"
+  on public.barangay_events
+  for insert
+  with check (
+    auth.uid() is not null
+    and created_by_id = auth.uid()
+    and (
+      event_type = 'personal'
+      or (event_type = 'shared' and (
+            public.is_staff_admin()
+            or exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'lgu_member')))
+      or (event_type = 'public' and public.has_admin_permission('public_events'))
+      or (event_type = 'calendar' and public.is_calendar_handler(calendar_id)
+          and exists (select 1 from event_calendars c where c.id = calendar_id and c.archived_at is null))
+    )
+  );
+
+drop policy if exists "Creator or group admin can edit events" on public.barangay_events;
+create policy "Creator or group admin can edit events"
+  on public.barangay_events
+  for update
+  using (
+    created_by_id = auth.uid()
+    or (event_type = 'shared' and group_id is not null and exists (
+          select 1 from group_members gm
+          where gm.group_id = barangay_events.group_id and gm.user_id = auth.uid() and gm.role = 'admin'))
+    or (event_type = 'calendar' and public.is_calendar_handler(calendar_id))
+  )
+  with check (
+    created_by_id = auth.uid()
+    or (event_type = 'shared' and group_id is not null and exists (
+          select 1 from group_members gm
+          where gm.group_id = barangay_events.group_id and gm.user_id = auth.uid() and gm.role = 'admin'))
+    or (event_type = 'calendar' and public.is_calendar_handler(calendar_id))
+  );
+
+-- Reminders: calendar events remind everyone who has reminders on, like
+-- Public events. (Same function as the "Reminder timing fix" block, with
+-- that one condition widened.)
+create or replace function public.list_due_event_reminders(p_window text)
+returns table(
+  user_id uuid, event_id text, event_title text, event_start timestamptz,
+  event_location text, event_type text, group_name text, event_all_day boolean
+)
+language plpgsql security definer set search_path = public as $$
+declare
+  -- The current moment in the stored convention: Philippine wall-clock
+  -- time labeled as UTC.
+  v_now timestamptz := (now() at time zone 'Asia/Manila') at time zone 'UTC';
+  v_lead interval;
+begin
+  if p_window = '1h' then
+    v_lead := interval '1 hour';
+  elsif p_window = '1d' then
+    v_lead := interval '1 day';
+  else
+    raise exception 'Invalid window: %', p_window;
+  end if;
+
+  -- Every column reference is table-qualified: the output columns above
+  -- are PL/pgSQL variables, and an unqualified user_id/event_id/etc.
+  -- would be ambiguous (see the request_or_join_group lesson above).
+  return query
+    with upcoming as (
+      select
+        e.id, e.title, e.start_time, e.location, e.event_type,
+        e.group_id, e.group_name, e.created_by_id,
+        ((e.start_time at time zone 'UTC')::time = time '00:00'
+          and (e.end_time at time zone 'UTC')::time = time '23:59') as all_day
+      from barangay_events e
+      -- Cheap pre-filter only; the exact "is it due" check is below.
+      where e.start_time > v_now - interval '1 day'
+        and e.start_time <= v_now + v_lead + interval '1 day'
+    ),
+    anchored as (
+      select u.*,
+        case when u.all_day then u.start_time + interval '8 hours' else u.start_time end as remind_at
+      from upcoming u
+    )
+    select p.id, a.id, a.title, a.start_time, a.location, a.event_type, a.group_name, a.all_day
+    from anchored a
+    join profiles p on p.reminder_preference = p_window
+    where a.remind_at - v_lead <= v_now
+      and a.remind_at > v_now
+      and (
+        a.event_type in ('public', 'calendar')
+        or (a.event_type = 'personal' and a.created_by_id = p.id)
+        or (a.event_type = 'shared' and a.group_id is not null and exists (
+              select 1 from group_members gm where gm.group_id = a.group_id and gm.user_id = p.id))
+      )
+      and not exists (
+        select 1 from event_reminders_sent ers
+        where ers.event_id = a.id and ers.user_id = p.id and ers.reminder_window = p_window
+      );
+end $$;
+
+-- Chat notifications: a calendar event's chat notifies like a Public
+-- event's (creator + everyone who has written in it).
+create or replace function public.notify_event_comment()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_event record;
+  v_recipients jsonb;
+  v_secret text;
+begin
+  select e.id, e.title, e.event_type, e.group_id, e.group_name, e.created_by_id
+    into v_event
+    from barangay_events e where e.id = new.event_id;
+  if not found or v_event.event_type = 'personal' then
+    return new;
+  end if;
+
+  select coalesce(jsonb_agg(distinct r.uid), '[]'::jsonb)
+    into v_recipients
+    from (
+      select gm.user_id as uid
+        from group_members gm
+        where v_event.event_type = 'shared' and gm.group_id = v_event.group_id
+      union
+      select v_event.created_by_id
+        where v_event.event_type in ('public', 'calendar')
+      union
+      select c.user_id
+        from event_comments c
+        where v_event.event_type in ('public', 'calendar') and c.event_id = new.event_id
+    ) r
+    where r.uid is not null and r.uid <> new.user_id;
+
+  if jsonb_array_length(v_recipients) = 0 then
+    return new;
+  end if;
+
+  select ds.decrypted_secret into v_secret
+    from vault.decrypted_secrets ds where ds.name = 'reminder_cron_secret';
+  if v_secret is null then
+    raise warning 'notify_event_comment: vault secret reminder_cron_secret is missing; no push sent';
+    return new;
+  end if;
+
+  perform net.http_post(
+    url := 'https://xuxnoydakqembrytdbyz.supabase.co/functions/v1/send-chat-notification',
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || v_secret,
+      'Content-Type', 'application/json'
+    ),
+    body := jsonb_build_object(
+      'comment_id', new.id,
+      'event_id', new.event_id,
+      'event_title', v_event.title,
+      'event_type', v_event.event_type,
+      'group_name', v_event.group_name,
+      'author_id', new.user_id,
+      'author_name', new.author_name,
+      'body', new.body,
+      'recipients', v_recipients
+    ),
+    timeout_milliseconds := 30000
+  );
+  return new;
+exception when others then
+  raise warning 'notify_event_comment failed: %', sqlerrm;
+  return new;
+end $$;
+
+-- ---- Portal ----
+
+drop function if exists public.admin_list_events();
+create function public.admin_list_events()
+returns table(
+  out_id text, out_title text, out_location text, out_description text,
+  out_start_time timestamptz, out_end_time timestamptz, out_event_type text,
+  out_group_name text, out_created_by_name text, out_created_by_department text,
+  out_created_by_avatar_url text, out_color_key text, out_contact_number text,
+  out_created_at timestamptz, out_calendar_id uuid, out_calendar_name text
+)
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can list events';
+  end if;
+  return query
+    select e.id, e.title, e.location, e.description, e.start_time, e.end_time, e.event_type,
+           e.group_name, e.created_by_name, e.created_by_department, e.created_by_avatar_url,
+           e.color_key, e.contact_number, e.created_at, e.calendar_id, e.calendar_name
+    from barangay_events e
+    where e.event_type <> 'personal'
+    order by e.start_time desc
+    limit 2000;
+end $$;
+
+-- Back to the original 8 parameters (the categories version added a 9th).
+create or replace function public.admin_update_event(
+  p_event_id text, p_title text, p_location text, p_description text,
+  p_start timestamptz, p_end timestamptz, p_color_key text, p_contact_number text
+)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_type text;
+begin
+  if not exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can edit events from the admin portal';
+  end if;
+  select e.event_type into v_type from barangay_events e where e.id = p_event_id;
+  if v_type is null then
+    raise exception 'Event not found';
+  end if;
+  if v_type = 'personal' then
+    raise exception 'Personal events can only be changed by their creator';
+  end if;
+  if coalesce(trim(p_title), '') = '' then
+    raise exception 'Title is required';
+  end if;
+  if p_end <= p_start then
+    raise exception 'The end must be after the start';
+  end if;
+
+  update barangay_events e set
+    title = trim(p_title),
+    location = coalesce(nullif(trim(p_location), ''), 'Other'),
+    description = coalesce(p_description, ''),
+    start_time = p_start,
+    end_time = p_end,
+    day_key = date_trunc('day', p_start at time zone 'UTC') at time zone 'UTC',
+    color_key = nullif(p_color_key, ''),
+    contact_number = nullif(trim(coalesce(p_contact_number, '')), ''),
+    -- Drop per-day overrides for days no longer in the (possibly moved) range.
+    daily_overrides = coalesce((
+      select jsonb_agg(o)
+      from jsonb_array_elements(coalesce(e.daily_overrides, '[]'::jsonb)) o
+      where ((o->>'day')::timestamptz at time zone 'UTC')::date
+            between (p_start at time zone 'UTC')::date and (p_end at time zone 'UTC')::date
+    ), '[]'::jsonb)
+  where e.id = p_event_id;
+end $$;
+
+-- The app refreshes its calendar tabs live when the superadmin edits them.
+do $$ begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'event_calendars'
+  ) then
+    alter publication supabase_realtime add table public.event_calendars;
+  end if;
+end $$;
+
+notify pgrst, 'reload schema';
+
+-- ============================================================
+-- Database monitoring + backup & restore (October 2026).
+-- Safe to re-run. Needs the "Admin role + one real superadmin" block
+-- above (app_settings). Everything here is superadmin-only.
+--
+-- BACKUP: the portal's Backups page asks the admin-backup Edge Function
+-- (service role) for every table's rows plus signed links to the event
+-- attachment files, and builds a ZIP in the browser (JSON + CSV per
+-- table, the files, this schema file, and a README). Login passwords are
+-- NOT included — restored accounts sign in again via "Forgot password".
+--
+-- RESTORE: the portal recreates any missing login accounts (admin-backup
+-- 'restore-users'), then feeds each table back through
+-- admin_restore_table below in dependency order:
+--   * Merge   — upserts: puts back missing rows and overwrites rows that
+--               exist in the backup; anything newer is kept.
+--   * Replace — admin_restore_wipe first empties the content tables
+--               (never profiles, accounts, or app settings), then merges.
+-- While a table is being restored its user triggers are switched off, so
+-- restoring doesn't fire push notifications (event webhook, chat
+-- notifications) or other side effects. Foreign keys are still enforced.
+-- ============================================================
+
+insert into public.app_settings (key, value) values
+  ('backup_reminder_days', '7'::jsonb),
+  ('db_limit_mb', '500'::jsonb),
+  ('storage_limit_mb', '1024'::jsonb)
+on conflict (key) do nothing;
+
+create table if not exists public.backup_log (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null check (kind in ('export', 'restore')),
+  mode text,
+  created_at timestamptz not null default now(),
+  created_by uuid references public.profiles(id) on delete set null,
+  row_counts jsonb not null default '{}'::jsonb,
+  file_count integer not null default 0,
+  note text
+);
+alter table public.backup_log enable row level security;
+drop policy if exists "Superadmin reads backup_log" on public.backup_log;
+create policy "Superadmin reads backup_log" on public.backup_log
+  for select using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'superadmin'));
+
+create or replace function public.admin_record_backup(
+  p_kind text, p_mode text, p_row_counts jsonb, p_file_count integer, p_note text default null
+)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles where id = auth.uid() and role = 'superadmin') then
+    raise exception 'Only a superadmin can record backups';
+  end if;
+  insert into backup_log (kind, mode, created_by, row_counts, file_count, note)
+    values (p_kind, p_mode, auth.uid(), coalesce(p_row_counts, '{}'::jsonb), coalesce(p_file_count, 0), p_note);
+end $$;
+
+-- Database size, per-table size and row counts, file storage per bucket,
+-- login accounts, the limits set in app_settings, and the last backup.
+create or replace function public.admin_database_usage()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_tables jsonb := '[]'::jsonb;
+  v_rec record;
+  v_rows bigint;
+begin
+  if not exists (select 1 from profiles where id = auth.uid() and role = 'superadmin') then
+    raise exception 'Only a superadmin can view database usage';
+  end if;
+
+  for v_rec in
+    select c.oid, c.relname
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind = 'r'
+    order by pg_total_relation_size(c.oid) desc
+  loop
+    execute format('select count(*) from public.%I', v_rec.relname) into v_rows;
+    v_tables := v_tables || jsonb_build_object(
+      'table', v_rec.relname,
+      'bytes', pg_total_relation_size(v_rec.oid),
+      'rows', v_rows
+    );
+  end loop;
+
+  return jsonb_build_object(
+    'database_bytes', pg_database_size(current_database()),
+    'tables', v_tables,
+    'storage', coalesce((
+      select jsonb_agg(jsonb_build_object('bucket', b.bucket_id, 'files', b.files, 'bytes', b.bytes))
+      from (
+        select o.bucket_id, count(*) as files, coalesce(sum((o.metadata->>'size')::bigint), 0) as bytes
+        from storage.objects o group by o.bucket_id
+      ) b
+    ), '[]'::jsonb),
+    'auth_users', (select count(*) from auth.users),
+    'db_limit_mb', coalesce((select (value #>> '{}')::numeric from app_settings where key = 'db_limit_mb'), 500),
+    'storage_limit_mb', coalesce((select (value #>> '{}')::numeric from app_settings where key = 'storage_limit_mb'), 1024),
+    'last_backup_at', (select max(created_at) from backup_log where kind = 'export')
+  );
+end $$;
+
+-- Restores one batch of rows into one table (see the block comment).
+-- Only the columns present in the backup rows are written, so a backup
+-- from an older version of the app (missing newer columns) restores
+-- cleanly and leaves those newer columns at their current/default values.
+create or replace function public.admin_restore_table(p_table text, p_rows jsonb)
+returns integer language plpgsql security definer set search_path = public as $$
+declare
+  v_pk text[];
+  v_cols text[];
+  v_col_list text;
+  v_update text;
+  v_count integer;
+begin
+  if not exists (select 1 from profiles where id = auth.uid() and role = 'superadmin') then
+    raise exception 'Only a superadmin can restore backups';
+  end if;
+
+  v_pk := case p_table
+    when 'profiles' then array['id']
+    when 'groups' then array['id']
+    when 'group_members' then array['group_id', 'user_id']
+    when 'group_join_requests' then array['id']
+    when 'event_calendars' then array['id']
+    when 'event_calendar_handlers' then array['calendar_id', 'user_id']
+    when 'lgu_locations' then array['id']
+    when 'barangay_events' then array['id']
+    when 'event_attachments' then array['id']
+    when 'event_comments' then array['id']
+    when 'event_reminders_sent' then array['event_id', 'user_id', 'reminder_window']
+    when 'app_reviews' then array['id']
+    when 'app_settings' then array['key']
+    else null
+  end;
+  if v_pk is null then
+    raise exception 'Table % can''t be restored', p_table;
+  end if;
+  if p_rows is null or jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) = 0 then
+    return 0;
+  end if;
+
+  -- Columns that exist in the table AND appear in the backup rows.
+  select array_agg(c.column_name::text order by c.ordinal_position)
+    into v_cols
+    from information_schema.columns c
+    where c.table_schema = 'public' and c.table_name = p_table
+      and c.is_generated = 'NEVER'
+      and exists (select 1 from jsonb_array_elements(p_rows) r where r ? c.column_name);
+  if v_cols is null or not (v_pk <@ v_cols) then
+    raise exception 'Backup rows for % are missing their key columns', p_table;
+  end if;
+
+  select string_agg(format('%I', col), ', ') into v_col_list from unnest(v_cols) col;
+  select string_agg(format('%I = excluded.%I', col, col), ', ') into v_update
+    from unnest(v_cols) col where not (col = any (v_pk));
+
+  execute format('alter table public.%I disable trigger user', p_table);
+  execute format(
+    'insert into public.%I (%s) select %s from jsonb_populate_recordset(null::public.%I, $1) on conflict (%s) do %s',
+    p_table, v_col_list, v_col_list, p_table,
+    (select string_agg(format('%I', k), ', ') from unnest(v_pk) k),
+    case when v_update is null then 'nothing' else 'update set ' || v_update end
+  ) using p_rows;
+  get diagnostics v_count = row_count;
+  -- Restoring an old copy of profiles must never take the superadmin role
+  -- away from the person doing the restore (they'd be locked out of the
+  -- portal halfway through).
+  if p_table = 'profiles' then
+    update profiles set role = 'superadmin', admin_permissions = '{}'::jsonb where id = auth.uid();
+  end if;
+  execute format('alter table public.%I enable trigger user', p_table);
+  return v_count;
+end $$;
+
+-- Replace mode: empties the content tables (children first) with their
+-- triggers off, so nothing pushes "event cancelled" or similar. Never
+-- touches profiles, login accounts, app settings, or the backup log.
+create or replace function public.admin_restore_wipe()
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_table text;
+begin
+  if not exists (select 1 from profiles where id = auth.uid() and role = 'superadmin') then
+    raise exception 'Only a superadmin can restore backups';
+  end if;
+  foreach v_table in array array[
+    'event_comments', 'event_attachments', 'event_reminders_sent', 'group_join_requests',
+    'group_members', 'barangay_events', 'groups', 'lgu_locations', 'event_calendar_handlers', 'event_calendars', 'app_reviews'
+  ] loop
+    if to_regclass('public.' || v_table) is not null then
+      execute format('alter table public.%I disable trigger user', v_table);
+      execute format('delete from public.%I', v_table);
+      execute format('alter table public.%I enable trigger user', v_table);
+    end if;
+  end loop;
+end $$;
+
+revoke all on function public.admin_record_backup(text, text, jsonb, integer, text) from public, anon;
+revoke all on function public.admin_database_usage() from public, anon;
+revoke all on function public.admin_restore_table(text, jsonb) from public, anon;
+revoke all on function public.admin_restore_wipe() from public, anon;
+grant execute on function public.admin_record_backup(text, text, jsonb, integer, text) to authenticated;
+grant execute on function public.admin_database_usage() to authenticated;
+grant execute on function public.admin_restore_table(text, jsonb) to authenticated;
+grant execute on function public.admin_restore_wipe() to authenticated;
+
+notify pgrst, 'reload schema';
+
+-- ============================================================
+-- Event attachment uploads turned off (October 2026). Safe to re-run.
+--
+-- To keep the Supabase free tier's file storage from filling up, the
+-- app no longer lets anyone attach files to events. This also stops
+-- older app versions still in people's hands: their upload just fails
+-- quietly (the event itself still saves — uploads were always
+-- non-fatal there). Files attached before stay viewable, and their
+-- posters can still delete them, which frees the space. Backups still
+-- include them, and a restore can still put them back (it uses the
+-- service role, not these policies).
+--
+-- Kept at the end of the file on purpose: the original attachments block
+-- recreates these policies if missing, so this has to have the final say.
+-- To allow uploads again, re-run that original block and delete this one.
+-- ============================================================
+drop policy if exists "creator can add attachments" on public.event_attachments;
+drop policy if exists "upload event attachment files" on storage.objects;

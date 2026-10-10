@@ -7,7 +7,7 @@ import 'event_store.dart';
 import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
 
-/// Superadmin-only screen to manage the quick-pick venues offered in Add
+/// Admin screen (Event locations permission) to manage the quick-pick venues offered in Add
 /// Event's Location field (see EventRepository.listLguLocations). A thin
 /// CRUD UI over the same lgu_locations table the LGU admin web portal's
 /// own Locations section manages — either interface works; this one just

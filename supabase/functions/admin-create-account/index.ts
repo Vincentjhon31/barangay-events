@@ -1,5 +1,5 @@
 // Supabase Edge Function: lets the superadmin create a brand-new account
-// (LGU member or another superadmin) directly from the LGU-admin portal
+// (LGU member, admin, or another superadmin) directly from the LGU-admin portal
 // (docs/lgu-admin/index.html's "Add account" card), instead of the account
 // having to self-register and wait for approval.
 //
@@ -48,12 +48,19 @@ function response(body: BodyInit | null, init?: ResponseInit) {
   });
 }
 
+const ROLES = ["lgu_member", "admin", "superadmin"] as const;
+
+// The per-admin toggles (see AdminPermission in lib/auth_service.dart and
+// admin_set_admin_permissions in barangay_events.sql). Missing = on.
+const ADMIN_PERMISSIONS = ["public_events", "manage_groups", "locations"];
+
 interface CreateAccountPayload {
   email: string;
   password: string;
   displayName: string;
-  role: "lgu_member" | "superadmin";
+  role: (typeof ROLES)[number];
   department?: string;
+  adminPermissions?: Record<string, boolean>;
 }
 
 function isValidPayload(body: unknown): body is CreateAccountPayload {
@@ -62,9 +69,15 @@ function isValidPayload(body: unknown): body is CreateAccountPayload {
   if (typeof b.email !== "string" || !b.email.trim()) return false;
   if (typeof b.password !== "string" || b.password.length < 6) return false;
   if (typeof b.displayName !== "string" || !b.displayName.trim()) return false;
-  if (b.role !== "lgu_member" && b.role !== "superadmin") return false;
+  if (!ROLES.includes(b.role as (typeof ROLES)[number])) return false;
   if (b.role === "lgu_member" && (typeof b.department !== "string" || !b.department.trim())) {
     return false;
+  }
+  if (b.adminPermissions !== undefined) {
+    if (typeof b.adminPermissions !== "object" || b.adminPermissions === null) return false;
+    for (const [key, value] of Object.entries(b.adminPermissions)) {
+      if (!ADMIN_PERMISSIONS.includes(key) || typeof value !== "boolean") return false;
+    }
   }
   return true;
 }
@@ -120,14 +133,17 @@ Deno.serve(async (req) => {
 
   if (!isValidPayload(payload)) {
     return response(
-      "Missing/invalid fields — need email, password (6+ chars), displayName, role ('lgu_member'|'superadmin'), and department if role is lgu_member",
+      "Missing/invalid fields — need email, password (6+ chars), displayName, role ('lgu_member'|'admin'|'superadmin'), department if role is lgu_member, and adminPermissions (if given) as {public_events|manage_groups|locations: true/false}",
       { status: 400 },
     );
   }
 
   const email = payload.email.trim();
   const displayName = payload.displayName.trim();
-  const department = payload.role === "lgu_member" ? payload.department!.trim() : null;
+  // Required for LGU members; optional (but kept if given) for admins.
+  const department = payload.role === "superadmin"
+    ? null
+    : (payload.department?.trim() || null);
 
   // Separate client: only this one ever uses the service role key, and
   // only for the two privileged calls below.
@@ -151,6 +167,7 @@ Deno.serve(async (req) => {
     department,
     role: payload.role,
     lgu_request_status: payload.role === "lgu_member" ? "approved" : null,
+    admin_permissions: payload.role === "admin" ? (payload.adminPermissions ?? {}) : {},
   });
 
   if (insertError) {

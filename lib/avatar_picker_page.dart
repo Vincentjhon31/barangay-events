@@ -50,6 +50,9 @@ class _AvatarPickerPageState extends State<AvatarPickerPage> {
         avatarUrl: option.assetPath,
         role: widget.initialProfile?.role ?? 'citizen',
         lguRequestStatus: widget.initialProfile?.lguRequestStatus,
+        isKioskAccount: widget.initialProfile?.isKioskAccount ?? false,
+        calendarGroupFilterIds: widget.initialProfile?.calendarGroupFilterIds ?? const [],
+        adminPermissions: widget.initialProfile?.adminPermissions ?? const {},
       );
       Navigator.of(context).pop(updated);
     } catch (_) {

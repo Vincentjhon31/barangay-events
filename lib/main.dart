@@ -22,6 +22,7 @@ import 'attachment_image_viewer.dart';
 import 'auth_service.dart';
 import 'day_detail_page.dart';
 import 'day_timeline_view.dart';
+import 'event_calendars.dart';
 import 'event_chat_activity.dart';
 import 'event_chat_page.dart';
 import 'event_colors.dart';
@@ -1114,6 +1115,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
   /// Null for guest/kiosk-without-account sessions (see _listenToGroupMemberships).
   StreamSubscription<void>? _groupMembershipSubscription;
 
+  /// Superadmin-made calendars (e.g. "Sports"), each shown as an extra
+  /// filter tab after All/Public/Group/Personal. Kept live, so a calendar
+  /// the superadmin adds or archives in the portal appears/disappears
+  /// without a restart.
+  List<EventCalendar> _calendars = const [];
+  StreamSubscription<List<EventCalendar>>? _calendarSubscription;
+
+  /// Which of [_calendars] this user handles (may post to / edit events
+  /// in) — every one, for the superadmin.
+  Set<String> _myCalendarIds = const {};
+
   // "Someone just posted this" banner — separate from the Feed tab's own
   // NEW-pill/unseen-dot system (which is about what's still unread), this
   // is about what just happened live while the app is open. Queued rather
@@ -1151,8 +1163,61 @@ class _CalendarScreenState extends State<CalendarScreen> {
       : CalendarFormat.month;
 
   bool _passesTypeFilter(BarangayEvent event) =>
-      (_typeFilters.isEmpty || _typeFilters.contains(event.eventType)) &&
-      _passesGroupFilter(event);
+      _matchesTypeFilter(_typeFilters, event) && _passesGroupFilter(event);
+
+  /// Whether [event] matches the single picked tab in [filters] (see
+  /// [_toggleTypeFilter]) — an event type ('public'/'shared'/'personal'),
+  /// a calendar (`cal:<id>`, see [calendarValue]), or nothing (All). A
+  /// calendar's events only match their own calendar's tab, never Public.
+  bool _matchesTypeFilter(Set<String> filters, BarangayEvent event) {
+    if (filters.isEmpty) return true;
+    final value = filters.first;
+    final calendarId = calendarIdFromValue(value);
+    if (calendarId != null) {
+      return event.eventType == EventType.calendar && event.calendarId == calendarId;
+    }
+    return value == event.eventType;
+  }
+
+  void _onCalendarsChanged(List<EventCalendar> calendars) {
+    if (!mounted) return;
+    final activeValues = calendars.map((c) => calendarValue(c.id)).toSet();
+    bool stale(String value) => calendarIdFromValue(value) != null && !activeValues.contains(value);
+    setState(() {
+      _calendars = calendars;
+      // A calendar archived/deleted while its tab was picked falls back to
+      // All, instead of leaving a filter nobody can see or turn off.
+      _typeFilters.removeWhere(stale);
+      _feedTypeFilters.removeWhere(stale);
+    });
+    unawaited(_loadMyCalendarIds());
+  }
+
+  /// Refreshes which calendars this user handles — on every calendar
+  /// change, and right before Add/Edit Event opens, so a handler the
+  /// superadmin just assigned can post without restarting the app.
+  Future<void> _loadMyCalendarIds() async {
+    if (widget.authService == null) return;
+    try {
+      final ids = await widget.eventRepository.listMyCalendarIds();
+      if (mounted) setState(() => _myCalendarIds = ids);
+    } catch (_) {
+      // Calendars not set up yet — nothing to post to.
+    }
+  }
+
+  /// Active calendars this user may post to (see [_myCalendarIds]).
+  List<EventCalendar> get _handledCalendars =>
+      _calendars.where((c) => _myCalendarIds.contains(c.id)).toList();
+
+  EventCalendar? _calendarFor(BarangayEvent event) {
+    final id = event.calendarId;
+    if (id == null) return null;
+    for (final calendar in _calendars) {
+      if (calendar.id == id) return calendar;
+    }
+    return null;
+  }
 
   /// Narrows Group events down to the specific groups picked in the Group
   /// filter chip's checkbox picker — a no-op for every other event type,
@@ -1175,6 +1240,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       event.description,
       event.creatorLabel ?? '',
       event.groupName ?? '',
+      event.calendarName ?? '',
     ].join(' ').toLowerCase();
     return haystack.contains(query);
   }
@@ -1211,6 +1277,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
     if (_isGuestMode) _armGuestExitShrinkTimer();
     _eventSubscription = _listenToEvents();
     _groupMembershipSubscription = _listenToGroupMemberships();
+    _calendarSubscription = widget.eventRepository.watchEventCalendars().listen(
+      _onCalendarsChanged,
+      // Calendars not set up on the server yet — the built-in tabs still work.
+      onError: (_) {},
+    );
   }
 
   /// Null for a guest/kiosk-without-account session (no `_currentUserId`
@@ -1502,7 +1573,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           event: event,
           repository: widget.eventRepository,
           currentUserId: userId,
-          canModerate: event.createdById == userId || _isSuperadmin,
+          canModerate: event.createdById == userId || _isStaffAdmin,
           activity: _chatActivity,
         ),
       ),
@@ -1645,6 +1716,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void dispose() {
     unawaited(_eventSubscription.cancel());
     unawaited(_groupMembershipSubscription?.cancel());
+    unawaited(_calendarSubscription?.cancel());
     _chatActivity?.dispose();
     _newEventNoticeTimer?.cancel();
     _kioskExitShrinkTimer?.cancel();
@@ -1914,7 +1986,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           eventRepository: widget.eventRepository,
                           currentUserId: _currentUserId,
                           canCreateGroups: _canCreateGroups,
-                          isSuperadmin: _isSuperadmin,
+                          canManageGroups: _canManageGroups,
                           onGroupsChanged: _resubscribeEvents,
                         ),
                       if (widget.authService != null)
@@ -1983,6 +2055,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           // _isReadOnlySession).
           kiosk: _isReadOnlySession,
           eventFilter: (event) => _passesTypeFilter(event) && _passesCalendarSearch(event),
+          handledCalendars: _handledCalendars,
         ),
       ),
     );
@@ -2016,6 +2089,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     } catch (_) {
       // Falls back to a plain text field — see AddEventPage.lguLocations.
     }
+    await _loadMyCalendarIds();
     if (!mounted) return;
 
     final result = await Navigator.of(context).push<AddEventResult>(
@@ -2024,6 +2098,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           eventRepository: widget.eventRepository,
           myGroups: myGroups,
           lguLocations: lguLocations,
+          handledCalendars: _handledCalendars,
           initialDate: initialDate,
           creatorProfile: _userProfile ?? widget.authService?.currentUser,
           findOverlappingEvents: (location, date, start, end) =>
@@ -2068,6 +2143,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     } catch (_) {
       // Falls back to a plain text field — see AddEventPage.lguLocations.
     }
+    await _loadMyCalendarIds();
     if (!mounted) return;
 
     final result = await Navigator.of(context).push<AddEventResult>(
@@ -2076,6 +2152,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           eventRepository: widget.eventRepository,
           myGroups: myGroups,
           lguLocations: lguLocations,
+          handledCalendars: _handledCalendars,
           initialDate: event.startTime,
           existingEvent: event,
           creatorProfile: _userProfile ?? widget.authService?.currentUser,
@@ -2746,9 +2823,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _buildTypeFilterChips(Set<String> filters,
       {required String keyPrefix}) {
     final l10n = AppLocalizations.of(context)!;
-    final options = <({String? value, String label, FaIconData icon})>[
-      (value: null, label: l10n.eventTypeAll, icon: FontAwesomeIcons.layerGroup),
-      (value: EventType.public, label: l10n.eventTypePublic, icon: FontAwesomeIcons.globe),
+    final options = <({String? value, String label, FaIconData icon, Color? color})>[
+      (value: null, label: l10n.eventTypeAll, icon: FontAwesomeIcons.layerGroup, color: null),
+      (value: EventType.public, label: l10n.eventTypePublic, icon: FontAwesomeIcons.globe, color: null),
       // Citizens are never members of any group (no Groups tab to join one
       // from — see [[project-event-sharing-model]]), so this chip would
       // always just be a dead end filtering nothing in for them.
@@ -2756,13 +2833,22 @@ class _CalendarScreenState extends State<CalendarScreen> {
         (
           value: EventType.shared,
           label: l10n.eventTypeGroup,
-          icon: FontAwesomeIcons.userGroup
+          icon: FontAwesomeIcons.userGroup,
+          color: null,
         ),
       (
         value: EventType.personal,
         label: l10n.eventTypePersonal,
-        icon: FontAwesomeIcons.lock
+        icon: FontAwesomeIcons.lock,
+        color: null,
       ),
+      for (final calendar in _calendars)
+        (
+          value: calendarValue(calendar.id),
+          label: calendar.name,
+          icon: calendarIcon(calendar.icon),
+          color: colorForKey(calendar.colorKey),
+        ),
     ];
     final colorScheme = Theme.of(context).colorScheme;
     // The per-group checkbox picker only makes sense on the Calendar tab
@@ -2781,7 +2867,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         children: [
           for (final option in options) ...[
             InkWell(
-              key: Key('$keyPrefix-filter-${option.value ?? 'all'}'),
+              key: Key('$keyPrefix-filter-${option.value?.replaceFirst(calendarValuePrefix, 'cal-') ?? 'all'}'),
               borderRadius: BorderRadius.circular(999),
               onTap: () => _toggleTypeFilter(filters, option.value),
               child: GlassPanel(
@@ -2798,7 +2884,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       size: 12,
                       color: isActive(option.value)
                           ? colorScheme.primary
-                          : colorScheme.onSurfaceVariant,
+                          : (option.color ?? colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(width: 6),
                     Text(
@@ -3035,10 +3121,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   List<BarangayEvent> _filteredFeedEvents() {
     final query = _feedSearchQuery.trim().toLowerCase();
     final events = _events.where((event) {
-      if (_feedTypeFilters.isNotEmpty &&
-          !_feedTypeFilters.contains(event.eventType)) {
-        return false;
-      }
+      if (!_matchesTypeFilter(_feedTypeFilters, event)) return false;
       if (query.isEmpty) return true;
       final haystack = [
         event.title,
@@ -3349,7 +3432,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             ),
                           ),
                         ),
-                      _buildEventTypePill(event.eventType),
+                      _buildEventTypePill(event),
                     ],
                   ),
                   const SizedBox(height: 5),
@@ -4401,7 +4484,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     event: event,
                     repository: widget.eventRepository,
                     currentUserId: chatUserId,
-                    canModerate: event.createdById == chatUserId || _isSuperadmin,
+                    canModerate: event.createdById == chatUserId || _isStaffAdmin,
                     activity: _chatActivity,
                   ),
                 ),
@@ -4447,7 +4530,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      _buildEventTypePill(event.eventType),
+                      _buildEventTypePill(event),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -4660,8 +4743,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _buildEventTypePill(String type) {
-    final tint = _eventTypeTint(type);
+  /// The small type pill on event cards — Public/Group/Personal, or for a
+  /// calendar event that calendar's own name, icon, and color.
+  Widget _buildEventTypePill(BarangayEvent event) {
+    final type = event.eventType;
+    final calendar = type == EventType.calendar ? _calendarFor(event) : null;
+    final isCalendar = type == EventType.calendar;
+    final tint = isCalendar
+        ? (colorForKey(calendar?.colorKey) ?? const Color(0xFF8E5BD9))
+        : _eventTypeTint(type);
+    final icon = isCalendar ? calendarIcon(calendar?.icon ?? 'tag') : _eventTypeIcon(type);
+    final label = isCalendar ? (calendar?.name ?? event.calendarName ?? 'Calendar') : _eventTypeLabel(type);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -4672,7 +4764,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          FaIcon(_eventTypeIcon(type), size: 9, color: tint),
+          FaIcon(icon, size: 9, color: tint),
           const SizedBox(width: 4),
           // A fixed cap (not Flexible/Expanded) — this pill gets placed both
           // inside a bounded Flexible slot and in plain, unbounded Row
@@ -4682,7 +4774,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 80),
             child: Text(
-              _eventTypeLabel(type),
+              label,
+              key: isCalendar ? Key('event-calendar-pill-${event.id}') : null,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -4704,8 +4797,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
       (_userProfile ?? widget.authService?.currentUser)?.canCreateGroups ??
       false;
 
-  bool get _isSuperadmin =>
-      (_userProfile ?? widget.authService?.currentUser)?.isSuperadmin ?? false;
+  /// Admin or superadmin — e.g. may moderate any event's chat.
+  bool get _isStaffAdmin =>
+      (_userProfile ?? widget.authService?.currentUser)?.isStaffAdmin ?? false;
+
+  /// The "Manage groups" admin permission (verified badge, ownership
+  /// takeover).
+  bool get _canManageGroups =>
+      (_userProfile ?? widget.authService?.currentUser)?.canManageGroups ?? false;
 
   /// Citizens don't get a Groups tab at all — group creation/events are an
   /// LGU-level feature (see [[project-event-sharing-model]]), so there's
@@ -4736,6 +4835,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final userId = _currentUserId;
     if (userId == null) return false;
     if (event.createdById == userId) return true;
+    if (event.eventType == EventType.calendar) {
+      return event.calendarId != null && _myCalendarIds.contains(event.calendarId);
+    }
     return event.eventType == EventType.shared &&
         event.groupId != null &&
         _adminGroupIds.contains(event.groupId);

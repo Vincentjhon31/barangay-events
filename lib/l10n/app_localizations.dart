@@ -1442,6 +1442,18 @@ abstract class AppLocalizations {
   /// **'{count, plural, =1{1 chat message · new} other{{count} chat messages · new}}'**
   String eventChatIndicatorUnreadTooltip(int count);
 
+  /// No description provided for @typeHelperCalendar.
+  ///
+  /// In en, this message translates to:
+  /// **'Everyone sees it under the {calendar} tab, and everyone gets a notification.'**
+  String typeHelperCalendar(String calendar);
+
+  /// No description provided for @attachmentsUploadsOffHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Adding files is turned off to save storage. You can still remove files added before.'**
+  String get attachmentsUploadsOffHint;
+
   /// No description provided for @eventChatYou.
   ///
   /// In en, this message translates to:
@@ -1547,7 +1559,7 @@ abstract class AppLocalizations {
   /// No description provided for @manageLocationsSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Superadmin-only. Shown as quick picks in Add Event\'s Location field for every account.'**
+  /// **'Admins only. Shown as quick picks in Add Event\'s Location field for every account.'**
   String get manageLocationsSubtitle;
 
   /// No description provided for @manageLocationsEmpty.
@@ -2801,7 +2813,7 @@ abstract class AppLocalizations {
   /// No description provided for @faqA1.
   ///
   /// In en, this message translates to:
-  /// **'Public events are official barangay-wide announcements posted only by the superadmin — everyone using the app can see them. Group events are shared just with the members of a specific group, like your barangay office or a club — only members see them. Personal events are private notes only you can see, for your own reminders.'**
+  /// **'Public events are official barangay-wide announcements posted only by the app\'s administrators — everyone using the app can see them. Group events are shared just with the members of a specific group, like your barangay office or a club — only members see them. Personal events are private notes only you can see, for your own reminders.'**
   String get faqA1;
 
   /// No description provided for @faqQ2.
@@ -2825,7 +2837,7 @@ abstract class AppLocalizations {
   /// No description provided for @faqA3.
   ///
   /// In en, this message translates to:
-  /// **'Group creation is limited to verified LGU members and the superadmin. If you\'re a citizen, ask your barangay office or the superadmin about applying for LGU access from the Groups tab.'**
+  /// **'Group creation is limited to verified LGU members and administrators. If you\'re a citizen, ask your barangay office about applying for LGU access from the Groups tab.'**
   String get faqA3;
 
   /// No description provided for @faqQ4.
@@ -2837,7 +2849,7 @@ abstract class AppLocalizations {
   /// No description provided for @faqA4.
   ///
   /// In en, this message translates to:
-  /// **'Public events reach the entire community, so only the superadmin can post them — this keeps official barangay-wide announcements from getting lost among community events. LGU members can still post Group events to their own group\'s members.'**
+  /// **'Public events reach the entire community, so only administrators can post them — this keeps official barangay-wide announcements from getting lost among community events. LGU members can still post Group events to their own group\'s members.'**
   String get faqA4;
 
   /// No description provided for @faqQ5.
@@ -2927,7 +2939,7 @@ abstract class AppLocalizations {
   /// No description provided for @privacyIntro.
   ///
   /// In en, this message translates to:
-  /// **'This Privacy Policy explains what information eBongabong Calendar collects, how it\'s used, and who can see it. It applies to everyone who uses the app, whether you\'re a resident, an LGU member, or a superadmin.'**
+  /// **'This Privacy Policy explains what information eBongabong Calendar collects, how it\'s used, and who can see it. It applies to everyone who uses the app, whether you\'re a resident, an LGU member, or an administrator.'**
   String get privacyIntro;
 
   /// No description provided for @privacyCollectHeading.

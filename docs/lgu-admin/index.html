@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
   <title>eBongabong Calendar Admin</title>
   <link rel="icon" href="app-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -28,6 +29,7 @@
       --citizen: #7A869C;
       --lgu: #14A3A3;
       --super: #D99A1E;
+      --owner: #8E5BD9;
       --danger: #D6423A;
       --danger-soft: rgba(214, 66, 58, 0.10);
       --ok: #1F9D65;
@@ -166,7 +168,8 @@
     .pill.shared { color: var(--group); background: rgba(31, 157, 101, 0.12); }
     .pill.citizen { color: var(--ink-2); }
     .pill.lgu_member { color: var(--lgu); background: rgba(20, 163, 163, 0.12); }
-    .pill.superadmin { color: var(--warn); background: var(--warn-soft); }
+    .pill.admin { color: var(--warn); background: var(--warn-soft); }
+    .pill.superadmin { color: var(--owner); background: rgba(142, 91, 217, 0.13); }
     .pill.pending { color: var(--warn); background: var(--warn-soft); }
     .pill.approved { color: var(--ok); background: var(--ok-soft); }
     .pill.rejected { color: var(--danger); background: var(--danger-soft); }
@@ -181,7 +184,8 @@
     .avatar.sm { width: 24px; height: 24px; font-size: 11px; box-shadow: 0 0 0 1.5px var(--line-strong); }
     .ring-citizen { --ring: var(--citizen); }
     .ring-lgu_member { --ring: var(--lgu); }
-    .ring-superadmin { --ring: var(--super); }
+    .ring-admin { --ring: var(--super); }
+    .ring-superadmin { --ring: var(--owner); }
 
     /* ---------- Auth (signed out / applicant) ---------- */
     .auth-page { min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; }
@@ -240,6 +244,51 @@
     .content { padding: 24px 28px 48px; max-width: 1180px; width: 100%; }
     .bottom-nav { display: none; }
 
+    /* ---------- Calendars, backups, system ---------- */
+    .cat-row { grid-template-columns: minmax(200px, 1fr) auto; }
+    .handlers { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .handler-chip {
+      display: inline-flex; align-items: center; gap: 8px; padding: 4px 6px 4px 4px;
+      border-radius: 999px; background: var(--surface-2); font-size: 14px;
+    }
+    .handler-chip button {
+      border: 0; background: transparent; color: var(--ink-3); cursor: pointer; font-size: 16px; line-height: 1;
+      width: 24px; height: 24px; border-radius: 50%;
+    }
+    .handler-chip button:hover { background: var(--danger-soft); color: var(--danger); }
+    .pill.calendar { color: var(--c, var(--owner)); background: color-mix(in srgb, var(--c, var(--owner)) 13%, transparent); }
+    .cat-name { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .cat-badge {
+      width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: #fff; background: var(--c, var(--ink-3)); font-size: 15px;
+    }
+    .icon-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+    .icon-choices label { position: relative; cursor: pointer; }
+    .icon-choices input { position: absolute; opacity: 0; pointer-events: none; }
+    .icon-choices span {
+      width: 38px; height: 38px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center;
+      background: var(--surface-2); color: var(--ink-2); font-size: 16px; border: 2px solid transparent;
+    }
+    .icon-choices input:checked + span { border-color: var(--brand); color: var(--brand-ink); background: var(--brand-soft); }
+    .icon-choices input:focus-visible + span { outline: 2px solid var(--brand); outline-offset: 2px; }
+    .meters { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
+    .meter .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+    .meter .top strong { font-size: 15px; }
+    .meter .top span { color: var(--ink-2); font-size: 13.5px; }
+    .meter .bar, .progress { height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+    .meter .bar > div, .progress > div { height: 100%; width: 0; background: var(--brand); border-radius: 999px; transition: width .3s; }
+    .meter.warn .bar > div { background: var(--warn); }
+    .meter.full .bar > div { background: var(--danger); }
+    .meter .foot { margin-top: 6px; font-size: 12.5px; color: var(--ink-3); }
+    .progress { margin-top: 14px; }
+    .progress-label { margin-top: 6px; font-size: 13px; color: var(--ink-2); }
+    .table-row { grid-template-columns: minmax(160px, 1fr) 110px 110px; }
+    .history-row { grid-template-columns: minmax(180px, 1fr) minmax(160px, 1fr); }
+    .radio-stack { display: flex; flex-direction: column; gap: 10px; border: 0; padding: 0; margin: 0 0 14px; }
+    .radio-stack label { display: flex; gap: 10px; align-items: flex-start; font-size: 14.5px; cursor: pointer; }
+    .radio-stack input { margin-top: 3px; }
+
     /* Tablet: icon rail */
     @media (max-width: 1099px) {
       :root { --sidebar: 84px; }
@@ -262,12 +311,12 @@
       .topbar .sub { display: none; }
       .content { padding: 16px 16px 96px; }
       .bottom-nav {
-        display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+        display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; overflow-x: auto;
         background: var(--surface); border-top: 1px solid var(--line);
         padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
       }
       .bottom-nav a {
-        flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px;
+        flex: 1 0 64px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px;
         color: var(--ink-3); text-decoration: none; font-size: 11.5px; font-weight: 700; position: relative;
       }
       .bottom-nav a svg { width: 21px; height: 21px; }
@@ -365,6 +414,9 @@
     .event-row { grid-template-columns: 64px minmax(200px, 2fr) minmax(140px, 1fr) minmax(150px, 1fr) 136px; }
     .app-row { grid-template-columns: minmax(200px, 2fr) minmax(140px, 1fr) 190px; }
     .loc-row { grid-template-columns: 1fr auto; }
+    .admin-row { grid-template-columns: minmax(220px, 1.4fr) minmax(220px, 1fr) auto; }
+    .perms { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+    .perms .check { font-size: 14px; }
     .who-cell { display: flex; align-items: center; gap: 12px; min-width: 0; }
     .who-cell .txt { min-width: 0; }
     .who-cell strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -387,7 +439,8 @@
     .past { opacity: 0.62; }
     @media (max-width: 899px) {
       .row-head { display: none; }
-      .user-row, .event-row, .app-row { grid-template-columns: 1fr auto; }
+      .user-row, .event-row, .app-row, .admin-row { grid-template-columns: 1fr auto; }
+      .admin-row > :nth-child(1), .admin-row > .perms { grid-column: 1 / -1; }
       .user-row > :nth-child(1), .app-row > :nth-child(1) { grid-column: 1 / -1; }
       .user-row > .cell-role { grid-column: 1; }
       .user-row > .cell-kiosk { grid-column: 2; justify-self: end; }
@@ -493,7 +546,7 @@
     </div>
   </main>
 
-  <!-- ============ Signed in, not a superadmin: application status ============ -->
+  <!-- ============ Signed in, not a superadmin: application status (or "admins use the app") ============ -->
   <main id="status-view" class="auth-page hidden">
     <div class="auth-wrap">
       <div class="auth-brand">
@@ -504,7 +557,7 @@
         </div>
       </div>
       <div class="auth-card">
-        <h2 style="font-size:17px;margin-bottom:10px">Your LGU access</h2>
+        <h2 style="font-size:17px;margin-bottom:10px" id="status-title">Your LGU access</h2>
         <div id="status-body"></div>
         <form id="apply-form" class="hidden" style="margin-top:16px">
           <div class="field"><label for="apply-department">Office or department</label><input id="apply-department" type="text" required placeholder="e.g. Barangay Health Office"></div>
@@ -580,6 +633,7 @@
         <section id="view-users" class="hidden">
           <nav class="tabs" id="users-tabs" aria-label="Users sections">
             <a href="#users">All users</a>
+            <a href="#users/admins">Admins</a>
             <a href="#users/applications">Applications <span class="count hidden" id="tab-app-count"></span></a>
             <a href="#users/add">Add account</a>
           </nav>
@@ -591,11 +645,17 @@
                 <option value="">All roles</option>
                 <option value="citizen">Citizens</option>
                 <option value="lgu_member">LGU members</option>
+                <option value="admin">Admins</option>
                 <option value="superadmin">Superadmins</option>
               </select>
               <label class="check"><input type="checkbox" id="users-kiosk-filter"> Kiosk accounts only</label>
             </div>
             <ul class="rows" id="users-list"></ul>
+          </div>
+
+          <div id="users-admins" class="panel hidden">
+            <div class="panel-head"><div><h2>Admins</h2><p>Admins run events and groups from the mobile app; they can't open this portal. Switch off anything an admin shouldn't do. Every admin can also moderate event chats.</p></div><a class="btn primary sm" href="#users/add">Add admin</a></div>
+            <ul class="rows" id="admins-list"></ul>
           </div>
 
           <div id="users-applications" class="panel hidden">
@@ -604,14 +664,18 @@
           </div>
 
           <div id="users-add" class="panel hidden">
-            <div class="panel-head"><div><h2>Add an account</h2><p>Creates an LGU member or superadmin who can sign in right away, with no application step. Share the password with them yourself.</p></div></div>
+            <div class="panel-head"><div><h2>Add an account</h2><p>Creates an admin, LGU member, or superadmin who can sign in right away, with no application step. Share the password with them yourself.</p></div></div>
             <div class="panel-body">
               <form id="add-account-form" class="form-narrow">
                 <div class="field"><label for="new-name">Full name</label><input id="new-name" type="text" required autocomplete="off"></div>
                 <div class="field"><label for="new-email">Email</label><input id="new-email" type="email" required autocomplete="off"></div>
                 <div class="field"><label for="new-password">Password</label><input id="new-password" type="password" required minlength="6" autocomplete="new-password"><span class="help">At least 6 characters.</span></div>
                 <div class="field"><label for="new-role">Role</label>
-                  <select id="new-role"><option value="lgu_member">LGU member</option><option value="superadmin">Superadmin</option></select>
+                  <select id="new-role"><option value="admin">Admin</option><option value="lgu_member">LGU member</option><option value="superadmin">Superadmin</option></select>
+                </div>
+                <div class="field" id="new-perms-field"><span class="label" style="display:block;font-weight:700;margin-bottom:6px">What this admin can do</span>
+                  <div class="perms" id="new-perms"></div>
+                  <span class="help">Every admin can also moderate event chats. You can change these any time on the Admins tab.</span>
                 </div>
                 <div class="field" id="new-department-field"><label for="new-department">Office or department</label><input id="new-department" type="text" placeholder="e.g. Barangay Health Office"></div>
                 <button class="btn primary" type="submit">Create account</button>
@@ -627,9 +691,10 @@
             <div class="toolbar">
               <input class="search" id="events-search" type="search" placeholder="Search title, location, or who posted" aria-label="Search events">
               <select id="events-type" aria-label="Event type">
-                <option value="">Public and group</option>
+                <option value="">All events</option>
                 <option value="public">Public only</option>
                 <option value="shared">Group only</option>
+                <option value="calendar">Calendars only</option>
               </select>
               <select id="events-when" aria-label="When">
                 <option value="upcoming">Upcoming</option>
@@ -648,6 +713,101 @@
         </section>
 
         <!-- Settings -->
+        <!-- Calendars -->
+        <section id="view-calendars" class="stack hidden">
+          <div class="panel">
+            <div class="panel-head"><div><h2>Calendars</h2><p>Each calendar, like Sports, becomes its own tab in the app after All, Public, Group, and Personal, and everyone can see its events. Only the people you assign as its handlers can post to it, and new events notify everyone.</p></div></div>
+            <div class="panel-body" style="border-bottom:1px solid var(--line)">
+              <form id="category-form" class="form-narrow" style="max-width:640px">
+                <div class="field"><label for="cat-name">Name</label><input id="cat-name" type="text" maxlength="40" required autocomplete="off" placeholder="e.g. Sports"></div>
+                <div class="field"><span class="label" id="cat-icon-label">Icon</span><div class="icon-choices" id="cat-icons" role="radiogroup" aria-labelledby="cat-icon-label"></div></div>
+                <div class="field"><span class="label" id="cat-color-label">Color</span><div class="colors" id="cat-colors" role="radiogroup" aria-labelledby="cat-color-label"></div></div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <button class="btn primary" type="submit" id="cat-submit">Add calendar</button>
+                  <button class="btn ghost hidden" type="button" id="cat-cancel">Cancel editing</button>
+                </div>
+              </form>
+              <div id="category-msg"></div>
+            </div>
+            <ul class="rows" id="categories-list"></ul>
+            <datalist id="handler-options"></datalist>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div><h2>Archived</h2><p>Hidden from the app and closed to new posts. Their events stay, and restoring a calendar brings its tab back.</p></div></div>
+            <ul class="rows" id="archived-categories-list"></ul>
+          </div>
+        </section>
+
+        <!-- Backups -->
+        <section id="view-backups" class="stack hidden">
+          <div class="panel">
+            <div class="panel-head"><div><h2>Back up everything</h2><p>Downloads one ZIP file with every account, event, group, chat message, calendar, location, setting, and attached file, saved as plain JSON and CSV so it can be moved to a different system if you ever change back ends. Login passwords aren't included; restored accounts set a new one with "Forgot password".</p></div></div>
+            <div class="panel-body">
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <button class="btn primary" type="button" id="backup-btn">Download full backup</button>
+                <label for="backup-reminder" class="muted" style="margin-left:auto">Remind me to back up</label>
+                <select id="backup-reminder">
+                  <option value="0">Never</option>
+                  <option value="7">Every week</option>
+                  <option value="14">Every 2 weeks</option>
+                  <option value="30">Every month</option>
+                </select>
+              </div>
+              <div class="progress hidden" id="backup-progress"><div></div></div>
+              <div class="progress-label hidden" id="backup-progress-label"></div>
+              <div id="backup-msg"></div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div><h2>Restore from a backup</h2><p>Puts the data from a backup ZIP made on this page back into the app. Restoring never sends push notifications.</p></div></div>
+            <div class="panel-body">
+              <form id="restore-form" class="form-narrow" style="max-width:640px">
+                <div class="field"><label for="restore-file">Backup file</label><input id="restore-file" type="file" accept=".zip,application/zip" required></div>
+                <div id="restore-summary"></div>
+                <fieldset class="radio-stack">
+                  <legend class="sr-only">Restore mode</legend>
+                  <label><input type="radio" name="restore-mode" value="merge" checked><span><strong>Merge</strong> (safe): puts back anything missing or changed. Anything added since the backup stays.</span></label>
+                  <label><input type="radio" name="restore-mode" value="replace"><span><strong>Replace</strong>: erases today's events, groups, chats, calendars, and locations, then restores the backup exactly. Accounts are kept.</span></label>
+                </fieldset>
+                <div class="field hidden" id="restore-confirm-field"><label for="restore-confirm">Type RESTORE to confirm a replace</label><input id="restore-confirm" type="text" autocomplete="off"></div>
+                <button class="btn primary" type="submit" id="restore-btn">Restore</button>
+              </form>
+              <div class="progress hidden" id="restore-progress"><div></div></div>
+              <div class="progress-label hidden" id="restore-progress-label"></div>
+              <div id="restore-msg"></div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div><h2>History</h2><p>Backups downloaded and restores run from this portal.</p></div></div>
+            <ul class="rows" id="backup-history"></ul>
+          </div>
+        </section>
+
+        <!-- System -->
+        <section id="view-system" class="stack hidden">
+          <div class="panel">
+            <div class="panel-head"><div><h2>Usage</h2><p>How much of your Supabase plan the app is using right now.</p></div></div>
+            <div class="panel-body"><div class="meters" id="usage-meters"></div></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div><h2>Tables</h2><p>Size on disk and number of records, largest first.</p></div></div>
+            <ul class="rows" id="usage-tables"></ul>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div><h2>Plan limits</h2><p>Supabase doesn't tell the app what your plan allows, so enter it here. The Free plan includes a 500 MB database and 1 GB of file storage.</p></div></div>
+            <div class="panel-body">
+              <form id="limits-form" class="form-narrow">
+                <div class="field-row">
+                  <div class="field"><label for="limit-db">Database limit (MB)</label><input id="limit-db" type="number" min="1" step="1" required></div>
+                  <div class="field"><label for="limit-storage">File storage limit (MB)</label><input id="limit-storage" type="number" min="1" step="1" required></div>
+                </div>
+                <button class="btn primary" type="submit">Save limits</button>
+              </form>
+              <div id="limits-msg"></div>
+            </div>
+          </div>
+        </section>
+
         <section id="view-settings" class="settings hidden">
           <nav class="settings-nav" aria-label="Settings sections">
             <a href="#settings" data-jump="set-account">Your account</a>
@@ -727,6 +887,7 @@
         </div>
         <div class="field"><label for="ev-description">Details</label><textarea id="ev-description" maxlength="2000"></textarea></div>
         <div class="field"><label for="ev-contact">Contact number</label><input id="ev-contact" type="tel" placeholder="Optional"></div>
+        <div class="field" id="ev-post-to-field"><label for="ev-post-to">Post to</label><select id="ev-post-to"></select></div>
         <div class="field"><span class="label" id="ev-color-label">Color label</span><div class="colors" id="ev-colors" role="radiogroup" aria-labelledby="ev-color-label"></div></div>
         <div id="event-msg"></div>
       </div>
@@ -760,6 +921,7 @@
     <div class="dlg-head"><h2 id="confirm-title"></h2><p id="confirm-text"></p></div>
     <div class="dlg-foot">
       <button class="btn ghost" type="button" id="confirm-cancel">Cancel</button>
+      <button class="btn danger-ghost hidden" type="button" id="confirm-alt"></button>
       <button class="btn primary" type="button" id="confirm-ok"></button>
     </div>
   </dialog>
@@ -767,6 +929,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
   (function () {
     'use strict';
@@ -787,7 +950,24 @@
       tomato: '#E85D50', tangerine: '#F0932B', banana: '#F2C94C', basil: '#2FA36B',
       peacock: '#2B8FD6', blueberry: '#5B6ACF', grape: '#9B59B6', graphite: '#7A8288'
     };
-    var ROLE_LABEL = { citizen: 'Citizen', lgu_member: 'LGU member', superadmin: 'Superadmin' };
+    var ROLE_LABEL = { citizen: 'Citizen', lgu_member: 'LGU member', admin: 'Admin', superadmin: 'Superadmin' };
+    var ROLES = ['citizen', 'lgu_member', 'admin', 'superadmin'];
+    // Per-admin toggles (profiles.admin_permissions; a missing key = on).
+    var ADMIN_PERMS = [
+      { key: 'public_events', label: 'Post public events' },
+      { key: 'manage_groups', label: 'Manage groups' },
+      { key: 'locations', label: 'Manage event locations' }
+    ];
+    function hasPerm(u, key) {
+      var p = u.admin_permissions || {};
+      return p[key] !== false;
+    }
+    function permsHtml(u, name) {
+      return ADMIN_PERMS.map(function (perm) {
+        return '<label class="check"><input type="checkbox" data-perm="' + perm.key + '"' + (name ? ' name="' + name + '"' : '') +
+          (u && u.user_id ? ' data-perm-for="' + esc(u.user_id) + '"' : '') + (!u || hasPerm(u, perm.key) ? ' checked' : '') + '> ' + esc(perm.label) + '</label>';
+      }).join('');
+    }
 
     var $ = function (id) { return document.getElementById(id); };
 
@@ -831,6 +1011,8 @@
         if (button.dataset.label !== undefined) { button.innerHTML = button.dataset.label; delete button.dataset.label; }
       }
     }
+    // Resolves true (confirm), false (cancel), or 'alt' when opts.alt
+    // ({ label }) adds a third choice — e.g. Archive vs Delete permanently.
     function confirmDialog(opts) {
       var d = $('confirm-dialog');
       $('confirm-title').textContent = opts.title;
@@ -838,17 +1020,23 @@
       var ok = $('confirm-ok');
       ok.textContent = opts.confirm;
       ok.className = 'btn ' + (opts.danger ? 'danger' : 'primary');
+      var alt = $('confirm-alt');
+      alt.textContent = opts.alt ? opts.alt.label : '';
+      alt.classList.toggle('hidden', !opts.alt);
       return new Promise(function (resolve) {
         function done(value) {
           ok.removeEventListener('click', onOk);
+          alt.removeEventListener('click', onAlt);
           $('confirm-cancel').removeEventListener('click', onCancel);
           d.removeEventListener('cancel', onCancel);
           if (d.open) d.close();
           resolve(value);
         }
         function onOk() { done(true); }
+        function onAlt() { done('alt'); }
         function onCancel() { done(false); }
         ok.addEventListener('click', onOk);
+        alt.addEventListener('click', onAlt);
         $('confirm-cancel').addEventListener('click', onCancel);
         d.addEventListener('cancel', onCancel);
         d.showModal();
@@ -948,12 +1136,27 @@
     var stats = null;
     var locations = [];
     var expandedUser = null;
+    var calendars = [];
+    var calendarHandlers = [];
+    var categoriesError = null;
+    var editingCategory = null;
+    var usage = null;
+    var usageError = null;
+    var settings = {};
+    var backupHistory = [];
+    var backupError = null;
+    var backupLoaded = false;
+    var restoreZip = null;
+    var restoreManifest = null;
 
     // ---------- Navigation ----------
     var NAV = [
       { id: 'dashboard', label: 'Dashboard', sub: '', icon: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>' },
       { id: 'users', label: 'Users', sub: 'Accounts, roles, and LGU applications', icon: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20v-1a5 5 0 0 1 5-5h3a5 5 0 0 1 5 5v1"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20v-1a4.5 4.5 0 0 0-3-4.2"/>' },
       { id: 'events', label: 'Events', sub: 'Public and group events in the app', icon: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>' },
+      { id: 'calendars', label: 'Calendars', sub: 'Extra calendars in the app, like Sports, and who handles them', icon: '<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>' },
+      { id: 'backups', label: 'Backups', sub: 'Download all app data, or restore it from a backup', icon: '<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/>' },
+      { id: 'system', label: 'System', sub: 'Database and file storage usage', icon: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.7-4 3-9 3s-9-1.3-9-3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/>' },
       { id: 'settings', label: 'Settings', sub: 'Your account, appearance, and event locations', icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>' }
     ];
     function navHtml() {
@@ -985,8 +1188,9 @@
       document.title = nav.label + ' · eBongabong Calendar Admin';
       renderNav();
       if (route.view === 'users') {
-        var tab = ['applications', 'add'].indexOf(route.tab) >= 0 ? route.tab : 'all';
+        var tab = ['admins', 'applications', 'add'].indexOf(route.tab) >= 0 ? route.tab : 'all';
         $('users-all').classList.toggle('hidden', tab !== 'all');
+        $('users-admins').classList.toggle('hidden', tab !== 'admins');
         $('users-applications').classList.toggle('hidden', tab !== 'applications');
         $('users-add').classList.toggle('hidden', tab !== 'add');
         document.querySelectorAll('#users-tabs a').forEach(function (a) {
@@ -1008,17 +1212,25 @@
         .sort(function (a, b) { return wall(a.start) - wall(b.start); });
     }
     function colorOf(ev) {
-      return COLORS[ev.colorKey] || (ev.type === 'shared' ? 'var(--group)' : 'var(--public)');
+      var cal = ev.type === 'calendar' ? calendarById(ev.calendarId) : null;
+      return COLORS[ev.colorKey] || (cal && COLORS[cal.color_key]) || (ev.type === 'shared' ? 'var(--group)' : 'var(--public)');
     }
     function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
     function renderDashboard() {
       // Needs attention
-      $('attention').innerHTML = applications.length
-        ? '<div class="attention"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/></svg>' +
+      var attentionIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/></svg>';
+      var due = backupDue();
+      $('attention').innerHTML = (applications.length
+        ? '<div class="attention">' + attentionIcon +
           '<div><strong>' + applications.length + (applications.length === 1 ? ' LGU application is' : ' LGU applications are') + ' waiting for review</strong>' +
           '<span>Approved staff can create groups and post group events.</span></div>' +
           '<a class="btn primary" href="#users/applications">Review applications</a></div>'
-        : '';
+        : '') +
+        (due
+          ? '<div class="attention" style="margin-top:' + (applications.length ? '10px' : '0') + '">' + attentionIcon +
+            '<div><strong>' + esc(due) + '</strong><span>A backup keeps a copy of everything in case something goes wrong.</span></div>' +
+            '<button class="btn primary" type="button" data-backup-now>Back up now</button></div>'
+          : '');
 
       // Next 7 days
       var byDay = {};
@@ -1046,10 +1258,10 @@
       var s = stats || {};
       var citizens = s.users_citizen != null ? s.users_citizen : users.filter(function (u) { return u.role === 'citizen'; }).length;
       var lgu = s.users_lgu != null ? s.users_lgu : users.filter(function (u) { return u.role === 'lgu_member'; }).length;
-      var supers = s.users_superadmin != null ? s.users_superadmin : users.filter(function (u) { return u.role === 'superadmin'; }).length;
+      var admins = s.users_admin != null ? s.users_admin : users.filter(function (u) { return u.role === 'admin'; }).length;
       var total = s.users_total != null ? s.users_total : users.length;
       $('counts').innerHTML = [
-        { n: total, l: 'Accounts', d: plural(citizens, 'citizen') + ', ' + lgu + ' LGU, ' + plural(supers, 'superadmin') },
+        { n: total, l: 'Accounts', d: plural(citizens, 'citizen') + ', ' + lgu + ' LGU, ' + plural(admins, 'admin') },
         { n: s.events_upcoming_7d != null ? s.events_upcoming_7d : '—', l: 'Events this week', d: s.events_this_month != null ? s.events_this_month + ' this month' : 'Public and group' },
         { n: s.groups_total != null ? s.groups_total : '—', l: 'Groups', d: s.events_group != null ? s.events_group + ' group events so far' : '' },
         { n: s.reminders_sent_24h != null ? s.reminders_sent_24h : '—', l: 'Reminders sent', d: 'In the last 24 hours' }
@@ -1077,7 +1289,7 @@
     // ---------- Users ----------
     function whoCell(u) {
       var name = u.display_name || 'No name set';
-      return '<div class="who-cell">' + avatarHtml({ name: u.display_name || u.email, role: u.role }) +
+      return '<div class="who-cell">' + avatarHtml({ name: u.display_name || u.email, url: u.avatar_url, role: u.role }) +
         '<div class="txt"><strong>' + esc(name) + '</strong><span>' + esc(u.email) + '</span></div></div>';
     }
     function filteredUsers() {
@@ -1101,7 +1313,7 @@
       $('users-list').innerHTML = head + list.map(function (u) {
         var isMe = me && u.user_id === me.id;
         var roleSelect = '<select class="role" data-role-for="' + esc(u.user_id) + '" aria-label="Role for ' + esc(u.email) + '"' + (isMe ? ' disabled title="You can\'t change your own role"' : '') + '>' +
-          ['citizen', 'lgu_member', 'superadmin'].map(function (r) {
+          ROLES.map(function (r) {
             return '<option value="' + r + '"' + (u.role === r ? ' selected' : '') + '>' + ROLE_LABEL[r] + '</option>';
           }).join('') + '</select>';
         var row = '<li class="row user-row">' + whoCell(u) +
@@ -1167,9 +1379,12 @@
     function changeRole(select, userId, role) {
       var u = userById(userId);
       var previous = u ? u.role : 'citizen';
+      var who = u.display_name || u.email;
       var ask = role === 'superadmin'
-        ? confirmDialog({ title: 'Make ' + (u.display_name || u.email) + ' a superadmin?', text: 'Superadmins can manage every account and every public or group event.', confirm: 'Make superadmin' })
-        : confirmDialog({ title: 'Change role to ' + ROLE_LABEL[role] + '?', text: (u.display_name || u.email) + ' is currently ' + ROLE_LABEL[previous] + '.', confirm: 'Change role' });
+        ? confirmDialog({ title: 'Make ' + who + ' a superadmin?', text: 'Superadmins can open this portal and manage every account, admin, backup, and setting.', confirm: 'Make superadmin' })
+        : role === 'admin'
+          ? confirmDialog({ title: 'Make ' + who + ' an admin?', text: 'Admins can post public events, manage groups and event locations, and moderate chats in the app. They can\'t open this portal. Fine-tune what they can do on the Admins tab.', confirm: 'Make admin' })
+          : confirmDialog({ title: 'Change role to ' + ROLE_LABEL[role] + '?', text: who + ' is currently ' + ROLE_LABEL[previous] + '.', confirm: 'Change role' });
       ask.then(function (ok) {
         if (!ok) { select.value = previous; return; }
         select.disabled = true;
@@ -1257,7 +1472,8 @@
         confirm: 'Delete account', danger: true
       }).then(function (ok) {
         if (!ok) return;
-        var msg = btn.closest('.detail').querySelector('[data-detail-msg]');
+        var holder = btn.closest('.detail');
+        var msg = holder && holder.querySelector('[data-detail-msg]');
         busy(btn, true, 'Deleting…');
         sb.functions.invoke('admin-delete-user', { body: { userId: userId } }).then(function (res) {
           if (res.error) throw res.error;
@@ -1266,10 +1482,69 @@
           return Promise.all([loadUsers(), loadApplications(), loadStats()]);
         }).catch(function (err) {
           busy(btn, false);
-          return functionErrorText(err).then(function (t) { notice(msg, esc(t), 'error'); });
+          return functionErrorText(err).then(function (t) { if (msg) notice(msg, esc(t), 'error'); else toast(t); });
         });
       });
     }
+
+    // Admins
+    function renderAdmins() {
+      var list = users.filter(function (u) { return u.role === 'admin' || u.role === 'superadmin'; })
+        .sort(function (a, b) {
+          if (a.role !== b.role) return a.role === 'superadmin' ? -1 : 1;
+          return (a.display_name || a.email).localeCompare(b.display_name || b.email);
+        });
+      if (!list.length) {
+        $('admins-list').innerHTML = '<li class="empty"><strong>No admins yet</strong>Add one from the Add account tab, or change someone\'s role on the All users tab.</li>';
+        return;
+      }
+      $('admins-list').innerHTML = list.map(function (u) {
+        var isMe = me && u.user_id === me.id;
+        var isSuper = u.role === 'superadmin';
+        return '<li class="row admin-row">' + whoCell(u) +
+          (isSuper
+            ? '<div class="perms"><span class="pill superadmin">Superadmin</span><span class="muted">Everything, plus this portal</span></div>'
+            : '<div class="perms">' + permsHtml(u) + '</div>') +
+          '<div class="actions">' +
+            (isSuper || isMe ? '' : '<button class="btn ghost sm" type="button" data-demote="' + esc(u.user_id) + '">Remove admin</button>') +
+            (isMe ? '<span class="muted">You</span>' : '<button class="btn danger-ghost sm" type="button" data-delete-user="' + esc(u.user_id) + '">Delete account</button>') +
+          '</div></li>';
+      }).join('');
+    }
+    $('admins-list').addEventListener('change', function (e) {
+      var box = e.target;
+      if (!box.dataset.permFor) return;
+      var u = userById(box.dataset.permFor);
+      if (!u) return;
+      var next = {};
+      ADMIN_PERMS.forEach(function (perm) { next[perm.key] = hasPerm(u, perm.key); });
+      next[box.dataset.perm] = box.checked;
+      box.disabled = true;
+      sb.rpc('admin_set_admin_permissions', { p_user_id: u.user_id, p_permissions: next }).then(function (res) {
+        if (res.error) throw res.error;
+        var label = ADMIN_PERMS.filter(function (perm) { return perm.key === box.dataset.perm; })[0].label;
+        toast((u.display_name || u.email) + (box.checked ? ' can now ' : ' can no longer ') + label.toLowerCase() + '.');
+        return loadUsers();
+      }).catch(function (err) { box.checked = !box.checked; box.disabled = false; toast(errorText(err)); });
+    });
+    $('admins-list').addEventListener('click', function (e) {
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      if (btn.dataset.deleteUser) { deleteUser(btn, btn.dataset.deleteUser); return; }
+      if (!btn.dataset.demote) return;
+      var u = userById(btn.dataset.demote);
+      if (!u) return;
+      var who = u.display_name || u.email;
+      confirmDialog({ title: 'Remove ' + who + ' as admin?', text: 'They become an LGU member: they can still create groups and post group events, but not public events.', confirm: 'Remove admin', danger: true }).then(function (ok) {
+        if (!ok) return;
+        busy(btn, true, 'Removing…');
+        sb.rpc('admin_set_user_role', { p_user_id: u.user_id, p_role: 'lgu_member' }).then(function (res) {
+          if (res.error) throw res.error;
+          toast(who + ' is no longer an admin.');
+          return Promise.all([loadUsers(), loadStats()]);
+        }).catch(function (err) { busy(btn, false); toast(errorText(err)); });
+      });
+    });
 
     // Applications
     function renderApplications() {
@@ -1277,7 +1552,7 @@
       c.textContent = applications.length;
       c.classList.toggle('hidden', !applications.length);
       $('applications-list').innerHTML = applications.length ? applications.map(function (a) {
-        return '<li class="row app-row">' + whoCell({ display_name: a.display_name, email: a.email, role: 'citizen' }) +
+        return '<li class="row app-row">' + whoCell({ display_name: a.display_name, email: a.email, avatar_url: a.avatar_url, role: 'citizen' }) +
           '<span class="muted"><span class="label-sm">Office</span>' + esc(a.department || 'No office given') + '</span>' +
           '<div class="actions"><button class="btn primary sm" type="button" data-approve="' + esc(a.user_id) + '">Approve</button>' +
           '<button class="btn danger-ghost sm" type="button" data-reject="' + esc(a.user_id) + '">Decline</button></div></li>';
@@ -1305,10 +1580,13 @@
     });
 
     // Add account
+    $('new-perms').innerHTML = permsHtml(null, 'new-perm');
     function syncDepartmentField() {
-      var lgu = $('new-role').value === 'lgu_member';
-      $('new-department-field').classList.toggle('hidden', !lgu);
+      var role = $('new-role').value;
+      var lgu = role === 'lgu_member';
+      $('new-department-field').classList.toggle('hidden', role === 'superadmin');
       $('new-department').required = lgu;
+      $('new-perms-field').classList.toggle('hidden', role !== 'admin');
     }
     $('new-role').addEventListener('change', syncDepartmentField);
     syncDepartmentField();
@@ -1318,18 +1596,24 @@
       var role = $('new-role').value;
       var btn = e.target.querySelector('button[type="submit"]');
       var ask = role === 'superadmin'
-        ? confirmDialog({ title: 'Create a superadmin account for ' + email + '?', text: 'Superadmins can manage every account and every public or group event.', confirm: 'Create superadmin' })
+        ? confirmDialog({ title: 'Create a superadmin account for ' + email + '?', text: 'Superadmins can open this portal and manage every account, admin, backup, and setting.', confirm: 'Create superadmin' })
         : Promise.resolve(true);
+      var adminPermissions = {};
+      document.querySelectorAll('#new-perms input[data-perm]').forEach(function (box) { adminPermissions[box.dataset.perm] = box.checked; });
       ask.then(function (ok) {
         if (!ok) return;
         notice($('add-account-msg'), '', '');
         busy(btn, true, 'Creating…');
         sb.functions.invoke('admin-create-account', {
-          body: { email: email, password: $('new-password').value, displayName: $('new-name').value.trim(), role: role, department: $('new-department').value.trim() }
+          body: {
+            email: email, password: $('new-password').value, displayName: $('new-name').value.trim(), role: role,
+            department: $('new-department').value.trim(),
+            adminPermissions: role === 'admin' ? adminPermissions : undefined
+          }
         }).then(function (res) {
           if (res.error) throw res.error;
           notice($('add-account-msg'), 'Created ' + esc(email) + '. They can sign in now.', 'ok');
-          e.target.reset(); syncDepartmentField();
+          e.target.reset(); $('new-perms').innerHTML = permsHtml(null, 'new-perm'); syncDepartmentField();
           loadUsers();
         }).catch(function (err) {
           return functionErrorText(err).then(function (t) { notice($('add-account-msg'), esc(t), 'error'); });
@@ -1343,6 +1627,11 @@
       return '<div class="date-block"><span class="m">' + esc(fmtMonth.format(d)) + '</span><span class="d">' + d.getUTCDate() + '</span></div>';
     }
     function typePill(ev) {
+      if (ev.type === 'calendar') {
+        var cal = calendarById(ev.calendarId);
+        var color = cal && COLORS[cal.color_key] ? COLORS[cal.color_key] : '';
+        return '<span class="pill calendar" title="Calendar event"' + (color ? ' style="--c:' + color + '"' : '') + '><span class="dot"></span>' + esc((cal && cal.name) || ev.calendarName || 'Calendar') + '</span>';
+      }
       return ev.type === 'shared'
         ? '<span class="pill shared" title="Group event"><span class="dot"></span>' + esc(ev.groupName || 'Group') + '</span>'
         : '<span class="pill public"><span class="dot"></span>Public</span>';
@@ -1352,7 +1641,8 @@
         id: r.out_id, title: r.out_title, location: r.out_location || 'Other', description: r.out_description || '',
         start: r.out_start_time, end: r.out_end_time, type: r.out_event_type, groupName: r.out_group_name,
         posterName: r.out_created_by_name, posterDept: r.out_created_by_department, posterAvatar: r.out_created_by_avatar_url,
-        colorKey: r.out_color_key, contact: r.out_contact_number, createdAt: r.out_created_at
+        colorKey: r.out_color_key, contact: r.out_contact_number, createdAt: r.out_created_at,
+        calendarId: r.out_calendar_id || null, calendarName: r.out_calendar_name || null
       };
     }
     function filteredEvents() {
@@ -1366,7 +1656,7 @@
         if (when === 'upcoming' && ended) return false;
         if (when === 'past' && !ended) return false;
         if (!q) return true;
-        return [ev.title, ev.location, ev.posterName, ev.posterDept, ev.groupName].join(' ').toLowerCase().indexOf(q) >= 0;
+        return [ev.title, ev.location, ev.posterName, ev.posterDept, ev.groupName, ev.calendarName].join(' ').toLowerCase().indexOf(q) >= 0;
       });
       list.sort(function (a, b) { return when === 'upcoming' ? wall(a.start) - wall(b.start) : wall(b.start) - wall(a.start); });
       return list;
@@ -1442,6 +1732,8 @@
       form.reset();
       notice($('event-msg'), '', '');
       $('location-options').innerHTML = locations.map(function (l) { return '<option value="' + esc(l.name) + '">'; }).join('');
+      renderPostToChoices();
+      $('ev-post-to-field').classList.toggle('hidden', !!ev);
       if (ev) {
         $('event-dialog-title').textContent = 'Edit event';
         $('event-dialog-note').textContent = ev.type === 'shared'
@@ -1504,6 +1796,7 @@
         });
       } else {
         var p = me.profile || {};
+        var postTo = $('ev-post-to').value;
         request = sb.from('barangay_events').insert({
           id: String(Date.now()) + String(Math.floor(Math.random() * 1000)).padStart(3, '0'),
           title: title,
@@ -1516,7 +1809,8 @@
           created_by_name: p.display_name || me.email,
           created_by_department: p.department || null,
           created_by_id: me.id,
-          event_type: 'public',
+          event_type: postTo ? 'calendar' : 'public',
+          calendar_id: postTo || null,
           group_id: null,
           group_name: null,
           daily_overrides: [],
@@ -1530,6 +1824,602 @@
         toast(editingEvent ? 'Saved "' + title + '".' : 'Posted "' + title + '".');
         return Promise.all([loadEvents(), loadStats()]);
       }).catch(function (err) { notice(msg, esc(errorText(err)), 'error'); }).then(function () { busy(btn, false); });
+    });
+
+    // ---------- Calendars ----------
+    // Icon keys are shared with the app (lib/event_calendars.dart maps the
+    // same keys to Font Awesome icons), so only offer these.
+    var CALENDAR_ICONS = ['tag', 'basketball', 'futbol', 'volleyball', 'person-running', 'bicycle', 'heart-pulse', 'syringe',
+      'people-group', 'music', 'palette', 'graduation-cap', 'book', 'church', 'broom', 'seedling', 'tree',
+      'hand-holding-heart', 'briefcase', 'bullhorn', 'shield-halved', 'utensils', 'award', 'star', 'heart'];
+    var expandedCalendar = null;
+    function iconHtml(key) {
+      return '<i class="fa-solid fa-' + esc(CALENDAR_ICONS.indexOf(key) >= 0 ? key : 'tag') + '" aria-hidden="true"></i>';
+    }
+    function calendarBadge(c) {
+      return '<span class="cat-badge" style="--c:' + (COLORS[c.color_key] || 'var(--ink-3)') + '">' + iconHtml(c.icon) + '</span>';
+    }
+    function activeCalendars() { return calendars.filter(function (c) { return !c.archived_at; }); }
+    function calendarById(id) { return calendars.filter(function (c) { return c.id === id; })[0]; }
+    function handlersOf(calendarId) { return calendarHandlers.filter(function (h) { return h.calendar_id === calendarId; }); }
+    function renderCalendarForm(c) {
+      $('cat-icons').innerHTML = CALENDAR_ICONS.map(function (key, i) {
+        var checked = c ? c.icon === key : i === 0;
+        return '<label title="' + key + '"><input type="radio" name="cat-icon" value="' + key + '"' + (checked ? ' checked' : '') + '><span>' + iconHtml(key) + '</span><span class="sr-only">' + key + '</span></label>';
+      }).join('');
+      var selected = c ? c.color_key : 'peacock';
+      $('cat-colors').innerHTML = Object.keys(COLORS).map(function (key) {
+        return '<label title="' + key + '"><input type="radio" name="cat-color" value="' + key + '"' + (selected === key ? ' checked' : '') + '><span style="--c:' + COLORS[key] + '"></span><span class="sr-only">' + key + '</span></label>';
+      }).join('');
+      $('cat-name').value = c ? c.name : '';
+      $('cat-submit').textContent = c ? 'Save changes' : 'Add calendar';
+      $('cat-cancel').classList.toggle('hidden', !c);
+    }
+    function eventCountFor(calendarId) {
+      return events.filter(function (ev) { return ev.calendarId === calendarId; }).length;
+    }
+    function handlersPanel(c) {
+      var list = handlersOf(c.id);
+      var chips = list.length ? list.map(function (h) {
+        var u = userById(h.user_id) || { display_name: 'Unknown account', email: h.user_id };
+        return '<span class="handler-chip">' + avatarHtml({ name: u.display_name || u.email, url: u.avatar_url, role: u.role, small: true }) +
+          esc(u.display_name || u.email) + '<button type="button" data-handler-remove="' + esc(c.id) + '" data-user="' + esc(h.user_id) + '" aria-label="Remove ' + esc(u.display_name || u.email) + ' as handler">&times;</button></span>';
+      }).join('') : '<span class="muted">No handlers yet. Only you (the superadmin) can post to it until you add someone.</span>';
+      return '<li class="detail" data-handlers-for="' + esc(c.id) + '">' +
+        '<div style="font-weight:700;margin-bottom:8px">Who can post to ' + esc(c.name) + '</div>' +
+        '<div class="handlers">' + chips + '</div>' +
+        '<form class="handler-form" data-handler-form="' + esc(c.id) + '" style="display:flex;gap:8px;flex-wrap:wrap;max-width:560px">' +
+          '<label class="sr-only" for="handler-input-' + esc(c.id) + '">Account to add</label>' +
+          '<input id="handler-input-' + esc(c.id) + '" list="handler-options" placeholder="Type a name or email" autocomplete="off" style="flex:1 1 240px">' +
+          '<button class="btn primary sm" type="submit">Add handler</button>' +
+        '</form><div data-handler-msg></div></li>';
+    }
+    function renderCategories() {
+      if (categoriesError) {
+        $('categories-list').innerHTML = '<li class="empty"><strong>Calendars aren\'t set up yet</strong>' + esc(categoriesError) + '</li>';
+        $('archived-categories-list').innerHTML = '';
+        return;
+      }
+      $('handler-options').innerHTML = users.map(function (u) {
+        return '<option value="' + esc(u.email) + '">' + esc((u.display_name || u.email) + ' (' + (ROLE_LABEL[u.role] || u.role) + ')') + '</option>';
+      }).join('');
+      var active = activeCalendars();
+      $('categories-list').innerHTML = active.length ? active.map(function (c, i) {
+        var n = eventCountFor(c.id);
+        var h = handlersOf(c.id).length;
+        var row = '<li class="row cat-row"><div class="cat-name">' + calendarBadge(c) + '<div style="min-width:0"><strong>' + esc(c.name) + '</strong>' +
+          '<div class="muted" style="font-size:13px">' + plural(n, 'event') + ' &middot; ' + plural(h, 'handler') + '</div></div></div>' +
+          '<div class="actions">' +
+            '<button class="btn ghost sm" type="button" data-cat-handlers="' + esc(c.id) + '" aria-expanded="' + (expandedCalendar === c.id) + '">Handlers</button>' +
+            '<button class="btn ghost sm" type="button" data-cat-up="' + esc(c.id) + '"' + (i === 0 ? ' disabled' : '') + ' aria-label="Move ' + esc(c.name) + ' up">&uarr;</button>' +
+            '<button class="btn ghost sm" type="button" data-cat-down="' + esc(c.id) + '"' + (i === active.length - 1 ? ' disabled' : '') + ' aria-label="Move ' + esc(c.name) + ' down">&darr;</button>' +
+            '<button class="btn ghost sm" type="button" data-cat-edit="' + esc(c.id) + '">Edit</button>' +
+            '<button class="btn danger-ghost sm" type="button" data-cat-remove="' + esc(c.id) + '">Remove</button>' +
+          '</div></li>';
+        if (expandedCalendar === c.id) row += handlersPanel(c);
+        return row;
+      }).join('') : '<li class="empty"><strong>No calendars yet</strong>Add one above, like Sports. It shows up as a tab in the app.</li>';
+      var archived = calendars.filter(function (c) { return c.archived_at; });
+      $('archived-categories-list').innerHTML = archived.length ? archived.map(function (c) {
+        return '<li class="row cat-row"><div class="cat-name">' + calendarBadge(c) + '<div style="min-width:0"><strong>' + esc(c.name) + '</strong>' +
+          '<div class="muted" style="font-size:13px">Archived ' + esc(formatJoined(c.archived_at)) + ' &middot; ' + plural(eventCountFor(c.id), 'event') + '</div></div></div>' +
+          '<div class="actions"><button class="btn ghost sm" type="button" data-cat-restore="' + esc(c.id) + '">Restore</button>' +
+          '<button class="btn danger-ghost sm" type="button" data-cat-delete="' + esc(c.id) + '">Delete permanently</button></div></li>';
+      }).join('') : '<li class="empty">Nothing archived.</li>';
+    }
+    function renderPostToChoices() {
+      $('ev-post-to').innerHTML = '<option value="">Public</option>' + activeCalendars().map(function (c) {
+        return '<option value="' + esc(c.id) + '">' + esc(c.name) + ' calendar</option>';
+      }).join('');
+    }
+    $('ev-post-to').addEventListener('change', function () {
+      var cal = calendarById($('ev-post-to').value);
+      $('event-dialog-note').textContent = cal
+        ? 'Everyone sees it under the ' + cal.name + ' tab in the app and gets a notification.'
+        : 'Everyone with the app sees it and gets a notification.';
+    });
+    $('category-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var name = $('cat-name').value.trim();
+      if (!name) return;
+      var icon = (document.querySelector('input[name="cat-icon"]:checked') || {}).value || 'tag';
+      var color = (document.querySelector('input[name="cat-color"]:checked') || {}).value || null;
+      var btn = $('cat-submit');
+      var msg = $('category-msg');
+      busy(btn, true, editingCategory ? 'Saving…' : 'Adding…');
+      var request = editingCategory
+        ? sb.from('event_calendars').update({ name: name, icon: icon, color_key: color }).eq('id', editingCategory.id)
+        : sb.from('event_calendars').insert({
+            name: name, icon: icon, color_key: color, created_by: me.id,
+            sort_order: activeCalendars().reduce(function (max, c) { return Math.max(max, c.sort_order || 0); }, 0) + 1
+          }).select().single();
+      request.then(function (res) {
+        if (res.error) {
+          if (res.error.code === '23505') throw new Error('There\'s already a calendar called "' + name + '".');
+          throw res.error;
+        }
+        var created = !editingCategory && res.data;
+        toast(editingCategory ? 'Saved "' + name + '".' : 'Added "' + name + '". Now choose who handles it.');
+        editingCategory = null;
+        notice(msg, '', '');
+        renderCalendarForm(null);
+        if (created) expandedCalendar = created.id;
+        return loadCategories();
+      }).catch(function (err) { notice(msg, esc(errorText(err)), 'error'); }).then(function () { busy(btn, false); });
+    });
+    $('cat-cancel').addEventListener('click', function () { editingCategory = null; renderCalendarForm(null); });
+    function moveCalendar(id, delta) {
+      var list = activeCalendars();
+      var i = list.findIndex(function (c) { return c.id === id; });
+      var j = i + delta;
+      if (i < 0 || j < 0 || j >= list.length) return;
+      var reordered = list.slice();
+      var tmp = reordered[i]; reordered[i] = reordered[j]; reordered[j] = tmp;
+      Promise.all(reordered.map(function (c, index) {
+        return sb.from('event_calendars').update({ sort_order: index + 1 }).eq('id', c.id);
+      })).then(function (results) {
+        var failed = results.filter(function (r) { return r.error; })[0];
+        if (failed) throw failed.error;
+        return loadCategories();
+      }).catch(function (err) { toast(errorText(err)); });
+    }
+    function deleteCalendarForever(c, btn) {
+      busy(btn, true, 'Deleting…');
+      sb.from('event_calendars').delete().eq('id', c.id).then(function (res) {
+        if (res.error) throw res.error;
+        toast('Deleted "' + c.name + '". Its events are now regular Public events.');
+        return Promise.all([loadCategories(), loadEvents()]);
+      }).catch(function (err) { busy(btn, false); toast(errorText(err)); });
+    }
+    function setArchived(c, archived, btn) {
+      busy(btn, true, archived ? 'Archiving…' : 'Restoring…');
+      sb.from('event_calendars').update({ archived_at: archived ? new Date().toISOString() : null }).eq('id', c.id).then(function (res) {
+        if (res.error) throw res.error;
+        toast(archived ? 'Archived "' + c.name + '". You can restore it any time.' : 'Restored "' + c.name + '".');
+        return loadCategories();
+      }).catch(function (err) { busy(btn, false); toast(errorText(err)); });
+    }
+    function calendarClick(e) {
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      var d = btn.dataset;
+      if (d.catHandlers) {
+        expandedCalendar = expandedCalendar === d.catHandlers ? null : d.catHandlers;
+        renderCategories();
+        if (expandedCalendar) { var input = $('handler-input-' + expandedCalendar); if (input) input.focus(); }
+      } else if (d.handlerRemove) {
+        var cal = calendarById(d.handlerRemove);
+        var u = userById(d.user) || { email: 'this account' };
+        confirmDialog({ title: 'Remove ' + (u.display_name || u.email) + ' as a handler of ' + cal.name + '?', text: 'They can no longer post to it. Events they already posted stay.', confirm: 'Remove handler', danger: true }).then(function (ok) {
+          if (!ok) return;
+          sb.from('event_calendar_handlers').delete().eq('calendar_id', cal.id).eq('user_id', d.user).then(function (res) {
+            if (res.error) throw res.error;
+            toast('Removed ' + (u.display_name || u.email) + '.');
+            return loadCategories();
+          }).catch(function (err) { toast(errorText(err)); });
+        });
+      } else if (d.catUp) moveCalendar(d.catUp, -1);
+      else if (d.catDown) moveCalendar(d.catDown, 1);
+      else if (d.catEdit) {
+        editingCategory = calendarById(d.catEdit);
+        renderCalendarForm(editingCategory);
+        $('cat-name').focus();
+      } else if (d.catRemove) {
+        var c = calendarById(d.catRemove);
+        var n = eventCountFor(c.id);
+        confirmDialog({
+          title: 'Remove the ' + c.name + ' calendar?',
+          text: 'Archive hides its tab and stops new posts, but keeps it so you can restore it later. Delete permanently removes it for good' +
+            (n ? ', and its ' + plural(n, 'event') + ' become regular Public events.' : '.'),
+          confirm: 'Archive',
+          alt: { label: 'Delete permanently' }
+        }).then(function (choice) {
+          if (choice === true) setArchived(c, true, btn);
+          else if (choice === 'alt') {
+            confirmDialog({ title: 'Delete the ' + c.name + ' calendar permanently?', text: 'This can\'t be undone.', confirm: 'Delete permanently', danger: true })
+              .then(function (ok) { if (ok) deleteCalendarForever(c, btn); });
+          }
+        });
+      } else if (d.catRestore) setArchived(calendarById(d.catRestore), false, btn);
+      else if (d.catDelete) {
+        var a = calendarById(d.catDelete);
+        confirmDialog({ title: 'Delete the ' + a.name + ' calendar permanently?', text: 'This can\'t be undone. Its events become regular Public events.', confirm: 'Delete permanently', danger: true })
+          .then(function (ok) { if (ok) deleteCalendarForever(a, btn); });
+      }
+    }
+    $('categories-list').addEventListener('click', calendarClick);
+    $('archived-categories-list').addEventListener('click', calendarClick);
+    $('categories-list').addEventListener('submit', function (e) {
+      var form = e.target.closest('[data-handler-form]');
+      if (!form) return;
+      e.preventDefault();
+      var cal = calendarById(form.dataset.handlerForm);
+      var input = form.querySelector('input');
+      var msg = form.parentElement.querySelector('[data-handler-msg]');
+      var q = input.value.trim().toLowerCase();
+      if (!q) return;
+      var matches = users.filter(function (u) { return (u.email || '').toLowerCase() === q; });
+      if (!matches.length) {
+        matches = users.filter(function (u) { return ((u.display_name || '') + ' ' + (u.email || '')).toLowerCase().indexOf(q) >= 0; });
+      }
+      if (matches.length !== 1) {
+        notice(msg, matches.length ? 'More than one account matches. Pick one from the list.' : 'No account matches "' + esc(input.value.trim()) + '".', 'error');
+        return;
+      }
+      var u = matches[0];
+      if (handlersOf(cal.id).some(function (h) { return h.user_id === u.user_id; })) {
+        notice(msg, esc(u.display_name || u.email) + ' already handles ' + esc(cal.name) + '.', 'info');
+        return;
+      }
+      var btn = form.querySelector('button');
+      busy(btn, true, 'Adding…');
+      sb.from('event_calendar_handlers').insert({ calendar_id: cal.id, user_id: u.user_id, added_by: me.id }).then(function (res) {
+        if (res.error) throw res.error;
+        toast((u.display_name || u.email) + ' can now post to ' + cal.name + '.');
+        return loadCategories();
+      }).catch(function (err) { busy(btn, false); notice(msg, esc(errorText(err)), 'error'); });
+    });
+    renderCalendarForm(null);
+
+    // ---------- Backups ----------
+    var BACKUP_FORMAT = 'ebongabong-calendar-backup';
+    function settingNumber(key, fallback) {
+      var v = settings[key];
+      var n = typeof v === 'number' ? v : parseFloat(v);
+      return isNaN(n) ? fallback : n;
+    }
+    function lastBackupAt() {
+      var latest = backupHistory.filter(function (b) { return b.kind === 'export'; })[0];
+      if (latest) return latest.created_at;
+      return usage && usage.last_backup_at;
+    }
+    // A reminder line for the dashboard, or null when nothing is due.
+    function backupDue() {
+      if (!me || backupError || !backupLoaded) return null;
+      var days = settingNumber('backup_reminder_days', 7);
+      if (!days) return null;
+      var last = lastBackupAt();
+      if (!last) return 'You haven\'t backed up your data yet';
+      var age = Math.floor((Date.now() - new Date(last).getTime()) / 86400000);
+      return age >= days ? 'Your last backup was ' + plural(age, 'day') + ' ago' : null;
+    }
+    function setProgress(prefix, fraction, label) {
+      var bar = $(prefix + '-progress');
+      bar.classList.remove('hidden');
+      bar.firstElementChild.style.width = Math.round(Math.max(0, Math.min(1, fraction)) * 100) + '%';
+      var l = $(prefix + '-progress-label');
+      l.classList.toggle('hidden', !label);
+      l.textContent = label || '';
+    }
+    function hideProgress(prefix) {
+      $(prefix + '-progress').classList.add('hidden');
+      $(prefix + '-progress-label').classList.add('hidden');
+    }
+    function toCsv(rows) {
+      if (!rows || !rows.length) return '';
+      var cols = [];
+      rows.forEach(function (r) { Object.keys(r).forEach(function (k) { if (cols.indexOf(k) < 0) cols.push(k); }); });
+      function cell(v) {
+        if (v === null || v === undefined) return '';
+        var text = typeof v === 'object' ? JSON.stringify(v) : String(v);
+        return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+      }
+      return cols.join(',') + '\r\n' + rows.map(function (r) { return cols.map(function (c) { return cell(r[c]); }).join(','); }).join('\r\n') + '\r\n';
+    }
+    function stamp(date) {
+      var d = new Date(date.getTime() + MANILA_MS);
+      function two(n) { return String(n).padStart(2, '0'); }
+      return d.getUTCFullYear() + '-' + two(d.getUTCMonth() + 1) + '-' + two(d.getUTCDate()) + '-' + two(d.getUTCHours()) + two(d.getUTCMinutes());
+    }
+    function readmeText(m) {
+      return [
+        'eBongabong Calendar backup',
+        '===========================',
+        'Made: ' + m.created_at + ' (from ' + m.source + ')',
+        '',
+        'What is inside',
+        '- manifest.json: what this backup contains (format, version, counts).',
+        '- data/<table>.json and data/<table>.csv: every row of every app table,',
+        '  as JSON (exact) and CSV (for spreadsheets). Times are as stored.',
+        '- data/auth_users.json: login accounts (id, email, dates). No passwords.',
+        '- files/event-attachments/...: every file attached to an event.',
+        '- schema.sql: the database structure this data belongs to (if it could',
+        '  be downloaded when the backup was made).',
+        '',
+        'Restoring',
+        'In the LGU-admin portal, open Backups > Restore from a backup and pick',
+        'this ZIP. Accounts that no longer exist are recreated with the same id;',
+        'their owners set a new password with "Forgot password".',
+        '',
+        'Moving to a different back end',
+        'Create the tables from schema.sql (or your own equivalent), then import',
+        'data/*.csv or data/*.json in this order: ' + m.table_order.join(', ') + '.',
+        'Event start/end times are Philippine wall-clock time labeled UTC (a',
+        '10:00 AM event is stored as 10:00+00).'
+      ].join('\r\n');
+    }
+    function runBackup(btn) {
+      if (!window.JSZip) { toast('The ZIP library didn\'t load. Check your connection and refresh.'); return; }
+      var msg = $('backup-msg');
+      notice(msg, '', '');
+      busy(btn, true, 'Backing up…');
+      setProgress('backup', 0.05, 'Collecting every table…');
+      var data, zip = new JSZip(), counts = {}, fileCount = 0, missingFiles = [];
+      sb.functions.invoke('admin-backup', { body: { action: 'export' } }).then(function (res) {
+        if (res.error) throw res.error;
+        data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+        data.table_order.forEach(function (t) {
+          var rows = data.tables[t] || [];
+          counts[t] = rows.length;
+          zip.file('data/' + t + '.json', JSON.stringify(rows, null, 2));
+          zip.file('data/' + t + '.csv', toCsv(rows));
+        });
+        zip.file('data/auth_users.json', JSON.stringify(data.auth_users, null, 2));
+        zip.file('data/auth_users.csv', toCsv(data.auth_users));
+        var items = (data.files && data.files.items) || [];
+        var i = 0;
+        function next() {
+          if (i >= items.length) return Promise.resolve();
+          var item = items[i++];
+          setProgress('backup', 0.1 + 0.6 * (i / items.length), 'Downloading attached files (' + i + ' of ' + items.length + ')…');
+          if (!item.url) { missingFiles.push(item.path); return next(); }
+          return fetch(item.url).then(function (r) {
+            if (!r.ok) throw new Error(r.status);
+            return r.blob();
+          }).then(function (blob) {
+            zip.file('files/' + data.files.bucket + '/' + item.path, blob);
+            fileCount++;
+          }).catch(function () { missingFiles.push(item.path); }).then(next);
+        }
+        return next();
+      }).then(function () {
+        setProgress('backup', 0.72, 'Adding the database structure…');
+        return fetch(AVATAR_BASE + 'supabase/barangay_events.sql').then(function (r) { return r.ok ? r.text() : null; }).catch(function () { return null; });
+      }).then(function (schema) {
+        if (schema) zip.file('schema.sql', schema);
+        var manifest = {
+          format: BACKUP_FORMAT, version: data.version, app: 'eBongabong Calendar', created_at: data.created_at, source: data.source,
+          table_order: data.table_order, counts: counts, auth_users: data.auth_users.length,
+          files: fileCount, missing_files: missingFiles, includes_schema: !!schema
+        };
+        zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+        zip.file('README.txt', readmeText(manifest));
+        return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }, function (meta) {
+          setProgress('backup', 0.75 + 0.25 * (meta.percent / 100), 'Packing the ZIP file…');
+        });
+      }).then(function (blob) {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'ebongabong-backup-' + stamp(new Date()) + '.zip';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 60000);
+        var total = Object.keys(counts).reduce(function (sum, t) { return sum + counts[t]; }, 0);
+        notice(msg, 'Backup downloaded: ' + esc(plural(total, 'record')) + ' and ' + esc(plural(fileCount, 'file')) + '. Keep it somewhere safe, like a USB drive or cloud storage.' +
+          (missingFiles.length ? ' ' + esc(plural(missingFiles.length, 'attached file')) + ' couldn\'t be downloaded.' : ''), missingFiles.length ? 'warn' : 'ok');
+        return sb.rpc('admin_record_backup', { p_kind: 'export', p_mode: null, p_row_counts: counts, p_file_count: fileCount, p_note: missingFiles.length ? missingFiles.length + ' files missing' : null });
+      }).then(function () {
+        return Promise.all([loadBackupHistory(), loadUsage()]);
+      }).catch(function (err) {
+        return functionErrorText(err).then(function (t) { notice(msg, esc(t), 'error'); });
+      }).then(function () { busy(btn, false); hideProgress('backup'); });
+    }
+    $('backup-btn').addEventListener('click', function () { runBackup($('backup-btn')); });
+    $('attention').addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-backup-now]');
+      if (!btn) return;
+      location.hash = '#backups';
+      runBackup($('backup-btn'));
+    });
+    $('backup-reminder').addEventListener('change', function () {
+      var days = parseInt($('backup-reminder').value, 10) || 0;
+      saveSetting('backup_reminder_days', days).then(function () {
+        toast(days ? 'You\'ll be reminded every ' + plural(days, 'day') + '.' : 'Backup reminders are off.');
+        renderDashboard();
+      }).catch(function (err) { toast(errorText(err)); });
+    });
+    function renderBackupHistory() {
+      $('backup-reminder').value = String(settingNumber('backup_reminder_days', 7));
+      if (backupError) {
+        $('backup-history').innerHTML = '<li class="empty"><strong>Backups aren\'t set up yet</strong>' + esc(backupError) + '</li>';
+        return;
+      }
+      $('backup-history').innerHTML = backupHistory.length ? backupHistory.map(function (b) {
+        var total = Object.keys(b.row_counts || {}).reduce(function (sum, t) { return sum + (b.row_counts[t] || 0); }, 0);
+        var who = userById(b.created_by);
+        var what = b.kind === 'export' ? 'Backup downloaded' : (b.mode === 'replace' ? 'Restored (replace)' : 'Restored (merge)');
+        return '<li class="row history-row"><div><strong>' + esc(what) + '</strong><div class="muted" style="font-size:13px">' +
+          esc(new Date(b.created_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })) +
+          (who ? ' by ' + esc(who.display_name || who.email) : '') + '</div></div>' +
+          '<div class="muted">' + esc(plural(total, 'record')) + ', ' + esc(plural(b.file_count || 0, 'file')) + (b.note ? ' &middot; ' + esc(b.note) : '') + '</div></li>';
+      }).join('') : '<li class="empty"><strong>No backups yet</strong>Download your first one above.</li>';
+    }
+
+    // Restore
+    document.querySelectorAll('input[name="restore-mode"]').forEach(function (r) {
+      r.addEventListener('change', function () {
+        $('restore-confirm-field').classList.toggle('hidden', restoreMode() !== 'replace');
+      });
+    });
+    function restoreMode() { return (document.querySelector('input[name="restore-mode"]:checked') || {}).value || 'merge'; }
+    $('restore-file').addEventListener('change', function () {
+      restoreZip = null; restoreManifest = null;
+      var file = $('restore-file').files[0];
+      var box = $('restore-summary');
+      notice($('restore-msg'), '', '');
+      if (!file) { box.innerHTML = ''; return; }
+      if (!window.JSZip) { notice(box, 'The ZIP library didn\'t load. Check your connection and refresh.', 'error'); return; }
+      notice(box, 'Reading ' + esc(file.name) + '…', 'info');
+      JSZip.loadAsync(file).then(function (zip) {
+        var m = zip.file('manifest.json');
+        if (!m) throw new Error('This isn\'t an eBongabong Calendar backup (no manifest.json inside).');
+        return m.async('string').then(function (text) {
+          var manifest = JSON.parse(text);
+          if (manifest.format !== BACKUP_FORMAT) throw new Error('This isn\'t an eBongabong Calendar backup.');
+          restoreZip = zip; restoreManifest = manifest;
+          var total = Object.keys(manifest.counts).reduce(function (sum, t) { return sum + manifest.counts[t]; }, 0);
+          notice(box, 'Backup from <strong>' + esc(new Date(manifest.created_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })) + '</strong>: ' +
+            esc(plural(manifest.counts.barangay_events || 0, 'event')) + ', ' + esc(plural(manifest.counts.profiles || 0, 'profile')) + ', ' +
+            esc(plural(manifest.counts.groups || 0, 'group')) + ', ' + esc(plural(manifest.counts.event_comments || 0, 'chat message')) +
+            ' (' + esc(plural(total, 'record')) + ' in all) and ' + esc(plural(manifest.files || 0, 'file')) + '.', 'info');
+        });
+      }).catch(function (err) { notice(box, esc(errorText(err)), 'error'); });
+    });
+    function chunks(list, size) {
+      var out = [];
+      for (var i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+      return out;
+    }
+    function sequence(items, fn) {
+      return items.reduce(function (p, item, index) { return p.then(function () { return fn(item, index); }); }, Promise.resolve());
+    }
+    $('restore-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var msg = $('restore-msg');
+      if (!restoreZip || !restoreManifest) { notice(msg, 'Pick a backup ZIP first.', 'error'); return; }
+      var mode = restoreMode();
+      if (mode === 'replace' && $('restore-confirm').value.trim() !== 'RESTORE') { notice(msg, 'Type RESTORE to confirm a replace.', 'error'); return; }
+      var zip = restoreZip, manifest = restoreManifest;
+      confirmDialog({
+        title: mode === 'replace' ? 'Replace today\'s data with this backup?' : 'Merge this backup into today\'s data?',
+        text: mode === 'replace'
+          ? 'Every current event, group, chat message, calendar, and location is erased first, then the backup is restored exactly. This can\'t be undone, so download a fresh backup first if you might need today\'s data.'
+          : 'Missing or changed records are put back. Nothing added since the backup is removed.',
+        confirm: mode === 'replace' ? 'Erase and restore' : 'Restore', danger: mode === 'replace'
+      }).then(function (ok) {
+        if (!ok) return;
+        var btn = $('restore-btn');
+        busy(btn, true, 'Restoring…');
+        notice(msg, '', '');
+        var problems = [], restoredCounts = {}, filesRestored = 0, failedUsers = {};
+        var tables = manifest.table_order.slice();
+        var totalSteps = tables.length + 3, step = 0;
+        function advance(label) { step++; setProgress('restore', step / totalSteps, label); }
+        setProgress('restore', 0.02, 'Checking login accounts…');
+        var usersFile = zip.file('data/auth_users.json');
+        (usersFile ? usersFile.async('string') : Promise.resolve('[]')).then(function (text) {
+          var authUsers = JSON.parse(text);
+          return sequence(chunks(authUsers, 50), function (batch) {
+            return sb.functions.invoke('admin-backup', { body: { action: 'restore-users', users: batch } }).then(function (res) {
+              if (res.error) throw res.error;
+              (res.data.failed || []).forEach(function (f) { failedUsers[f.id] = true; problems.push('Account ' + (f.email || f.id) + ': ' + f.error); });
+            });
+          });
+        }).then(function () {
+          advance('Accounts ready.');
+          if (mode !== 'replace') return;
+          setProgress('restore', step / totalSteps, 'Erasing current data…');
+          return sb.rpc('admin_restore_wipe').then(function (res) { if (res.error) throw res.error; });
+        }).then(function () {
+          advance(mode === 'replace' ? 'Current data erased.' : 'Starting the merge…');
+          return sequence(tables, function (t) {
+            var f = zip.file('data/' + t + '.json');
+            if (!f) { advance(); return; }
+            return f.async('string').then(function (text) {
+              var rows = JSON.parse(text);
+              // A profile can't come back without its login account.
+              if (t === 'profiles') rows = rows.filter(function (r) { return !failedUsers[r.id]; });
+              restoredCounts[t] = 0;
+              return sequence(chunks(rows, 400), function (batch, i, all) {
+                setProgress('restore', (step + (i / Math.max(1, chunks(rows, 400).length))) / totalSteps, 'Restoring ' + t.replace(/_/g, ' ') + '…');
+                return sb.rpc('admin_restore_table', { p_table: t, p_rows: batch }).then(function (res) {
+                  if (res.error) throw res.error;
+                  restoredCounts[t] += res.data || 0;
+                });
+              }).catch(function (err) { problems.push(t + ': ' + errorText(err)); });
+            }).then(function () { advance('Restored ' + t.replace(/_/g, ' ') + '.'); });
+          });
+        }).then(function () {
+          var prefix = 'files/' + ((manifest.files_bucket) || 'event-attachments') + '/';
+          var fileEntries = [];
+          zip.forEach(function (path, entry) { if (!entry.dir && path.indexOf(prefix) === 0) fileEntries.push({ path: path.slice(prefix.length), entry: entry }); });
+          return sequence(chunks(fileEntries, 25), function (batch, i, all) {
+            setProgress('restore', (totalSteps - 1 + (i / Math.max(1, chunks(fileEntries, 25).length))) / totalSteps, 'Putting attached files back (' + Math.min(fileEntries.length, (i + 1) * 25) + ' of ' + fileEntries.length + ')…');
+            return sb.functions.invoke('admin-backup', { body: { action: 'signed-upload', paths: batch.map(function (b) { return b.path; }) } }).then(function (res) {
+              if (res.error) throw res.error;
+              var tokens = {};
+              (res.data.items || []).forEach(function (it) { tokens[it.path] = it; });
+              return sequence(batch, function (b) {
+                var t = tokens[b.path];
+                if (!t || !t.token) { problems.push('File ' + b.path + ': ' + ((t && t.error) || 'no upload link')); return; }
+                return b.entry.async('blob').then(function (blob) {
+                  return sb.storage.from(res.data.bucket).uploadToSignedUrl(b.path, t.token, blob);
+                }).then(function (up) {
+                  if (up && up.error) problems.push('File ' + b.path + ': ' + up.error.message);
+                  else filesRestored++;
+                });
+              });
+            }).catch(function (err) { problems.push('Files: ' + errorText(err)); });
+          });
+        }).then(function () {
+          setProgress('restore', 1, 'Done.');
+          var total = Object.keys(restoredCounts).reduce(function (sum, t) { return sum + restoredCounts[t]; }, 0);
+          notice(msg, (problems.length ? 'Restore finished with ' + esc(plural(problems.length, 'problem')) + ': ' : 'Restore finished: ') +
+            esc(plural(total, 'record')) + ' and ' + esc(plural(filesRestored, 'file')) + ' restored.' +
+            (problems.length ? '<br>' + problems.slice(0, 8).map(esc).join('<br>') + (problems.length > 8 ? '<br>…and ' + (problems.length - 8) + ' more.' : '') : '') +
+            '<br>Restored accounts sign in again by resetting their password.', problems.length ? 'warn' : 'ok');
+          return sb.rpc('admin_record_backup', { p_kind: 'restore', p_mode: mode, p_row_counts: restoredCounts, p_file_count: filesRestored, p_note: problems.length ? problems.length + ' problems' : null });
+        }).then(function () {
+          $('restore-confirm').value = '';
+          return loadAll();
+        }).catch(function (err) {
+          return functionErrorText(err).then(function (t) { notice(msg, 'Restore stopped: ' + esc(t), 'error'); });
+        }).then(function () { busy(btn, false); setTimeout(function () { hideProgress('restore'); }, 1500); });
+      });
+    });
+
+    // ---------- System ----------
+    function formatBytes(bytes) {
+      var n = Number(bytes) || 0;
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      if (n < 1024 * 1024 * 1024) return (n / 1048576).toFixed(1) + ' MB';
+      return (n / 1073741824).toFixed(2) + ' GB';
+    }
+    function meterHtml(label, used, limitMb, foot) {
+      var limit = limitMb * 1048576;
+      var pct = limit ? used / limit : 0;
+      var cls = pct >= 0.95 ? ' full' : pct >= 0.8 ? ' warn' : '';
+      return '<div class="meter' + cls + '"><div class="top"><strong>' + esc(label) + '</strong><span>' + esc(formatBytes(used)) + ' of ' + esc(formatBytes(limit)) + ' (' + Math.round(pct * 100) + '%)</span></div>' +
+        '<div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Math.round(pct * 100) + '" aria-label="' + esc(label) + '"><div style="width:' + Math.min(100, pct * 100).toFixed(1) + '%"></div></div>' +
+        '<div class="foot">' + esc(foot) + '</div></div>';
+    }
+    function renderUsage() {
+      if (usageError) {
+        $('usage-meters').innerHTML = '<div class="notice warn">' + esc(usageError) + '</div>';
+        $('usage-tables').innerHTML = '';
+        return;
+      }
+      if (!usage) { $('usage-meters').innerHTML = '<p class="muted">Loading…</p>'; return; }
+      var storageBytes = (usage.storage || []).reduce(function (sum, b) { return sum + Number(b.bytes || 0); }, 0);
+      var storageFiles = (usage.storage || []).reduce(function (sum, b) { return sum + Number(b.files || 0); }, 0);
+      var records = (usage.tables || []).reduce(function (sum, t) { return sum + Number(t.rows || 0); }, 0);
+      $('usage-meters').innerHTML =
+        meterHtml('Database', usage.database_bytes, usage.db_limit_mb, plural(records, 'record') + ' across ' + plural((usage.tables || []).length, 'table')) +
+        meterHtml('File storage', storageBytes, usage.storage_limit_mb, plural(storageFiles, 'file') + ' (event attachments)') +
+        '<div class="meter"><div class="top"><strong>Accounts</strong><span>' + esc(usage.auth_users) + '</span></div><div class="foot">Last backup: ' +
+          esc(usage.last_backup_at ? new Date(usage.last_backup_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }) : 'never') + '</div></div>';
+      $('usage-tables').innerHTML = '<li class="row row-head table-row" aria-hidden="true"><span>Table</span><span>Records</span><span>Size</span></li>' +
+        (usage.tables || []).map(function (t) {
+          return '<li class="row table-row"><strong>' + esc(t.table.replace(/_/g, ' ')) + '</strong><span><span class="label-sm">Records</span>' + esc(Number(t.rows).toLocaleString()) + '</span><span class="muted"><span class="label-sm">Size</span>' + esc(formatBytes(t.bytes)) + '</span></li>';
+        }).join('');
+      $('limit-db').value = usage.db_limit_mb;
+      $('limit-storage').value = usage.storage_limit_mb;
+    }
+    function saveSetting(key, value) {
+      return sb.from('app_settings').upsert({ key: key, value: value, updated_at: new Date().toISOString(), updated_by: me.id }, { onConflict: 'key' })
+        .then(function (res) { if (res.error) throw res.error; settings[key] = value; });
+    }
+    $('limits-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var db = parseInt($('limit-db').value, 10), st = parseInt($('limit-storage').value, 10);
+      if (!(db > 0) || !(st > 0)) { notice($('limits-msg'), 'Enter both limits in MB.', 'error'); return; }
+      var btn = e.target.querySelector('button[type="submit"]');
+      busy(btn, true, 'Saving…');
+      Promise.all([saveSetting('db_limit_mb', db), saveSetting('storage_limit_mb', st)]).then(function () {
+        notice($('limits-msg'), '', '');
+        toast('Limits saved.');
+        return loadUsage();
+      }).catch(function (err) { notice($('limits-msg'), esc(errorText(err)), 'error'); }).then(function () { busy(btn, false); });
     });
 
     // ---------- Settings ----------
@@ -1607,7 +2497,7 @@
       return sb.rpc('list_all_users').then(function (res) {
         if (res.error) throw res.error;
         users = res.data || [];
-        renderUsers(); renderDashboard();
+        renderUsers(); renderAdmins(); renderDashboard(); renderCategories();
       });
     }
     function loadApplications() {
@@ -1628,7 +2518,7 @@
           eventsError = null;
           events = (res.data || []).map(mapEvent);
         }
-        renderEvents(); renderDashboard();
+        renderEvents(); renderDashboard(); renderCategories();
       });
     }
     function loadStats() {
@@ -1644,9 +2534,67 @@
         renderLocations();
       });
     }
+    // The new back-end pieces (calendars, settings, backups, usage) may not
+    // exist yet if their SQL block hasn't been run — say so on that page
+    // instead of failing the whole dashboard.
+    var SETUP_HINT = 'Run the latest blocks at the end of supabase/barangay_events.sql in the Supabase SQL editor.';
+    function missingBackend(err) {
+      var m = (err && err.message) || '';
+      return err && (err.code === 'PGRST202' || err.code === 'PGRST205' || err.code === '42P01' || /does not exist|schema cache/.test(m));
+    }
+    function loadCategories() {
+      return Promise.all([
+        sb.from('event_calendars').select('*').order('sort_order').order('name'),
+        sb.from('event_calendar_handlers').select('*')
+      ]).then(function (results) {
+        var res = results[0];
+        if (res.error) {
+          calendars = []; calendarHandlers = [];
+          categoriesError = missingBackend(res.error) ? SETUP_HINT : errorText(res.error);
+        } else {
+          categoriesError = null;
+          calendars = res.data || [];
+          calendarHandlers = results[1].error ? [] : (results[1].data || []);
+        }
+        renderCategories(); renderEvents();
+      });
+    }
+    function loadSettings() {
+      return sb.from('app_settings').select('key, value').then(function (res) {
+        settings = {};
+        (res.data || []).forEach(function (r) { settings[r.key] = r.value; });
+        renderBackupHistory(); renderDashboard();
+      });
+    }
+    function loadBackupHistory() {
+      return sb.from('backup_log').select('*').order('created_at', { ascending: false }).limit(20).then(function (res) {
+        if (res.error) {
+          backupHistory = [];
+          backupError = missingBackend(res.error) ? SETUP_HINT : errorText(res.error);
+        } else {
+          backupError = null;
+          backupHistory = res.data || [];
+        }
+        backupLoaded = true;
+        renderBackupHistory(); renderDashboard();
+      });
+    }
+    function loadUsage() {
+      return sb.rpc('admin_database_usage').then(function (res) {
+        if (res.error) {
+          usage = null;
+          usageError = missingBackend(res.error) ? 'Usage numbers aren\'t set up yet. ' + SETUP_HINT : errorText(res.error);
+        } else {
+          usageError = null;
+          usage = res.data;
+        }
+        renderUsage(); renderDashboard();
+      });
+    }
     function loadAll() {
       return Promise.all([
-        loadUsers(), loadApplications(), loadEvents(), loadStats(), loadLocations()
+        loadUsers(), loadApplications(), loadEvents(), loadStats(), loadLocations(),
+        loadCategories(), loadSettings(), loadBackupHistory(), loadUsage()
       ]).catch(function (err) { toast(errorText(err)); });
     }
     $('refresh-btn').addEventListener('click', function () {
@@ -1718,7 +2666,9 @@
       var status = profile && profile.lgu_request_status;
       var role = profile ? profile.role : 'citizen';
       var body, showApply = false;
-      if (role === 'lgu_member') {
+      if (role === 'admin') {
+        body = '<span class="pill admin">Admin</span><p>This portal is for the superadmin only. As an admin, you manage events and groups from the eBongabong Calendar app &mdash; sign in there with this email and password.</p>';
+      } else if (role === 'lgu_member') {
         body = '<span class="pill approved">Verified</span><p>You\'re a verified LGU member. Sign in to the eBongabong Calendar app with this email and password to create groups and post group events.</p>';
       } else if (status === 'pending') {
         body = '<span class="pill pending">Waiting for review</span><p>Your application is with the municipal admin. Check back here, or just sign in to the app later.</p>';
@@ -1729,6 +2679,7 @@
         body = '<p>You\'re signed in but haven\'t applied for LGU access yet.</p>';
         showApply = true;
       }
+      $('status-title').textContent = role === 'admin' ? 'Admin account' : 'Your LGU access';
       $('status-body').innerHTML = body;
       $('apply-form').classList.toggle('hidden', !showApply);
       if (showApply && profile && profile.department) $('apply-department').value = profile.department;

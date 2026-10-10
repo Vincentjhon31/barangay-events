@@ -36,8 +36,8 @@ class ProfileTab extends StatefulWidget {
   final ThemeController themeController;
   final VoidCallback? onProfileSaved;
 
-  /// Needed only for the superadmin-only "Manage Locations" tile — null
-  /// just hides that tile (e.g. in a host build with no repository wired
+  /// Needed only for the "Manage Locations" tile (admins with the Event
+  /// locations permission, and the superadmin) — null just hides that tile (e.g. in a host build with no repository wired
   /// up yet).
   final EventRepository? eventRepository;
 
@@ -336,7 +336,7 @@ class _ProfileTabState extends State<ProfileTab> {
                 subtitle: l10n.privacyPolicyTileCaption,
                 onTap: _openPrivacyPolicy,
               ),
-              if (_profile?.isSuperadmin == true && widget.eventRepository != null) ...[
+              if (_profile?.canManageLocations == true && widget.eventRepository != null) ...[
                 Divider(
                   height: 8,
                   color: colorScheme.onSurface.withValues(alpha: 0.08),
@@ -486,6 +486,9 @@ class _ProfileInformationPageState extends State<ProfileInformationPage> {
       avatarUrl: widget.initialProfile?.avatarUrl,
       role: widget.initialProfile?.role ?? 'citizen',
       lguRequestStatus: widget.initialProfile?.lguRequestStatus,
+      isKioskAccount: widget.initialProfile?.isKioskAccount ?? false,
+      calendarGroupFilterIds: widget.initialProfile?.calendarGroupFilterIds ?? const [],
+      adminPermissions: widget.initialProfile?.adminPermissions ?? const {},
     );
 
     setState(() => _saving = true);
@@ -644,7 +647,7 @@ class GroupsTab extends StatefulWidget {
     required this.eventRepository,
     required this.currentUserId,
     required this.canCreateGroups,
-    this.isSuperadmin = false,
+    this.canManageGroups = false,
     this.onGroupsChanged,
   });
 
@@ -654,15 +657,16 @@ class GroupsTab extends StatefulWidget {
   /// [GroupMembersPage] — null in build configurations without auth.
   final String? currentUserId;
 
-  /// Group creation ("create a gc") is an LGU-member/superadmin
+  /// Group creation ("create a gc") is an LGU-member/admin
   /// privilege — citizens can still join existing groups by search or
   /// code, just not create new ones.
   final bool canCreateGroups;
 
-  /// Lets [GroupMembersPage] surface the verified/official badge toggle,
-  /// and lets ownership transfer fall back to a superadmin for a group
-  /// whose creator already left/was demoted.
-  final bool isSuperadmin;
+  /// The "Manage groups" admin permission — lets [GroupMembersPage]
+  /// surface the verified/official badge toggle, and lets ownership
+  /// transfer fall back to an admin for a group whose creator already
+  /// left/was demoted.
+  final bool canManageGroups;
   final VoidCallback? onGroupsChanged;
 
   @override
@@ -826,7 +830,7 @@ class _GroupsTabState extends State<GroupsTab> {
           group: group,
           eventRepository: widget.eventRepository,
           currentUserId: widget.currentUserId,
-          isSuperadmin: widget.isSuperadmin,
+          canManageGroups: widget.canManageGroups,
         ),
       ),
     );

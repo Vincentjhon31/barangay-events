@@ -3,11 +3,18 @@ import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'event_calendars.dart';
+
 /// Visibility levels for an event.
 abstract final class EventType {
   static const String public = 'public';
   static const String shared = 'shared';
   static const String personal = 'personal';
+
+  /// Posted to a superadmin-made calendar (e.g. "Sports") — see
+  /// [EventCalendar]. Visible to everyone like [public], but shown under
+  /// its calendar's own tab instead of Public.
+  static const String calendar = 'calendar';
 }
 
 /// What an event's location is saved as when the creator picked "Other"
@@ -95,6 +102,8 @@ class BarangayEvent {
     this.colorKey,
     this.contactNumber,
     this.createdByAvatarUrl,
+    this.calendarId,
+    this.calendarName,
   });
 
   final String id;
@@ -131,6 +140,13 @@ class BarangayEvent {
   /// creation time but editable/clearable per event; null shows no
   /// contact row at all. See `contact_number` on `barangay_events`.
   final String? contactNumber;
+
+  /// For a [EventType.calendar] event: which [EventCalendar] it's posted
+  /// to (e.g. "Sports"). [calendarName] is denormalized for display (like
+  /// [groupName]) and kept current server-side, so it's read but never
+  /// written by [toSupabaseJson].
+  final String? calendarId;
+  final String? calendarName;
 
   /// "Name • Department", or whichever half is available; null when neither is.
   String? get creatorLabel {
@@ -213,6 +229,8 @@ class BarangayEvent {
       colorKey: colorKey,
       contactNumber: contactNumber,
       createdByAvatarUrl: createdByAvatarUrl,
+      calendarId: calendarId,
+      calendarName: calendarName,
     );
   }
 
@@ -235,6 +253,8 @@ class BarangayEvent {
       'dailyOverrides': dailyOverrides.map((o) => o.toJson()).toList(),
       'colorKey': colorKey,
       'contactNumber': contactNumber,
+      'calendarId': calendarId,
+      'calendarName': calendarName,
     };
   }
 
@@ -258,6 +278,7 @@ class BarangayEvent {
       'daily_overrides': dailyOverrides.map((o) => o.toJson()).toList(),
       'color_key': colorKey,
       'contact_number': contactNumber,
+      'calendar_id': calendarId,
     };
   }
 
@@ -283,6 +304,8 @@ class BarangayEvent {
           const [],
       colorKey: json['colorKey'] as String?,
       contactNumber: json['contactNumber'] as String?,
+      calendarId: json['calendarId'] as String?,
+      calendarName: json['calendarName'] as String?,
     );
   }
 
@@ -309,6 +332,8 @@ class BarangayEvent {
       colorKey: row['color_key'] as String?,
       contactNumber: row['contact_number'] as String?,
       createdByAvatarUrl: row['created_by_avatar_url'] as String?,
+      calendarId: row['calendar_id'] as String?,
+      calendarName: row['calendar_name'] as String?,
     );
   }
 
@@ -778,6 +803,15 @@ abstract class EventRepository {
   /// handoff. Callable by the group's current creator, or a superadmin
   /// as a fallback for an abandoned group.
   Future<void> transferGroupOwnership(String groupId, String newOwnerUserId);
+
+  /// The superadmin-made calendars (e.g. "Sports") that aren't archived,
+  /// in the portal's order — re-emits whenever the superadmin changes
+  /// them, so the app's calendar tabs stay current without a restart.
+  Stream<List<EventCalendar>> watchEventCalendars();
+
+  /// Ids of the calendars the signed-in user may post to: the ones they
+  /// were assigned to handle (every one, for the superadmin).
+  Future<Set<String>> listMyCalendarIds();
 
   /// Quick-pick venues for Add Event's Location field, alphabetical.
   /// Readable by anyone signed in.
@@ -1285,6 +1319,57 @@ class MemoryEventRepository implements EventRepository {
     if (newOwnerUserId == _mockUserId) _myRoleByGroupId[groupId] = 'admin';
   }
 
+  // Empty by default (so existing chip/filter tests see only the built-in
+  // types); tests and dev builds add some with [addEventCalendar].
+  final List<EventCalendar> _calendars = [];
+  final Set<String> _myCalendarIds = {};
+  final StreamController<void> _calendarChanges = StreamController<void>.broadcast();
+
+  List<EventCalendar> get _activeCalendars {
+    final active = _calendars.where((c) => !c.isArchived).toList()
+      ..sort((a, b) {
+        final byOrder = a.sortOrder.compareTo(b.sortOrder);
+        return byOrder != 0 ? byOrder : a.name.compareTo(b.name);
+      });
+    return active;
+  }
+
+  @override
+  Stream<List<EventCalendar>> watchEventCalendars() async* {
+    yield _activeCalendars;
+    yield* _calendarChanges.stream.map((_) => _activeCalendars);
+  }
+
+  @override
+  Future<Set<String>> listMyCalendarIds() async => {..._myCalendarIds};
+
+  /// Dev/test helper (not part of [EventRepository]) — calendars are
+  /// managed from the web portal in production. [handledByMe] makes the
+  /// signed-in mock user one of its handlers.
+  void addEventCalendar(EventCalendar calendar, {bool handledByMe = false}) {
+    _calendars.add(calendar);
+    if (handledByMe) _myCalendarIds.add(calendar.id);
+    _calendarChanges.add(null);
+  }
+
+  /// Dev/test helper: archives (hides) a calendar, like the portal's
+  /// "Archive" choice.
+  void archiveEventCalendar(String id) {
+    final index = _calendars.indexWhere((c) => c.id == id);
+    if (index == -1) return;
+    final c = _calendars[index];
+    _calendars[index] = EventCalendar(
+      id: c.id,
+      name: c.name,
+      icon: c.icon,
+      colorKey: c.colorKey,
+      sortOrder: c.sortOrder,
+      archivedAt: DateTime.now(),
+    );
+    _myCalendarIds.remove(id);
+    _calendarChanges.add(null);
+  }
+
   @override
   Future<List<LguLocation>> listLguLocations() async {
     final sorted = [..._lguLocations]..sort((a, b) => a.name.compareTo(b.name));
@@ -1457,6 +1542,7 @@ class MemoryEventRepository implements EventRepository {
     await _updates.close();
     await _membershipChanges.close();
     await _commentChanges.close();
+    await _calendarChanges.close();
   }
 
   List<BarangayEvent> get _sortedEvents {
@@ -1516,12 +1602,61 @@ class SupabaseEventRepository implements EventRepository {
 
   @override
   Future<void> addEvent(BarangayEvent event) async {
-    await _client.from(tableName).insert(event.toSupabaseJson());
+    await _writeEvent(event.toSupabaseJson(), (json) => _client.from(tableName).insert(json));
   }
 
   @override
   Future<void> updateEvent(BarangayEvent event) async {
-    await _client.from(tableName).update(event.toSupabaseJson()).eq('id', event.id);
+    await _writeEvent(
+      event.toSupabaseJson(),
+      (json) => _client.from(tableName).update(json).eq('id', event.id),
+    );
+  }
+
+  /// Writes an event, and if the database doesn't have the calendar_id
+  /// column yet (the calendars SQL block not run), retries without it —
+  /// so a newer app never breaks event saving against an older database.
+  Future<void> _writeEvent(
+    Map<String, dynamic> json,
+    Future<dynamic> Function(Map<String, dynamic> json) write,
+  ) async {
+    try {
+      await write(json);
+    } on PostgrestException catch (error) {
+      final missingCalendarColumn = error.message.contains('calendar_id') &&
+          (error.code == 'PGRST204' || error.code == '42703');
+      if (!missingCalendarColumn) rethrow;
+      await write(Map.of(json)..remove('calendar_id'));
+    }
+  }
+
+  @override
+  Stream<List<EventCalendar>> watchEventCalendars() {
+    return _client
+        .from('event_calendars')
+        .stream(primaryKey: ['id'])
+        .order('sort_order', ascending: true)
+        .map((rows) {
+          final calendars = rows
+              .map(EventCalendar.fromSupabase)
+              .where((c) => !c.isArchived && c.name.isNotEmpty)
+              .toList()
+            ..sort((a, b) {
+              final byOrder = a.sortOrder.compareTo(b.sortOrder);
+              return byOrder != 0 ? byOrder : a.name.compareTo(b.name);
+            });
+          return calendars;
+        });
+  }
+
+  @override
+  Future<Set<String>> listMyCalendarIds() async {
+    final rows = await _client.rpc('my_calendar_ids') as List<dynamic>;
+    return {
+      for (final row in rows)
+        if (row is Map && row['calendar_id'] is String) row['calendar_id'] as String
+        else if (row is String) row,
+    };
   }
 
   @override

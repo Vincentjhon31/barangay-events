@@ -29,7 +29,7 @@ class EventChatButton extends StatefulWidget {
   final String currentUserId;
 
   /// Whether the viewer may delete other people's messages — the event's
-  /// creator or a superadmin (mirrors the server's delete policy).
+  /// creator, an admin, or the superadmin (mirrors the server's delete policy).
   final bool canModerate;
 
   /// Shared chat activity (unread tracking, which chat is open) — see

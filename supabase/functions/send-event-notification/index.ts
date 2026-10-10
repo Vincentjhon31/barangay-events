@@ -9,6 +9,8 @@
 // Visibility mirrors the app's own event RLS rules exactly:
 //   - event_type = 'public'  -> FCM topic "public-events" (everyone)
 //   - event_type = 'shared'  -> FCM topic "group-<group_id>" (that group's members)
+//   - event_type = 'calendar' -> FCM topic "public-events" (a superadmin-made
+//     calendar like "Sports" is visible to everyone, like a Public event)
 //   - event_type = 'personal' or a 'shared' row with no group_id -> no push
 //
 // UPDATE and DELETE pushes exist so people who already saw an event don't
@@ -33,9 +35,11 @@ import { getMessaging } from "npm:firebase-admin@^13/messaging";
 interface BarangayEventRow {
   id: string;
   title: string;
-  event_type: "public" | "shared" | "personal";
+  event_type: "public" | "shared" | "personal" | "calendar";
   group_id: string | null;
   group_name: string | null;
+  // Denormalized calendar name for event_type 'calendar' (e.g. "Sports").
+  calendar_name?: string | null;
   created_by_name: string | null;
   created_by_department: string | null;
 }
@@ -67,7 +71,7 @@ if (serviceAccountJsonB64) {
 }
 
 function resolveTopic(event: BarangayEventRow): string | null {
-  if (event.event_type === "public") return "public-events";
+  if (event.event_type === "public" || event.event_type === "calendar") return "public-events";
   if (event.event_type === "shared" && event.group_id) {
     return `group-${event.group_id}`;
   }
@@ -79,7 +83,8 @@ function resolveTopic(event: BarangayEventRow): string | null {
 // group_name is rewritten on every one of a group's events whenever that
 // group is renamed (rename_group in barangay_events.sql) — without this,
 // renaming a group with 30 events would send its members 30 pushes.
-const IGNORED_UPDATE_COLUMNS = new Set(["group_name", "updated_at"]);
+// calendar_name likewise when a calendar is renamed.
+const IGNORED_UPDATE_COLUMNS = new Set(["group_name", "calendar_name", "updated_at"]);
 
 function hasMeaningfulChange(
   record: BarangayEventRow | null,
@@ -102,15 +107,21 @@ function buildMessage(
   event: BarangayEventRow,
   changeType: "INSERT" | "UPDATE" | "DELETE",
 ): { title: string; body: string } {
+  const calendarName = event.event_type === "calendar" ? (event.calendar_name?.trim() || "Calendar") : null;
+
   if (changeType === "UPDATE") {
     return {
-      title: event.event_type === "shared" ? (event.group_name ?? "Group update") : "Event updated",
+      title: event.event_type === "shared"
+        ? (event.group_name ?? "Group update")
+        : calendarName ? `${calendarName} event updated` : "Event updated",
       body: `"${event.title}" was updated — check the app for the latest details.`,
     };
   }
   if (changeType === "DELETE") {
     return {
-      title: event.event_type === "shared" ? (event.group_name ?? "Group update") : "Event cancelled",
+      title: event.event_type === "shared"
+        ? (event.group_name ?? "Group update")
+        : calendarName ? `${calendarName} event cancelled` : "Event cancelled",
       body: `"${event.title}" was cancelled/removed.`,
     };
   }
@@ -127,7 +138,7 @@ function buildMessage(
     .join(" • ");
 
   return {
-    title: "New public event",
+    title: calendarName ? `New ${calendarName} event` : "New public event",
     body: author ? `${event.title} — posted by ${author}` : event.title,
   };
 }

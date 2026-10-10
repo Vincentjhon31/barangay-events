@@ -2806,6 +2806,66 @@ void main() {
   });
 
   group('event attachments', () {
+    testWidgets('Add Event no longer offers adding attachments', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('calendar-add-event-fab')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('Save event'), 300, scrollable: find.byType(Scrollable).first);
+
+      expect(find.byKey(const Key('add-event-attachment-button')), findsNothing);
+      expect(find.text('Add attachment'), findsNothing);
+      // A new event has no old files, so there's no attachments panel at all.
+      expect(find.byKey(const Key('add-event-existing-attachments')), findsNothing);
+    });
+
+    testWidgets('editing an event still lets you remove files attached before',
+        (WidgetTester tester) async {
+      final repo = MemoryEventRepository.seeded();
+      await repo.uploadEventAttachment(
+        'seed-assembly',
+        'agenda.pdf',
+        Uint8List.fromList([1, 2, 3]),
+        mimeType: 'application/pdf',
+      );
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repo,
+          pushNotificationServiceFactory: () async =>
+              _TappedNotificationPushService('seed-assembly'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The details sheet opens at 75% height; Edit is further down.
+      await tester.ensureVisible(find.text('Edit'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit'));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('add-event-existing-attachments')),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('agenda.pdf'), findsOneWidget);
+      expect(find.byKey(const Key('add-event-attachment-button')), findsNothing);
+
+      await tester.tap(find.descendant(
+        of: find.byKey(const Key('existing-attachment-attachment-1')),
+        matching: find.byType(IconButton),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('agenda.pdf'), findsNothing);
+      expect(await repo.listEventAttachments('seed-assembly'), isEmpty);
+    });
+
     testWidgets('shows an uploaded attachment on the event detail sheet',
         (WidgetTester tester) async {
       final repo = MemoryEventRepository.seeded();

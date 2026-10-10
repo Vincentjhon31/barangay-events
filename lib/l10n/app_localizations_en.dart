@@ -772,6 +772,15 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String typeHelperCalendar(String calendar) {
+    return 'Everyone sees it under the $calendar tab, and everyone gets a notification.';
+  }
+
+  @override
+  String get attachmentsUploadsOffHint =>
+      'Adding files is turned off to save storage. You can still remove files added before.';
+
+  @override
   String get eventChatYou => 'You';
 
   @override
@@ -832,7 +841,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get manageLocationsSubtitle =>
-      'Superadmin-only. Shown as quick picks in Add Event\'s Location field for every account.';
+      'Admins only. Shown as quick picks in Add Event\'s Location field for every account.';
 
   @override
   String get manageLocationsEmpty => 'No locations yet. Add one above.';
@@ -1568,7 +1577,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get faqA1 =>
-      'Public events are official barangay-wide announcements posted only by the superadmin — everyone using the app can see them. Group events are shared just with the members of a specific group, like your barangay office or a club — only members see them. Personal events are private notes only you can see, for your own reminders.';
+      'Public events are official barangay-wide announcements posted only by the app\'s administrators — everyone using the app can see them. Group events are shared just with the members of a specific group, like your barangay office or a club — only members see them. Personal events are private notes only you can see, for your own reminders.';
 
   @override
   String get faqQ2 => 'How do I join a group?';
@@ -1582,14 +1591,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get faqA3 =>
-      'Group creation is limited to verified LGU members and the superadmin. If you\'re a citizen, ask your barangay office or the superadmin about applying for LGU access from the Groups tab.';
+      'Group creation is limited to verified LGU members and administrators. If you\'re a citizen, ask your barangay office about applying for LGU access from the Groups tab.';
 
   @override
   String get faqQ4 => 'Why can\'t I post a Public event?';
 
   @override
   String get faqA4 =>
-      'Public events reach the entire community, so only the superadmin can post them — this keeps official barangay-wide announcements from getting lost among community events. LGU members can still post Group events to their own group\'s members.';
+      'Public events reach the entire community, so only administrators can post them — this keeps official barangay-wide announcements from getting lost among community events. LGU members can still post Group events to their own group\'s members.';
 
   @override
   String get faqQ5 => 'How do event reminders work?';
@@ -1641,7 +1650,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get privacyIntro =>
-      'This Privacy Policy explains what information eBongabong Calendar collects, how it\'s used, and who can see it. It applies to everyone who uses the app, whether you\'re a resident, an LGU member, or a superadmin.';
+      'This Privacy Policy explains what information eBongabong Calendar collects, how it\'s used, and who can see it. It applies to everyone who uses the app, whether you\'re a resident, an LGU member, or an administrator.';
 
   @override
   String get privacyCollectHeading => 'Information We Collect';

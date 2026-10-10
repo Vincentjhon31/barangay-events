@@ -11,10 +11,40 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 const String kPasswordResetRedirectUrl =
     'https://calendar.bongabong.gov.ph/';
 
-/// 'citizen' (default, self-registers in the app) | 'lgu_member'
-/// (registers via the separate GitHub Pages admin portal, needs
-/// superadmin approval) | 'superadmin' (one account; the only role that
-/// can post Public events, and approves LGU applications).
+/// The per-admin permissions a superadmin can switch on or off for each
+/// Admin account (from the LGU-admin portal). Stored in
+/// `profiles.admin_permissions`; a key that's missing counts as ON, so a
+/// new admin starts with everything until the superadmin turns something
+/// off. Only meaningful for role 'admin' — a superadmin always has all of
+/// them, and nobody else has any.
+abstract final class AdminPermission {
+  /// Post (and edit) Public events, which everyone sees.
+  static const String publicEvents = 'public_events';
+
+  /// Create groups, give groups the Verified badge, and take over an
+  /// abandoned group's ownership.
+  static const String manageGroups = 'manage_groups';
+
+  /// Add/remove the quick-pick venues offered in Add Event.
+  static const String locations = 'locations';
+
+  static const List<String> all = [publicEvents, manageGroups, locations];
+}
+
+/// Account roles, lowest to highest:
+/// - 'citizen' — default; self-registers in the app.
+/// - 'lgu_member' — LGU staff; registers via the LGU-admin web portal and
+///   needs superadmin approval. Can create groups and post Group events.
+/// - 'admin' — in-app administrators: everything an LGU member can do,
+///   plus whatever [AdminPermission]s the superadmin has left on (Public
+///   events, managing groups, event locations) and chat moderation. No
+///   access to the web portal.
+/// - 'superadmin' — the system owner: the ONLY role allowed into the
+///   LGU-admin web portal (accounts, admins, backups, monitoring,
+///   categories). In the app they have every admin power.
+///
+/// Not to be confused with a GROUP's 'admin'/'member' standing
+/// (`GroupMember.role`), which is per group and unrelated to this.
 class AppUserProfile {
   const AppUserProfile({
     required this.id,
@@ -31,6 +61,7 @@ class AppUserProfile {
     this.lguRequestStatus,
     this.isKioskAccount = false,
     this.calendarGroupFilterIds = const [],
+    this.adminPermissions = const {},
   });
 
   final String id;
@@ -70,11 +101,35 @@ class AppUserProfile {
   /// profile edits.
   final List<String> calendarGroupFilterIds;
 
+  /// Which [AdminPermission]s the superadmin has switched on/off for this
+  /// account (only used when [role] is 'admin'). Server-assigned like
+  /// [role] — never sent back on a self-save.
+  final Map<String, bool> adminPermissions;
+
   bool get isLguMember => role == 'lgu_member';
+  bool get isAdmin => role == 'admin';
   bool get isSuperadmin => role == 'superadmin';
-  bool get canCreatePublicEvents => role == 'superadmin';
-  bool get canCreateGroupEvents => role == 'lgu_member' || role == 'superadmin';
-  bool get canCreateGroups => role == 'lgu_member' || role == 'superadmin';
+
+  /// Admin or superadmin — the in-app administrator powers that aren't a
+  /// per-admin toggle (e.g. moderating event chats).
+  bool get isStaffAdmin => isAdmin || isSuperadmin;
+
+  /// Whether this account holds [permission] (an [AdminPermission] key) —
+  /// mirrors the server's has_admin_permission(), which is what actually
+  /// enforces it.
+  bool hasAdminPermission(String permission) {
+    if (isSuperadmin) return true;
+    if (!isAdmin) return false;
+    return adminPermissions[permission] ?? true;
+  }
+
+  bool get canCreatePublicEvents => hasAdminPermission(AdminPermission.publicEvents);
+  bool get canCreateGroupEvents => isLguMember || isStaffAdmin;
+  bool get canCreateGroups => isLguMember || hasAdminPermission(AdminPermission.manageGroups);
+
+  /// Verified badge and the ownership-takeover fallback on groups.
+  bool get canManageGroups => hasAdminPermission(AdminPermission.manageGroups);
+  bool get canManageLocations => hasAdminPermission(AdminPermission.locations);
 
   String get initials {
     final source =
@@ -117,10 +172,19 @@ class AppUserProfile {
                   ?.map((id) => id as String)
                   .toList() ??
               const [],
+      adminPermissions: _readAdminPermissions(json['admin_permissions']),
     );
   }
 
-  /// Deliberately omits [role]/[lguRequestStatus] — this is what the
+  static Map<String, bool> _readAdminPermissions(Object? value) {
+    if (value is! Map) return const {};
+    return {
+      for (final entry in value.entries)
+        if (entry.value is bool) entry.key as String: entry.value as bool,
+    };
+  }
+
+  /// Deliberately omits [role]/[lguRequestStatus]/[adminPermissions] — this is what the
   /// generic "save your own profile" upsert sends, and that path must
   /// never be able to write a role. The server-side trigger
   /// (guard_profile_role_columns) enforces this too, but not sending the
@@ -525,13 +589,17 @@ class MemoryAuthService implements AppAuthService {
     _controller.add(_signedIn);
   }
 
-  /// [role] defaults to 'superadmin' so the existing test suite (written
-  /// before roles existed, and mostly not about permissions) keeps
-  /// exercising the full feature set unmodified — pass 'citizen' or
-  /// 'lgu_member' explicitly for tests that specifically cover role
-  /// restrictions.
-  factory MemoryAuthService.signedIn(
-      {String role = 'superadmin', bool isKioskAccount = false}) {
+  /// [role] defaults to 'admin' (with every [AdminPermission] on) so the
+  /// existing test suite (written before roles existed, and mostly not
+  /// about permissions) keeps exercising the full in-app feature set
+  /// unmodified — pass 'citizen'/'lgu_member'/'superadmin', or switch
+  /// individual [adminPermissions] off, for tests that specifically cover
+  /// role restrictions.
+  factory MemoryAuthService.signedIn({
+    String role = 'admin',
+    bool isKioskAccount = false,
+    Map<String, bool> adminPermissions = const {},
+  }) {
     return MemoryAuthService._(
       true,
       AppUserProfile(
@@ -541,6 +609,7 @@ class MemoryAuthService implements AppAuthService {
         department: "Mayor's Office",
         role: role,
         isKioskAccount: isKioskAccount,
+        adminPermissions: adminPermissions,
       ),
     );
   }
@@ -640,6 +709,7 @@ class MemoryAuthService implements AppAuthService {
       lguRequestStatus: current.lguRequestStatus,
       isKioskAccount: current.isKioskAccount,
       calendarGroupFilterIds: current.calendarGroupFilterIds,
+      adminPermissions: current.adminPermissions,
     );
     _controller.add(true);
   }
@@ -663,6 +733,7 @@ class MemoryAuthService implements AppAuthService {
       lguRequestStatus: current.lguRequestStatus,
       isKioskAccount: current.isKioskAccount,
       calendarGroupFilterIds: current.calendarGroupFilterIds,
+      adminPermissions: current.adminPermissions,
     );
   }
 
@@ -690,6 +761,7 @@ class MemoryAuthService implements AppAuthService {
       lguRequestStatus: current.lguRequestStatus,
       isKioskAccount: current.isKioskAccount,
       calendarGroupFilterIds: current.calendarGroupFilterIds,
+      adminPermissions: current.adminPermissions,
     );
     _controller.add(true);
   }
@@ -758,6 +830,7 @@ class MemoryAuthService implements AppAuthService {
       lguRequestStatus: current.lguRequestStatus,
       isKioskAccount: current.isKioskAccount,
       calendarGroupFilterIds: groupIds,
+      adminPermissions: current.adminPermissions,
     );
   }
 

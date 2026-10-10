@@ -140,3 +140,26 @@ supabase functions deploy admin-create-account --use-api
 ```
 
 No secrets to configure — it only needs `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`, both auto-injected into every Edge Function's environment already. Unlike `send-app-update-notification`, deploy this one **with** the default JWT verification on (no `--no-verify-jwt`) — it's called by a real signed-in browser session, and the function's entire security boundary depends on Supabase rejecting anything without a valid user JWT before the function code runs.
+
+### Roles: admin vs superadmin
+
+- **Admin** — runs events and groups from the mobile app (Public events, managing groups, event locations, chat moderation). The superadmin can switch each of the first three off per admin (portal → Users → Admins). Admins can't open the portal.
+- **Superadmin** — the only role the portal lets in: accounts, admins and their permissions, custom calendars, backups and restore, database monitoring. Has every admin power in the app too.
+
+Every portal RPC and admin-* Edge Function checks for `superadmin`; in-app powers go through the `has_admin_permission()` / `is_staff_admin()` SQL helpers.
+
+### Calendars, backups, and monitoring
+
+- **Calendars** (portal → Calendars): e.g. a "Sports" calendar. Each becomes its own filter tab in the app's Calendar and Feed (after All / Public / Group / Personal) and everyone sees its events. Only the handlers the superadmin assigns (any account) can post to it, from Add Event; new events notify everyone. Removing one asks Archive (tab hidden, no new posts, restorable) or Delete permanently (its events become regular Public events).
+- **Backups** (portal → Backups): one ZIP with every table as JSON + CSV, every event attachment, the schema, and a README — portable to another back end. Passwords aren't exported; restored accounts use "Forgot password". Restore is **Merge** (safe upsert) or **Replace** (wipes content first; type RESTORE). Restores run with triggers off, so no push notifications fire. A dashboard banner reminds the superadmin when a backup is due (interval set on the Backups page).
+- **System** (portal → System): database size, file storage, per-table sizes and record counts, against the plan limits you enter.
+
+One-time setup: run the "Admin role + one real superadmin", "Custom calendars", and "Database monitoring + backup & restore" blocks at the end of [supabase/barangay_events.sql](supabase/barangay_events.sql), then:
+
+```powershell
+supabase functions deploy admin-backup --use-api
+supabase functions deploy admin-create-account --use-api
+supabase functions deploy send-event-notification --use-api
+```
+
+**Release order matters:** apply the SQL before publishing an app build that includes calendars (the app retries event saves without `calendar_id` if the column is missing, but calendar tabs only appear once the table exists).

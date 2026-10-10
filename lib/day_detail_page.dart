@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import 'add_event_page.dart';
 import 'auth_service.dart' show AppUserProfile;
+import 'event_calendars.dart';
 import 'event_conflicts.dart';
 import 'event_store.dart';
 import 'l10n/app_localizations.dart';
@@ -25,6 +26,7 @@ class DayDetailPage extends StatefulWidget {
     required this.buildEventCard,
     this.kiosk = false,
     this.eventFilter,
+    this.handledCalendars = const [],
   });
 
   final DateTime date;
@@ -50,6 +52,10 @@ class DayDetailPage extends StatefulWidget {
   /// FAB, since that mode is meant to be read-only regardless of what
   /// the signed-in account could otherwise do.
   final bool kiosk;
+
+  /// Calendars the signed-in user may post to, passed on to this page's
+  /// own Add Event.
+  final List<EventCalendar> handledCalendars;
 
   @override
   State<DayDetailPage> createState() => _DayDetailPageState();
@@ -126,6 +132,7 @@ class _DayDetailPageState extends State<DayDetailPage> {
           eventRepository: widget.eventRepository,
           myGroups: myGroups,
           lguLocations: lguLocations,
+          handledCalendars: widget.handledCalendars,
           initialDate: widget.date,
           creatorProfile: widget.creatorProfile,
           findOverlappingEvents: (location, date, start, end) =>

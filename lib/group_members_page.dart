@@ -18,17 +18,18 @@ class GroupMembersPage extends StatefulWidget {
     required this.group,
     required this.eventRepository,
     required this.currentUserId,
-    this.isSuperadmin = false,
+    this.canManageGroups = false,
   });
 
   final BarangayGroup group;
   final EventRepository eventRepository;
   final String? currentUserId;
 
-  /// Lets a superadmin toggle the verified/official badge, and use
-  /// ownership transfer as a fallback for a group whose creator already
-  /// left/was demoted.
-  final bool isSuperadmin;
+  /// Holders of the "Manage groups" admin permission (admins it's left on
+  /// for, and the superadmin): can toggle the verified/official badge, and
+  /// use ownership transfer as a fallback for a group whose creator
+  /// already left/was demoted.
+  final bool canManageGroups;
 
   @override
   State<GroupMembersPage> createState() => _GroupMembersPageState();
@@ -95,9 +96,9 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
   bool get _isCreator => _createdBy != null && _createdBy == widget.currentUserId;
 
   /// Ownership transfer is offered to the current creator, or to a
-  /// superadmin as a fallback for a group whose creator already
+  /// "Manage groups" admin as a fallback for a group whose creator already
   /// left/was demoted and can't do this themselves.
-  bool get _canTransferOwnership => _isCreator || widget.isSuperadmin;
+  bool get _canTransferOwnership => _isCreator || widget.canManageGroups;
 
   List<GroupMember> get _filtered {
     final needle = _query.trim().toLowerCase();
@@ -351,11 +352,11 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
     );
   }
 
-  /// Verified badge + its superadmin toggle, and the ownership-transfer
+  /// Verified badge + its "Manage groups" toggle, and the ownership-transfer
   /// entry point — only rendered when at least one of those is relevant
   /// to the viewer, so a regular member sees nothing extra here.
   Widget? _buildOwnerPanel() {
-    if (!_isVerified && !widget.isSuperadmin && !_canTransferOwnership && !_isCreator) return null;
+    if (!_isVerified && !widget.canManageGroups && !_canTransferOwnership && !_isCreator) return null;
     final l10n = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -365,7 +366,7 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (_isVerified || widget.isSuperadmin)
+            if (_isVerified || widget.canManageGroups)
               Row(
                 children: [
                   FaIcon(FontAwesomeIcons.certificate,
@@ -380,7 +381,7 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
                           ),
                     ),
                   ),
-                  if (widget.isSuperadmin)
+                  if (widget.canManageGroups)
                     _verifyBusy
                         ? const SizedBox(
                             width: 16,
@@ -394,7 +395,7 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
                 ],
               ),
             if (_canTransferOwnership) ...[
-              if (_isVerified || widget.isSuperadmin) const Divider(height: 20),
+              if (_isVerified || widget.canManageGroups) const Divider(height: 20),
               Row(
                 children: [
                   Expanded(
@@ -420,7 +421,7 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
               ),
             ],
             if (_isCreator) ...[
-              if (_isVerified || widget.isSuperadmin || _canTransferOwnership) const Divider(height: 20),
+              if (_isVerified || widget.canManageGroups || _canTransferOwnership) const Divider(height: 20),
               Row(
                 children: [
                   Expanded(

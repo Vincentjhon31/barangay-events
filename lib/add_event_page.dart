@@ -1,13 +1,13 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 
 import 'attachment_image_viewer.dart';
 import 'auth_service.dart' show AppUserProfile;
+import 'event_calendars.dart';
 import 'event_colors.dart';
 import 'event_store.dart';
 import 'l10n/app_localizations.dart';
@@ -32,16 +32,21 @@ class AddEventPage extends StatefulWidget {
     required this.suggestFreeSlot,
     this.existingEvent,
     this.lguLocations = const [],
+    this.handledCalendars = const [],
   });
 
   final EventRepository eventRepository;
   final List<BarangayGroup> myGroups;
 
-  /// Superadmin-curated quick picks for the Location field (see
+  /// Admin-curated quick picks for the Location field (see
   /// EventRepository.listLguLocations) — empty just means "no admin
   /// locations set up yet", in which case Location falls back to a plain
   /// text field exactly as before this existed.
   final List<LguLocation> lguLocations;
+
+  /// The superadmin-made calendars (e.g. "Sports") this user handles and
+  /// may post to — each becomes a choice next to Public / Group / Personal.
+  final List<EventCalendar> handledCalendars;
 
   /// Pre-clamped by the caller so it's never in the past. Ignored (in
   /// favor of [existingEvent]'s own dates) when editing.
@@ -105,30 +110,16 @@ class _AddEventPageState extends State<AddEventPage> {
   /// same as an event that's never had any overrides set.
   final Map<DateTime, ({TimeOfDay start, TimeOfDay end})> _perDayOverrides = {};
 
-  static const _maxAttachments = 5;
-  static const _maxAttachmentBytes = 20 * 1024 * 1024;
-
-  /// Already-uploaded attachments — only ever non-empty when editing
-  /// (fetched in [initState]), since a brand-new event has no id yet for
-  /// [EventRepository.listEventAttachments] to look up.
+  /// Files uploaded to this event before attachments were turned off (to
+  /// keep the Supabase free-tier file storage from filling up) — only
+  /// ever non-empty when editing. New files can't be added anymore, but
+  /// these can still be removed, which frees their storage.
   List<EventAttachment> _existingAttachments = const [];
-
-  /// Picked-but-not-yet-uploaded files for a brand-new event, held here
-  /// until [_save] gets a real event id back — an existing event uploads
-  /// immediately on pick instead (see [_pickAttachments]), since it
-  /// already has one.
-  final List<PlatformFile> _pendingAttachments = [];
-
-  bool _pickingAttachments = false;
   final Set<String> _busyAttachmentIds = {};
 
   /// Thumbnails for [_existingAttachments], fetched in the background as
-  /// soon as each one's metadata loads (see [_loadExistingAttachments]) —
-  /// a pending file needs no equivalent map, since [PlatformFile.bytes]
-  /// is already available locally the moment it's picked.
+  /// soon as each one's metadata loads (see [_loadExistingAttachments]).
   final Map<String, Uint8List> _existingAttachmentThumbnails = {};
-
-  int get _attachmentCount => _existingAttachments.length + _pendingAttachments.length;
 
   bool get _isEditing => widget.existingEvent != null;
 
@@ -137,8 +128,8 @@ class _AddEventPageState extends State<AddEventPage> {
     return DateTime(now.year, now.month, now.day);
   }
 
-  /// Public is superadmin-only; Group needs an lgu_member/superadmin role;
-  /// Personal is open to everyone signed in. A null [AddEventPage.creatorProfile]
+  /// Public needs the Public events admin permission; Group needs an
+  /// lgu_member/admin role; Personal is open to everyone signed in. A null [AddEventPage.creatorProfile]
   /// (no session) gets the least-privilege default — Personal only — though
   /// in practice nothing would save without a session anyway, since the
   /// server-side RLS check requires auth.uid() regardless of event_type.
@@ -149,12 +140,41 @@ class _AddEventPageState extends State<AddEventPage> {
   /// (e.g. a group admin editing someone else's event) couldn't
   /// independently create that type — editing shouldn't force a type
   /// change nobody asked for.
+  ///
+  /// Values are an [EventType], or [calendarValue] of a calendar this user
+  /// handles (see [AddEventPage.handledCalendars]).
   List<String> get _allowedEventTypes => {
         if (_canCreatePublic) EventType.public,
         if (_canCreateGroupEvent) EventType.shared,
         EventType.personal,
-        if (widget.existingEvent != null) widget.existingEvent!.eventType,
+        for (final calendar in widget.handledCalendars) calendarValue(calendar.id),
+        if (widget.existingEvent != null) _typeValueOf(widget.existingEvent!),
       }.toList();
+
+  static String _typeValueOf(BarangayEvent event) =>
+      event.eventType == EventType.calendar && event.calendarId != null
+          ? calendarValue(event.calendarId!)
+          : event.eventType;
+
+  /// The calendar picked as this event's type, or null for a plain type.
+  String? get _calendarId => calendarIdFromValue(_eventType);
+
+  /// The display name for a calendar type value — from the handled list,
+  /// or (when editing an event in a calendar this user doesn't handle) the
+  /// event's own stored name.
+  String _calendarName(String calendarId) {
+    for (final calendar in widget.handledCalendars) {
+      if (calendar.id == calendarId) return calendar.name;
+    }
+    return widget.existingEvent?.calendarName ?? 'Calendar';
+  }
+
+  EventCalendar? _handledCalendar(String calendarId) {
+    for (final calendar in widget.handledCalendars) {
+      if (calendar.id == calendarId) return calendar;
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -173,7 +193,7 @@ class _AddEventPageState extends State<AddEventPage> {
       _endDate = DateTime(existing.endTime.year, existing.endTime.month, existing.endTime.day);
       _startTime = TimeOfDay.fromDateTime(existing.startTime);
       _endTime = TimeOfDay.fromDateTime(existing.endTime);
-      _eventType = existing.eventType;
+      _eventType = _typeValueOf(existing);
       _colorKey = existing.colorKey;
       _contactNumberController.text = existing.contactNumber ?? '';
       _isMultiDay = existing.isMultiDay;
@@ -386,11 +406,14 @@ class _AddEventPageState extends State<AddEventPage> {
 
   String _typeHelperText() {
     final l10n = AppLocalizations.of(context)!;
-    final base = switch (_eventType) {
-      EventType.shared => l10n.typeHelperGroup,
-      EventType.personal => l10n.typeHelperPersonal,
-      _ => l10n.typeHelperPublic,
-    };
+    final calendarId = _calendarId;
+    final base = calendarId != null
+        ? l10n.typeHelperCalendar(_calendarName(calendarId))
+        : switch (_eventType) {
+            EventType.shared => l10n.typeHelperGroup,
+            EventType.personal => l10n.typeHelperPersonal,
+            _ => l10n.typeHelperPublic,
+          };
     if (_allowedEventTypes.length > 1) return base;
     return '$base ${l10n.typeHelperRestrictedSuffix}';
   }
@@ -538,7 +561,9 @@ class _AddEventPageState extends State<AddEventPage> {
             createdByDepartment: existing.createdByDepartment,
             createdById: existing.createdById,
             createdByAvatarUrl: existing.createdByAvatarUrl,
-            eventType: _eventType,
+            eventType: _calendarId != null ? EventType.calendar : _eventType,
+            calendarId: _calendarId,
+            calendarName: _calendarId != null ? _calendarName(_calendarId!) : null,
             colorKey: _colorKey,
             contactNumber: contactNumber.isEmpty ? null : contactNumber,
             groupId: group?.id,
@@ -560,7 +585,9 @@ class _AddEventPageState extends State<AddEventPage> {
             createdByDepartment: widget.creatorProfile?.department,
             createdById: widget.creatorProfile?.id,
             createdByAvatarUrl: widget.creatorProfile?.avatarUrl,
-            eventType: _eventType,
+            eventType: _calendarId != null ? EventType.calendar : _eventType,
+            calendarId: _calendarId,
+            calendarName: _calendarId != null ? _calendarName(_calendarId!) : null,
             colorKey: _colorKey,
             contactNumber: contactNumber.isEmpty ? null : contactNumber,
             groupId: group?.id,
@@ -579,25 +606,6 @@ class _AddEventPageState extends State<AddEventPage> {
         ),
       );
       return;
-    }
-
-    // Uploaded now that the event has a real id — a brand-new event's id
-    // was only ever a locally-generated placeholder until addEvent above
-    // actually succeeded. A failed upload here doesn't undo the
-    // already-saved event; the user can just re-add the file via Edit.
-    for (final file in _pendingAttachments) {
-      final bytes = file.bytes;
-      if (bytes == null) continue;
-      try {
-        await widget.eventRepository.uploadEventAttachment(
-          eventId,
-          file.name,
-          bytes,
-          mimeType: _mimeTypeForExtension(file.extension),
-        );
-      } catch (_) {
-        // See comment above — non-fatal.
-      }
     }
 
     if (!mounted) return;
@@ -640,118 +648,6 @@ class _AddEventPageState extends State<AddEventPage> {
     );
   }
 
-  String? _mimeTypeForExtension(String? extension) {
-    switch (extension?.toLowerCase()) {
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg';
-      case 'png':
-        return 'image/png';
-      case 'gif':
-        return 'image/gif';
-      case 'webp':
-        return 'image/webp';
-      case 'pdf':
-        return 'application/pdf';
-      case 'doc':
-        return 'application/msword';
-      case 'docx':
-        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-      case 'xls':
-        return 'application/vnd.ms-excel';
-      case 'xlsx':
-        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      case 'ppt':
-        return 'application/vnd.ms-powerpoint';
-      case 'pptx':
-        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-      default:
-        return null;
-    }
-  }
-
-  Future<void> _pickAttachments() async {
-    final l10n = AppLocalizations.of(context)!;
-    if (_attachmentCount >= _maxAttachments) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.attachmentLimitReached(_maxAttachments))),
-      );
-      return;
-    }
-
-    setState(() => _pickingAttachments = true);
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        allowMultiple: true,
-        withData: true,
-        type: FileType.custom,
-        allowedExtensions: const [
-          'jpg', 'jpeg', 'png', 'gif', 'webp',
-          'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-        ],
-      );
-      final picked = result?.files ?? const [];
-      final existing = widget.existingEvent;
-
-      for (final file in picked) {
-        if (_attachmentCount >= _maxAttachments) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(l10n.attachmentLimitReached(_maxAttachments))),
-            );
-          }
-          break;
-        }
-        if (file.size > _maxAttachmentBytes) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(l10n.attachmentTooLarge(file.name))),
-            );
-          }
-          continue;
-        }
-        final bytes = file.bytes;
-        if (bytes == null) continue;
-
-        if (existing != null) {
-          // Already has a real id — upload right away instead of holding
-          // it in _pendingAttachments, which only exists to bridge the
-          // "no id yet" gap for a brand-new event.
-          try {
-            await widget.eventRepository.uploadEventAttachment(
-              existing.id,
-              file.name,
-              bytes,
-              mimeType: _mimeTypeForExtension(file.extension),
-            );
-            await _loadExistingAttachments(existing.id);
-          } catch (_) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(l10n.attachmentUploadError(file.name))),
-              );
-            }
-          }
-        } else {
-          setState(() => _pendingAttachments.add(file));
-        }
-      }
-    } catch (_) {
-      // Covers the file picker call itself failing (e.g. the browser
-      // blocked/cancelled it) — everything past that point already has
-      // its own narrower catch, but nothing previously guarded this, so
-      // a picker-level failure surfaced as an uncaught error instead of
-      // this snackbar.
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.attachmentPickError)),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _pickingAttachments = false);
-    }
-  }
-
   Future<void> _removeExistingAttachment(EventAttachment attachment) async {
     setState(() => _busyAttachmentIds.add(attachment.id));
     try {
@@ -766,10 +662,6 @@ class _AddEventPageState extends State<AddEventPage> {
       if (!mounted) return;
       setState(() => _busyAttachmentIds.remove(attachment.id));
     }
-  }
-
-  void _removePendingAttachment(PlatformFile file) {
-    setState(() => _pendingAttachments.remove(file));
   }
 
   Widget _buildPickerRow({
@@ -909,6 +801,14 @@ class _AddEventPageState extends State<AddEventPage> {
     );
   }
 
+  /// With calendars added, the type picker can outgrow a narrow phone —
+  /// then it scrolls sideways instead of overflowing; otherwise it keeps
+  /// filling the panel's width as before.
+  Widget _maybeScrollable({required bool crowded, required Widget child}) {
+    if (!crowded) return child;
+    return SingleChildScrollView(scrollDirection: Axis.horizontal, child: child);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -923,7 +823,9 @@ class _AddEventPageState extends State<AddEventPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (_allowedEventTypes.length > 1)
-                SegmentedButton<String>(
+                _maybeScrollable(
+                  crowded: _allowedEventTypes.length > 3,
+                  child: SegmentedButton<String>(
                   style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact),
                   showSelectedIcon: false,
                   segments: [
@@ -944,9 +846,21 @@ class _AddEventPageState extends State<AddEventPage> {
                       label: Text(l10n.eventTypePersonal),
                       icon: const FaIcon(FontAwesomeIcons.lock, size: 12),
                     ),
+                    for (final value in _allowedEventTypes)
+                      if (calendarIdFromValue(value) case final calendarId?)
+                        ButtonSegment<String>(
+                          value: value,
+                          label: Text(_calendarName(calendarId), key: Key('add-event-type-$calendarId')),
+                          icon: FaIcon(
+                            calendarIcon(_handledCalendar(calendarId)?.icon ?? 'tag'),
+                            size: 12,
+                            color: eventColorPalette[_handledCalendar(calendarId)?.colorKey],
+                          ),
+                        ),
                   ],
                   selected: {_eventType},
                   onSelectionChanged: (selection) => setState(() => _eventType = selection.first),
+                  ),
                 )
               else
                 Row(
@@ -1114,34 +1028,26 @@ class _AddEventPageState extends State<AddEventPage> {
           ),
         ),
         const SizedBox(height: 16),
-        GlassPanel(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                l10n.attachmentsSectionTitle,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  key: const Key('add-event-attachment-button'),
-                  onPressed: _pickingAttachments ? null : () => unawaited(_pickAttachments()),
-                  icon: _pickingAttachments
-                      ? const SizedBox(
-                          height: 14,
-                          width: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const FaIcon(FontAwesomeIcons.paperclip, size: 14),
-                  label: Text(l10n.addAttachmentButton),
+        if (_existingAttachments.isNotEmpty) ...[
+          GlassPanel(
+            key: const Key('add-event-existing-attachments'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  l10n.attachmentsSectionTitle,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
                 ),
-              ),
-              if (_existingAttachments.isNotEmpty || _pendingAttachments.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  l10n.attachmentsUploadsOffHint,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
                 const SizedBox(height: 8),
                 for (final attachment in _existingAttachments)
                   _AttachmentRow(
@@ -1157,26 +1063,11 @@ class _AddEventPageState extends State<AddEventPage> {
                               attachment.fileName,
                             )),
                   ),
-                for (final file in _pendingAttachments)
-                  _AttachmentRow(
-                    key: Key('pending-attachment-${file.name}'),
-                    fileName: file.name,
-                    busy: false,
-                    onRemove: () => _removePendingAttachment(file),
-                    thumbnailBytes:
-                        _mimeTypeForExtension(file.extension)?.startsWith('image/') == true
-                            ? file.bytes
-                            : null,
-                    onTap: (_mimeTypeForExtension(file.extension)?.startsWith('image/') == true &&
-                            file.bytes != null)
-                        ? () => unawaited(_viewImage(file.bytes!, file.name))
-                        : null,
-                  ),
               ],
-            ],
+            ),
           ),
-        ),
-        const SizedBox(height: 16),
+          const SizedBox(height: 16),
+        ],
         GlassPanel(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1484,8 +1375,8 @@ class _RandomColorButton extends StatelessWidget {
   }
 }
 
-/// One file in the attachments picker — already-uploaded (real
-/// [EventAttachment]) or still-pending (a locally-held [PlatformFile]),
+/// One already-uploaded file in Add Event's attachments list (see
+/// [_AddEventPageState._existingAttachments]),
 /// both rendered identically since the caller (see [AddEventPage])
 /// already normalized them down to a filename, an optional thumbnail,
 /// and what removing/tapping each one actually does.
@@ -1504,7 +1395,7 @@ class _AttachmentRow extends StatelessWidget {
   final VoidCallback onRemove;
 
   /// Non-null only for an image whose bytes have already loaded — see
-  /// [AddEventPage]'s _existingAttachmentThumbnails/PlatformFile.bytes.
+  /// [AddEventPage]'s _existingAttachmentThumbnails.
   /// A `null` here (whether it's not an image, or its thumbnail just
   /// hasn't loaded yet) falls back to the generic paperclip icon.
   final Uint8List? thumbnailBytes;

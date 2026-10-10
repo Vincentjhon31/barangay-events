@@ -24,7 +24,7 @@ Future<void> openMayorMeetingDetails(WidgetTester tester) async {
 
 Future<void> pumpSignedIn(
   WidgetTester tester, {
-  String role = 'superadmin',
+  String role = 'admin',
   MemoryEventRepository? repository,
 }) async {
   final repo = repository ?? MemoryEventRepository.seeded();

@@ -45,12 +45,15 @@ const BoxConstraints glassFieldIconConstraints = BoxConstraints.tightFor(width: 
 enum UiStyle { liquid, solid }
 
 /// The ring/badge color for an account role ('citizen' | 'lgu_member' |
-/// 'superadmin') — citizens get a plain neutral ring, LGU members teal,
-/// the superadmin gold. Shared by [RoleAvatarFrame] and any plain text
-/// label/pill that also wants to match it.
+/// 'admin' | 'superadmin') — citizens get a plain neutral ring, LGU
+/// members teal, admins gold (the look superadmins had before the role
+/// split), the superadmin purple. Shared by [RoleAvatarFrame] and any
+/// plain text label/pill that also wants to match it.
 Color roleAccentColor(String role, ColorScheme colorScheme) {
   switch (role) {
     case 'superadmin':
+      return const Color(0xFF8E5BD9);
+    case 'admin':
       return const Color(0xFFEFB93E);
     case 'lgu_member':
       return const Color(0xFF2DBE8F);
@@ -65,6 +68,8 @@ String roleLabel(String role) {
   switch (role) {
     case 'superadmin':
       return 'Superadmin';
+    case 'admin':
+      return 'Admin';
     case 'lgu_member':
       return 'LGU Member';
     default:
@@ -75,6 +80,8 @@ String roleLabel(String role) {
 FaIconData? _roleBadgeIcon(String role) {
   switch (role) {
     case 'superadmin':
+      return FontAwesomeIcons.solidStar;
+    case 'admin':
       return FontAwesomeIcons.crown;
     case 'lgu_member':
       return FontAwesomeIcons.shieldHalved;
@@ -83,9 +90,9 @@ FaIconData? _roleBadgeIcon(String role) {
   }
 }
 
-/// Wraps an avatar with a role-colored ring and, for LGU members/the
-/// superadmin, a small corner badge icon — a "rank frame" so a person's
-/// account role (citizen/LGU member/superadmin) is visible at a glance
+/// Wraps an avatar with a role-colored ring and, for LGU members/admins/
+/// the superadmin, a small corner badge icon — a "rank frame" so a
+/// person's account role (citizen/LGU member/admin/superadmin) is visible at a glance
 /// wherever their avatar shows up (Profile page, the Calendar header, a
 /// group's member list), the same way a game shows player rank borders.
 /// [child] should already be the fully-built avatar circle (photo or
