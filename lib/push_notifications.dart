@@ -22,22 +22,37 @@ String userTopic(String userId) => 'user-$userId';
 /// announced here (sent by the release GitHub Action, not by the app).
 const String appUpdatesTopic = 'app-updates';
 
+/// The app's own notification sound: android/app/src/main/res/raw/
+/// in_app_notify.mp3 (copied from assets/in-app-notify2.mp3). The push
+/// functions name it too ("in_app_notify"), for older Android versions.
+const RawResourceAndroidNotificationSound _appSound = RawResourceAndroidNotificationSound('in_app_notify');
+
+/// Android fixes a channel's sound when the channel is first created and
+/// never lets the app change it, so adding the custom sound meant new
+/// channel ids ("_v2"). The old ids are deleted on startup (see
+/// [_retiredChannelIds]) so people don't see duplicates in settings.
+/// The manifest's default channel and every push function use these ids.
 const AndroidNotificationChannel _eventUpdatesChannel = AndroidNotificationChannel(
-  'event_updates',
+  'event_updates_v2',
   'Event updates',
-  description: 'New public and group events posted to the barangay calendar.',
+  description: 'New public and group events, reminders, and app updates.',
   importance: Importance.high,
+  sound: _appSound,
 );
 
 /// Chat messages get their own channel, so someone can mute (or change
 /// the sound of) event chats in Android's settings without losing event
 /// announcements and reminders. send-chat-notification targets this id.
 const AndroidNotificationChannel _eventChatChannel = AndroidNotificationChannel(
-  'event_chat',
+  'event_chat_v2',
   'Event chat',
   description: 'New messages in the chats of events you posted, joined in, or belong to the group of.',
   importance: Importance.high,
+  sound: _appSound,
 );
+
+/// Channels from before the custom sound (see [_eventUpdatesChannel]).
+const List<String> _retiredChannelIds = ['event_updates', 'event_chat'];
 
 /// What a chat push carries (see supabase/functions/send-chat-notification).
 class ChatPushMessage {
@@ -194,6 +209,9 @@ class FirebasePushNotificationService implements PushNotificationService {
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     await android?.createNotificationChannel(_eventUpdatesChannel);
     await android?.createNotificationChannel(_eventChatChannel);
+    for (final id in _retiredChannelIds) {
+      await android?.deleteNotificationChannel(channelId: id);
+    }
 
     await _resetStaleTopicsOnce(await SharedPreferences.getInstance());
     await _messaging.subscribeToTopic(publicEventsTopic);
@@ -288,16 +306,18 @@ class FirebasePushNotificationService implements PushNotificationService {
                 channelDescription: _eventChatChannel.description,
                 importance: Importance.high,
                 priority: Priority.high,
+                sound: _appSound,
                 // Every new message in a chat should alert, even though it
                 // replaces that chat's previous notification in the tray.
                 onlyAlertOnce: false,
               )
-            : const AndroidNotificationDetails(
-                'event_updates',
-                'Event updates',
-                channelDescription: 'New public and group events posted to the barangay calendar.',
+            : AndroidNotificationDetails(
+                _eventUpdatesChannel.id,
+                _eventUpdatesChannel.name,
+                channelDescription: _eventUpdatesChannel.description,
                 importance: Importance.high,
                 priority: Priority.high,
+                sound: _appSound,
                 // A duplicate that replaces an already-showing notification
                 // (same id, see _notificationIdFor) updates it silently.
                 onlyAlertOnce: true,

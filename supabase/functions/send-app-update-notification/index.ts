@@ -83,6 +83,8 @@ Deno.serve(async (req) => {
         version: payload.version,
         releaseUrl: payload.releaseUrl ?? "",
       },
+      // The app's own channel and sound (res/raw/in_app_notify.mp3).
+      android: { notification: { channelId: "event_updates_v2", sound: "in_app_notify" } },
     });
   } catch (error) {
     console.error("FCM send failed:", error);

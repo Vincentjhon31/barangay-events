@@ -194,7 +194,12 @@ Deno.serve(async (req) => {
       data: { eventId: event.id, changeType: payload.type },
       // One tray entry per event: a repeat delivery (or a later
       // update/cancellation push) replaces it instead of stacking.
-      android: { priority: "high", notification: { tag: `event-${event.id}` } },
+      // The app's own channel and sound (res/raw/in_app_notify.mp3); an
+      // older app without that channel falls back to its default one.
+      android: {
+        priority: "high",
+        notification: { tag: `event-${event.id}`, channelId: "event_updates_v2", sound: "in_app_notify" },
+      },
     });
   } catch (error) {
     console.error("FCM send failed:", error);

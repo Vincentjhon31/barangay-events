@@ -198,7 +198,12 @@ Deno.serve(async (req) => {
             // Same tag = the same reminder replaces itself in the tray
             // instead of stacking, e.g. on a phone still subscribed to more
             // than one account's topic.
-            notification: { tag: `reminder-${row.event_id}-${window}` },
+            notification: {
+              tag: `reminder-${row.event_id}-${window}`,
+              // The app's own channel and sound (res/raw/in_app_notify.mp3).
+              channelId: "event_updates_v2",
+              sound: "in_app_notify",
+            },
           },
         });
       } catch (sendError) {

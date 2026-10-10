@@ -36,10 +36,11 @@
             android:value="2" />
         <!-- Routes notifications FCM shows itself (app backgrounded/killed)
              through the same channel created in lib/push_notifications.dart,
-             so they get the same importance/behavior as foreground ones. -->
+             so they get the same importance, behavior, and custom sound
+             (res/raw/in_app_notify.mp3) as foreground ones. -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="event_updates" />
+            android:value="event_updates_v2" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@mipmap/ic_launcher" />

@@ -96,7 +96,10 @@ function buildMessages(payload: ChatNotificationPayload): Message[] {
     android: {
       priority: "high",
       notification: {
-        channelId: "event_chat",
+        // The app's chat channel, which plays its own sound
+        // (res/raw/in_app_notify.mp3); `sound` covers Android < 8.
+        channelId: "event_chat_v2",
+        sound: "in_app_notify",
         tag: `chat-${payload.event_id}`,
       },
     },
