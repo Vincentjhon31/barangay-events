@@ -25,7 +25,7 @@ const String appUpdatesTopic = 'app-updates';
 
 /// The superadmin portal's list of new sign-ups — where tapping a "new
 /// account" notification (sent only to superadmins) takes them.
-const String newSignupsPortalUrl = 'https://vincentjhon31.github.io/barangay-events/lgu-admin/#users/new';
+const String newSignupsPortalUrl = 'https://calendar.bongabong.gov.ph/lgu-admin/#users/new';
 
 /// The app's own notification sound: android/app/src/main/res/raw/
 /// in_app_notify.mp3 (copied from assets/in-app-notify2.mp3). The push
@@ -160,6 +160,12 @@ class FirebasePushNotificationService implements PushNotificationService {
   static StreamSubscription<RemoteMessage>? _foregroundSubscription;
   static StreamSubscription<RemoteMessage>? _openedAppSubscription;
 
+  // On Android one tap can reach Dart twice: when the tap starts the app,
+  // the plugin emits onMessageOpenedApp for the launch intent AND keeps the
+  // same message for getInitialMessage(), so the event's details opened
+  // twice (two X taps to close). Each tapped message is handled once.
+  static final Set<String> _handledTapIds = {};
+
   static const _topicsResetPrefKey = 'push_topics_reset_v1';
   static const _subscribedUserPrefKey = 'push_subscribed_user_id';
 
@@ -268,6 +274,9 @@ class FirebasePushNotificationService implements PushNotificationService {
   }
 
   void _handleNotificationTap(RemoteMessage message) {
+    final tapId = message.messageId ??
+        '${message.data['type']}:${message.data['eventId']}:${message.sentTime?.millisecondsSinceEpoch}';
+    if (!_handledTapIds.add(tapId)) return;
     if (message.data['type'] == 'new_signup') {
       // Only superadmins get these (send-signup-notification); promoting
       // someone happens in the portal. The address is fixed here, never

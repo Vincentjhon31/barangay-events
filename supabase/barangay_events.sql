@@ -1909,6 +1909,16 @@ select cron.schedule(
   $cron$
 );
 
+-- pg_cron logs every run of every job to cron.job_run_details and never
+-- prunes it; the every-minute job above adds 1,440 rows a day (it had
+-- grown to 38 MB by Oct 2026). Keep a week of history for troubleshooting.
+-- 16:00 UTC = midnight Manila. Only touches pg_cron's own log.
+select cron.schedule(
+  'cleanup-cron-history',
+  '0 16 * * *',
+  $cron$ delete from cron.job_run_details where end_time < now() - interval '7 days' $cron$
+);
+
 -- A rescheduled event should remind people about its new time. Security
 -- definer because event_reminders_sent has no client policies at all, so
 -- under the editing user's own RLS this delete would silently match
@@ -3604,5 +3614,348 @@ drop trigger if exists notify_new_signup on public.profiles;
 create trigger notify_new_signup
   after insert on public.profiles
   for each row execute function public.notify_new_signup();
+
+notify pgrst, 'reload schema';
+
+-- ============================================================
+-- Calendar cell style synced to the profile (October 2026).
+-- The Month/Week grid's Dots / Event titles choice was device-only
+-- (SharedPreferences); it now follows the user across sessions and
+-- devices like theme_mode/ui_style/display_mode. 'dots' | 'titles' —
+-- mirrors CalendarCellStyle's .name values client-side
+-- (lib/theme_controller.dart). Covered by the existing "update your own
+-- profile" policy. Safe to re-run on an existing database.
+-- ============================================================
+
+alter table public.profiles add column if not exists calendar_cell_style text not null default 'dots';
+
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'profiles_calendar_cell_style_check') then
+    alter table public.profiles add constraint profiles_calendar_cell_style_check
+      check (calendar_cell_style in ('dots', 'titles'));
+  end if;
+end $$;
+
+notify pgrst, 'reload schema';
+
+-- ============================================================
+-- Accomplishment report + Mayor's schedule (October 2026). Safe to re-run.
+--   The portal's Report page counts the superadmin's duties for a period
+--   (the semi-monthly Performance Report). Most numbers come from data the
+--   app already keeps; this block adds the one thing it didn't: who added,
+--   changed, or removed what.
+--   * admin_activity_log: one row per change. Triggers fill it for
+--     non-personal events (anyone's), for a superadmin's changes to OTHER
+--     accounts (role, LGU application, admin permissions, kiosk), and for
+--     calendars, their handlers, and event locations. Account actions that
+--     run in Edge Functions with the service role (create, edit, delete,
+--     reset password) can't be traced to a person here, so the portal logs
+--     those itself ('account.*' kinds only).
+--   * admin_report_data(from, to): everything the Report page needs.
+--   Entries typed by hand, ratings, weights, and the Dashboard schedule's
+--   filter (e.g. a "Mayor's Office" calendar) live in app_settings
+--   ('ar_YYYY-MM', 'ar_weights', 'schedule_filter'), so backups already
+--   include them.
+--   Changes made before this block runs aren't in the log; events the
+--   superadmin posted before then still count, through created_by_id.
+--   Restores and wipes disable user triggers, so they never fill the log.
+-- ============================================================
+
+create table if not exists public.admin_activity_log (
+  id bigint generated always as identity primary key,
+  actor_id uuid references public.profiles(id) on delete set null,
+  kind text not null,
+  ref_id text,
+  title text,
+  created_at timestamptz not null default now()
+);
+create index if not exists admin_activity_log_actor_created_idx
+  on public.admin_activity_log (actor_id, created_at);
+alter table public.admin_activity_log enable row level security;
+
+drop policy if exists "Superadmin reads admin_activity_log" on public.admin_activity_log;
+create policy "Superadmin reads admin_activity_log" on public.admin_activity_log
+  for select using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'superadmin'));
+drop policy if exists "Superadmin logs own account actions" on public.admin_activity_log;
+create policy "Superadmin logs own account actions" on public.admin_activity_log
+  for insert with check (
+    actor_id = auth.uid()
+    and kind in ('account.create', 'account.edit', 'account.delete', 'account.password')
+    and exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'superadmin'));
+
+-- Events: 'event.add' / 'event.update' / 'event.delete'. Only what a
+-- signed-in person did (not the service role), only events others can see,
+-- and an update only when something on the schedule changed (not a color,
+-- or a calendar name the rename trigger copies over). Changes made by
+-- another trigger or a cascade (pg_trigger_depth() > 1), like a deleted
+-- group taking its events with it, aren't separate actions.
+create or replace function public.log_event_activity()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_actor uuid := auth.uid();
+begin
+  if v_actor is null or pg_trigger_depth() > 1 then
+    return null;
+  end if;
+  if tg_op = 'INSERT' then
+    if new.event_type <> 'personal' then
+      insert into admin_activity_log (actor_id, kind, ref_id, title) values (v_actor, 'event.add', new.id, new.title);
+    end if;
+  elsif tg_op = 'UPDATE' then
+    if new.event_type <> 'personal'
+       and (old.title, old.location, old.start_time, old.end_time, old.description, old.daily_overrides)
+           is distinct from (new.title, new.location, new.start_time, new.end_time, new.description, new.daily_overrides) then
+      insert into admin_activity_log (actor_id, kind, ref_id, title) values (v_actor, 'event.update', new.id, new.title);
+    end if;
+  elsif old.event_type <> 'personal' then
+    insert into admin_activity_log (actor_id, kind, ref_id, title) values (v_actor, 'event.delete', old.id, old.title);
+  end if;
+  return null;
+exception when others then
+  -- Never block an event change over the log.
+  raise warning 'log_event_activity failed: %', sqlerrm;
+  return null;
+end $$;
+revoke all on function public.log_event_activity() from public, anon, authenticated;
+
+drop trigger if exists log_event_activity on public.barangay_events;
+create trigger log_event_activity
+  after insert or update or delete on public.barangay_events
+  for each row execute function public.log_event_activity();
+
+-- Accounts: a superadmin changing someone else's account. ref_id is the
+-- account; title is the new role or application status. Names aren't
+-- copied here — the portal looks them up, so the log holds no personal data.
+create or replace function public.log_account_activity()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_actor uuid := auth.uid();
+  v_kind text;
+  v_title text;
+begin
+  if v_actor is null or v_actor = new.id
+     or not exists (select 1 from profiles p where p.id = v_actor and p.role = 'superadmin') then
+    return null;
+  end if;
+  if old.lgu_request_status = 'pending' and new.lgu_request_status is distinct from 'pending' then
+    v_kind := 'account.application';
+    v_title := new.lgu_request_status;
+  elsif old.role is distinct from new.role then
+    v_kind := 'account.role';
+    v_title := new.role;
+  elsif old.admin_permissions is distinct from new.admin_permissions then
+    v_kind := 'account.permissions';
+  elsif old.is_kiosk_account is distinct from new.is_kiosk_account then
+    v_kind := 'account.kiosk';
+    v_title := case when new.is_kiosk_account then 'on' else 'off' end;
+  elsif (old.kiosk_passcode, old.kiosk_passcode_fail_count, old.kiosk_passcode_locked_until)
+        is distinct from (new.kiosk_passcode, new.kiosk_passcode_fail_count, new.kiosk_passcode_locked_until) then
+    v_kind := 'account.passcode';
+  else
+    return null;
+  end if;
+  insert into admin_activity_log (actor_id, kind, ref_id, title) values (v_actor, v_kind, new.id::text, v_title);
+  return null;
+exception when others then
+  raise warning 'log_account_activity failed: %', sqlerrm;
+  return null;
+end $$;
+revoke all on function public.log_account_activity() from public, anon, authenticated;
+
+drop trigger if exists log_account_activity on public.profiles;
+create trigger log_account_activity
+  after update on public.profiles
+  for each row execute function public.log_account_activity();
+
+-- Setup: calendars ('calendar.*'), their handlers ('handler.*'), and event
+-- locations ('location.*'). Reordering calendar tabs isn't logged.
+create or replace function public.log_setup_activity()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_actor uuid := auth.uid();
+  v_row jsonb;
+  v_area text;
+begin
+  if v_actor is null or pg_trigger_depth() > 1 then
+    return null;
+  end if;
+  if tg_op = 'DELETE' then
+    v_row := to_jsonb(old);
+  else
+    v_row := to_jsonb(new);
+  end if;
+  if tg_op = 'UPDATE' and (to_jsonb(new) - 'sort_order') = (to_jsonb(old) - 'sort_order') then
+    return null;
+  end if;
+  v_area := case tg_table_name
+    when 'event_calendars' then 'calendar'
+    when 'event_calendar_handlers' then 'handler'
+    else 'location'
+  end;
+  insert into admin_activity_log (actor_id, kind, ref_id, title) values (
+    v_actor,
+    v_area || '.' || case tg_op when 'INSERT' then 'add' when 'UPDATE' then 'update' else 'delete' end,
+    coalesce(v_row->>'id', v_row->>'calendar_id'),
+    coalesce(v_row->>'name', (select c.name from event_calendars c where c.id::text = v_row->>'calendar_id'))
+  );
+  return null;
+exception when others then
+  raise warning 'log_setup_activity failed: %', sqlerrm;
+  return null;
+end $$;
+revoke all on function public.log_setup_activity() from public, anon, authenticated;
+
+drop trigger if exists log_setup_activity on public.event_calendars;
+create trigger log_setup_activity
+  after insert or update or delete on public.event_calendars
+  for each row execute function public.log_setup_activity();
+drop trigger if exists log_setup_activity on public.event_calendar_handlers;
+create trigger log_setup_activity
+  after insert or update or delete on public.event_calendar_handlers
+  for each row execute function public.log_setup_activity();
+drop trigger if exists log_setup_activity on public.lgu_locations;
+create trigger log_setup_activity
+  after insert or update or delete on public.lgu_locations
+  for each row execute function public.log_setup_activity();
+
+-- The Report page's numbers for the days p_from .. p_to - 1 (Manila dates;
+-- p_to is the day after the last day). Logged times are real instants;
+-- event times and created_at are Philippine wall-clock labeled UTC (see the
+-- "Reminder timing fix" block), so each is compared in its own convention.
+create or replace function public.admin_report_data(p_from date, p_to date)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid();
+  v_from timestamptz := p_from::timestamp at time zone 'Asia/Manila';
+  v_to timestamptz := p_to::timestamp at time zone 'Asia/Manila';
+  v_wall_from timestamptz := p_from::timestamp at time zone 'UTC';
+  v_wall_to timestamptz := p_to::timestamp at time zone 'UTC';
+begin
+  if not exists (select 1 from profiles p where p.id = v_me and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can view the report';
+  end if;
+  return jsonb_build_object(
+    'activity', (
+      select coalesce(jsonb_agg(jsonb_build_object('kind', l.kind, 'ref', l.ref_id, 'title', l.title, 'at', l.created_at)
+                                order by l.created_at), '[]'::jsonb)
+      from admin_activity_log l
+      where l.actor_id = v_me and l.created_at >= v_from and l.created_at < v_to),
+    -- Covers events posted before the log existed (and is deduplicated
+    -- against 'event.add' by the portal).
+    'events_added', (
+      select coalesce(jsonb_agg(jsonb_build_object('ref', e.id, 'title', e.title, 'at', e.created_at)
+                                order by e.created_at), '[]'::jsonb)
+      from barangay_events e
+      where e.created_by_id = v_me and e.event_type <> 'personal'
+        and e.created_at >= v_wall_from and e.created_at < v_wall_to),
+    'reminders_sent', (
+      select count(*) from event_reminders_sent r where r.sent_at >= v_from and r.sent_at < v_to),
+    'reminded_events', (
+      select count(distinct r.event_id) from event_reminders_sent r where r.sent_at >= v_from and r.sent_at < v_to),
+    'backups', (
+      select coalesce(jsonb_agg(jsonb_build_object('kind', b.kind, 'mode', b.mode, 'at', b.created_at)
+                                order by b.created_at), '[]'::jsonb)
+      from backup_log b
+      where b.created_by = v_me and b.created_at >= v_from and b.created_at < v_to),
+    'log_since', (select min(l.created_at) from admin_activity_log l)
+  );
+end $$;
+revoke all on function public.admin_report_data(date, date) from public, anon;
+grant execute on function public.admin_report_data(date, date) to authenticated;
+
+notify pgrst, 'reload schema';
+
+-- ============================================================
+-- Events on several dates (November 2026). Safe to re-run.
+--   An event that happens on separate dates (e.g. every Saturday-Sunday of
+--   a month) is saved as one row per date, linked by series_id = the id of
+--   the series' "home" row (whose own series_id is its own id). Each date
+--   keeps everything a normal event has — its own reminders, calendar
+--   entry, conflict checks — and older apps simply see separate events.
+--   The app shows one post in the Feed, one notification, and ONE shared
+--   chat and set of files, which live on the home row.
+--   * check_event_series: a row may only join a series whose home row has
+--     the same creator, so nobody can attach their event to someone else's.
+--   * rehome_event_series: deleting the home date moves the chat messages
+--     and attached files to the next date (same creator), which becomes the
+--     new home, instead of the delete cascade removing them. A series left
+--     with one date becomes an ordinary event again.
+--   Deleting every date: delete the other dates first, then the home date
+--   (the app does this) — one DELETE statement covering several dates of the
+--   same series would trip over the rows this trigger updates.
+--   Also redeploy send-event-notification (only the home date notifies).
+-- ============================================================
+
+alter table public.barangay_events add column if not exists series_id text;
+create index if not exists barangay_events_series_idx
+  on public.barangay_events (series_id) where series_id is not null;
+
+create or replace function public.check_event_series()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.series_id is null or new.series_id = new.id then
+    return new;
+  end if;
+  if tg_op = 'UPDATE' and new.series_id is not distinct from old.series_id then
+    return new;
+  end if;
+  if not exists (
+    select 1 from barangay_events h
+    where h.id = new.series_id and h.series_id = h.id
+      and h.created_by_id is not distinct from new.created_by_id
+  ) then
+    raise exception 'An event can only be added to a series of dates by its own creator';
+  end if;
+  return new;
+end $$;
+revoke all on function public.check_event_series() from public, anon, authenticated;
+
+drop trigger if exists check_event_series on public.barangay_events;
+create trigger check_event_series
+  before insert or update of series_id on public.barangay_events
+  for each row execute function public.check_event_series();
+
+-- Security definer: event_comments and event_attachments have no client
+-- update policies, so under the deleting user's own RLS these moves would
+-- silently match nothing.
+create or replace function public.rehome_event_series()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_next text;
+  v_left integer;
+begin
+  if old.series_id is distinct from old.id then
+    return old;
+  end if;
+  select e.id into v_next
+    from barangay_events e
+    where e.series_id = old.id and e.id <> old.id
+      and e.created_by_id is not distinct from old.created_by_id
+    order by e.start_time, e.id
+    limit 1;
+  if v_next is null then
+    return old;
+  end if;
+
+  update event_comments set event_id = v_next where event_id = old.id;
+  update event_attachments set event_id = v_next where event_id = old.id;
+
+  select count(*) into v_left
+    from barangay_events e
+    where e.series_id = old.id and e.id <> old.id;
+  -- The next date becomes the home (or, if it's the only one left, an
+  -- ordinary event); the rest point at it.
+  update barangay_events set series_id = case when v_left > 1 then v_next end
+    where id = v_next;
+  update barangay_events set series_id = v_next
+    where series_id = old.id and id not in (old.id, v_next);
+  return old;
+end $$;
+revoke all on function public.rehome_event_series() from public, anon, authenticated;
+
+drop trigger if exists rehome_event_series on public.barangay_events;
+create trigger rehome_event_series
+  before delete on public.barangay_events
+  for each row execute function public.rehome_event_series();
 
 notify pgrst, 'reload schema';

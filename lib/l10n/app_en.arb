@@ -300,6 +300,94 @@
   "@eventChatIndicatorUnreadTooltip": {
     "placeholders": { "count": { "type": "int" } }
   },
+  "chatsButton": "Chats",
+  "chatsButtonTooltip": "Your chats",
+  "chatsButtonUnreadTooltip": "{count, plural, =1{Your chats · 1 unread} other{Your chats · {count} unread}}",
+  "@chatsButtonUnreadTooltip": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "chatsTitle": "Chats",
+  "chatsSubtitle": "Every event chat you're in, newest first.",
+  "chatsSearchLabel": "Search chats",
+  "chatsSearchHint": "Event name, or words in a message",
+  "chatsFilterAll": "All",
+  "chatsFilterUnread": "Unread",
+  "chatsFilterGroups": "Groups",
+  "chatsFilterPublic": "Public",
+  "chatsTypePublic": "Public",
+  "chatsEmpty": "No chats yet. Open an event and tap its chat button to start one. Chats you join, chats on your own events, and your groups' chats all show up here.",
+  "chatsEmptyFiltered": "No chats match.",
+  "chatsLoadFailed": "Couldn't load the latest messages. Check your connection and try again.",
+  "chatsPreviewYou": "You: {message}",
+  "@chatsPreviewYou": {
+    "placeholders": { "message": { "type": "String" } }
+  },
+  "chatsPreviewOther": "{name}: {message}",
+  "@chatsPreviewOther": {
+    "placeholders": { "name": { "type": "String" }, "message": { "type": "String" } }
+  },
+  "chatsMessageCount": "{count, plural, =1{1 message} other{{count} messages}}",
+  "@chatsMessageCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "chatsSectionChats": "Chats",
+  "chatsSectionMessages": "Messages",
+  "chatsSearchTooShort": "Type at least 2 letters to search inside messages.",
+  "chatsSearchNoChats": "No chat names match.",
+  "chatsSearchNoMessages": "No messages contain \"{query}\".",
+  "@chatsSearchNoMessages": {
+    "placeholders": { "query": { "type": "String" } }
+  },
+  "chatsSearchFailed": "Couldn't search messages. Check your connection and try again.",
+  "moreDatesTitle": "More dates",
+  "moreDatesHint": "Same time and place on other days, like every weekend. Each date gets its own reminders, and everyone shares one chat and the same files.",
+  "moreDatesAdd": "Add a date",
+  "moreDatesRepeatWeekly": "Repeat every week",
+  "moreDatesPickHelp": "Add a date",
+  "moreDatesRepeatUntil": "Repeat every week until",
+  "moreDatesFirst": "First date",
+  "moreDatesRemove": "Remove this date",
+  "moreDatesCount": "{count} dates",
+  "@moreDatesCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "moreDatesOverlap": "That date overlaps another date of this event.",
+  "moreDatesSomeOverlap": "Some dates overlap each other. Remove one, or make the event shorter.",
+  "moreDatesTooMany": "An event can have up to {max} dates.",
+  "@moreDatesTooMany": {
+    "placeholders": { "max": { "type": "int" } }
+  },
+  "moreDatesTooLongForWeekly": "An event longer than 6 days can't repeat every week. Add its dates one by one instead.",
+  "moreDatesAdded": "{count, plural, =0{No dates added: those weeks overlap dates already on the list.} =1{Added 1 date.} other{Added {count} dates.}}",
+  "@moreDatesAdded": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "moreDatesSomeFailed": "{count, plural, =1{1 date couldn't be saved. Check your connection, then edit the event to add it again.} other{{count} dates couldn't be saved. Check your connection, then edit the event to add them again.}}",
+  "@moreDatesSomeFailed": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "moreDatesCreatorOnly": "Only the person who posted this event can add or remove its dates.",
+  "editingOneDateNote": "This is one date of an event on several dates. Your changes apply to this date only.",
+  "editingAllDatesNote": "Your changes apply to all {count} dates of this event.",
+  "@editingAllDatesNote": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "seriesEditTitle": "Edit which dates?",
+  "seriesDeleteTitle": "Delete which dates?",
+  "seriesScopeBody": "\"{title}\" is on {count} dates.",
+  "@seriesScopeBody": {
+    "placeholders": { "title": { "type": "String" }, "count": { "type": "int" } }
+  },
+  "seriesThisDate": "Only this date",
+  "seriesAllDates": "All {count} dates",
+  "@seriesAllDates": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "detailDates": "Dates",
+  "feedMoreDates": "{count, plural, =1{+1 more date} other{+{count} more dates}}",
+  "@feedMoreDates": {
+    "placeholders": { "count": { "type": "int" } }
+  },
   "typeHelperCalendar": "Everyone sees it under the {calendar} tab, and everyone gets a notification.",
   "@typeHelperCalendar": {
     "placeholders": { "calendar": { "type": "String" } }
@@ -693,7 +781,7 @@
   "privacyPolicySubtitle": "How eBongabong Calendar handles your information.",
   "privacyIntro": "This Privacy Policy explains what information eBongabong Calendar collects, how it's used, and who can see it. It applies to everyone who uses the app, whether you're a resident, an LGU member, or an administrator.",
   "privacyCollectHeading": "Information We Collect",
-  "privacyCollectBody": "When you create an account, we collect your email address and the details you choose to add to your profile — display name, department, phone number, address, a short bio, and a profile picture: either one of the app's preset pictures, or a photo you choose from your device's gallery (the app only reads the one photo you pick, and never uses your camera). Uploaded photos and files you attach to events are stored on the municipality's own web server. We also store the events, groups, and preferences (language, theme, display size, reminders) you set up while using the app.",
+  "privacyCollectBody": "When you create an account, we collect your email address and the details you choose to add to your profile — display name, department, phone number, address, a short bio, and a profile picture: either one of the app's preset pictures, or a photo you choose from your device's gallery (the app only reads the one photo you pick, and never uses your camera). Uploaded photos and files you attach to events are stored on the municipality's own web server. We also store the events, groups, and preferences (language, theme, display size, calendar view, reminders) you set up while using the app.",
   "privacyUseHeading": "How We Use Your Information",
   "privacyUseBody": "Your information is used only to run the app's own features: showing you relevant events, letting you join and manage groups, remembering your display and language preferences across devices, and sending the notifications you've asked for. We don't use your information for advertising, and we don't sell it to anyone.",
   "privacyVisibilityHeading": "Who Can See Your Information",

@@ -32,6 +32,11 @@ const PRIVATE_DIR = __DIR__;
 const UPLOADS_DIR = __DIR__ . '/uploads';
 const MEDIA_DIR = __DIR__ . '/../media';
 
+// Optional: downloads made from GitHub before the download page moved here
+// (download/), so the store page's total doesn't restart at zero. Set it
+// once when switching; api/download.php adds it to its own count.
+// const DOWNLOADS_BEFORE_MOVE = 286;
+
 // Websites allowed to call the API from a browser: the web app, and the
 // LGU-admin portal (GitHub Pages, plus local testing addresses).
 const ALLOWED_ORIGINS = [

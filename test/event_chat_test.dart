@@ -589,6 +589,150 @@ void main() {
     });
   });
 
+  group('Chats page', () {
+    /// The seeded group meeting has an unread message from someone else.
+    /// Adds a public chat the user posted in (theirs) and one they never
+    /// joined (not theirs, but searchable).
+    Future<MemoryEventRepository> chatsRepo(WidgetTester tester) async {
+      final repo = MemoryEventRepository.seeded();
+      await repo.addEventCommentAs('seed-fiesta', 'Hello parade team', userId: 'someone-else', authorName: 'Ana');
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 5)));
+      await repo.addEventComment('seed-basketball', 'Is there parking?');
+      return repo;
+    }
+
+    Future<void> openChats(WidgetTester tester) async {
+      await tester.tap(find.text('Feed'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('feed-chats-button')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the Feed tab\'s Chats button lists your chats, newest first', (tester) async {
+      await pumpSignedIn(tester, role: 'lgu_member', repository: await chatsRepo(tester));
+      await tester.tap(find.text('Feed'));
+      await tester.pumpAndSettle();
+
+      // Only the group chat is unread: your own message isn't, and the
+      // fiesta chat isn't one of yours.
+      expect(
+        find.descendant(of: find.byKey(const Key('feed-chats-badge')), matching: find.text('1')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('feed-chats-button')));
+      await tester.pumpAndSettle();
+      const mayor = Key('chats-row-seed-mayor-meeting');
+      const basketball = Key('chats-row-seed-basketball');
+      expect(find.byKey(mayor), findsOneWidget);
+      expect(find.byKey(basketball), findsOneWidget);
+      expect(find.byKey(const Key('chats-row-seed-fiesta')), findsNothing);
+      expect(find.text('Juan Dela Cruz: Please be on time, everyone!'), findsOneWidget);
+      expect(find.text('You: Is there parking?'), findsOneWidget);
+      expect(find.byKey(const Key('chats-unread-seed-mayor-meeting')), findsOneWidget);
+      expect(find.byKey(const Key('chats-unread-seed-basketball')), findsNothing);
+      // Newest message first.
+      expect(tester.getTopLeft(find.byKey(basketball)).dy, lessThan(tester.getTopLeft(find.byKey(mayor)).dy));
+
+      // Filters.
+      await tester.tap(find.byKey(const Key('chats-filter-groups')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(mayor), findsOneWidget);
+      expect(find.byKey(basketball), findsNothing);
+      await tester.tap(find.byKey(const Key('chats-filter-unread')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(mayor), findsOneWidget);
+      expect(find.byKey(basketball), findsNothing);
+
+      // Opening a chat reads it.
+      await tester.tap(find.byKey(mayor));
+      await tester.pumpAndSettle();
+      expect(find.text('Event chat'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('event-chat-back')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(mayor), findsNothing);
+      expect(find.text('No chats match.'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('chats-filter-all')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('chats-unread-seed-mayor-meeting')), findsNothing);
+    });
+
+    testWidgets('a new message moves its chat to the top, live', (tester) async {
+      final repo = await chatsRepo(tester);
+      await pumpSignedIn(tester, role: 'lgu_member', repository: repo);
+      await openChats(tester);
+
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 5)));
+      await repo.addEventCommentAs('seed-mayor-meeting', 'Agenda attached', userId: 'mayor-1', authorName: 'Juan Dela Cruz');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Juan Dela Cruz: Agenda attached'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.byKey(const Key('chats-row-seed-mayor-meeting'))).dy,
+        lessThan(tester.getTopLeft(find.byKey(const Key('chats-row-seed-basketball'))).dy),
+      );
+    });
+
+    testWidgets('search finds chats by name and messages by their words', (tester) async {
+      await pumpSignedIn(tester, role: 'lgu_member', repository: await chatsRepo(tester));
+      await openChats(tester);
+      final search = find.byKey(const Key('chats-search'));
+
+      // Words inside a message, in any chat you can read — even one you
+      // haven't joined.
+      await tester.enterText(search, 'PARADE');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      expect(find.text('Messages'), findsOneWidget);
+      final result = find.byKey(const Key('chats-message-comment-local-1'));
+      expect(result, findsOneWidget);
+      // "Fiesta Parade Rehearsal" matches by name as well.
+      expect(find.byKey(const Key('chats-row-seed-fiesta')), findsOneWidget);
+      expect(find.byKey(const Key('chats-row-seed-basketball')), findsNothing);
+
+      await tester.tap(result);
+      await tester.pumpAndSettle();
+      expect(find.text('Event chat'), findsOneWidget);
+      expect(find.text('Hello parade team'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('event-chat-back')));
+      await tester.pumpAndSettle();
+
+      // An event's name finds its chat.
+      await tester.enterText(search, 'staff meeting');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('chats-row-seed-mayor-meeting')), findsOneWidget);
+      expect(find.byKey(const Key('chats-row-seed-basketball')), findsNothing);
+      expect(find.text('No messages contain "staff meeting".'), findsOneWidget);
+
+      // Your own messages too; no chat is named after it.
+      await tester.enterText(search, 'parking');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      expect(find.text('No chat names match.'), findsOneWidget);
+      expect(find.byKey(const Key('chats-message-comment-local-2')), findsOneWidget);
+
+      // One letter only searches names.
+      await tester.enterText(search, 'b');
+      await tester.pumpAndSettle();
+      expect(find.text('Type at least 2 letters to search inside messages.'), findsOneWidget);
+    });
+
+    testWidgets('with no chats yet, the page says how to start one', (tester) async {
+      final repo = MemoryEventRepository.seeded();
+      await repo.deleteEventComment('comment-seed-1');
+      await pumpSignedIn(tester, role: 'lgu_member', repository: repo);
+      await tester.tap(find.text('Feed'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Badge>(find.byKey(const Key('feed-chats-badge'))).isLabelVisible, isFalse);
+
+      await tester.tap(find.byKey(const Key('feed-chats-button')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('No chats yet.'), findsOneWidget);
+    });
+  });
+
   group('EventChatActivity', () {
     test('your own latest message is never unread, and seen state survives a restart', () async {
       final repo = MemoryEventRepository.seeded();

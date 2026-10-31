@@ -17,7 +17,8 @@ import 'liquid_glass_components.dart';
 
 /// What `AddEventPage` pops with after a successful save, so the calendar
 /// can select the right day and show a confirmation without re-fetching.
-typedef AddEventResult = ({DateTime date, String title, String? groupName});
+/// [dateCount] is how many dates the event is on (see "More dates").
+typedef AddEventResult = ({DateTime date, String title, String? groupName, int dateCount});
 
 /// Full-page replacement for the old Add Event modal. Supports both a
 /// regular single-day event and a multi-day date range. Also doubles as
@@ -33,6 +34,7 @@ class AddEventPage extends StatefulWidget {
     required this.findOverlappingEvents,
     required this.suggestFreeSlot,
     this.existingEvent,
+    this.seriesSiblings = const [],
     this.lguLocations = const [],
     this.handledCalendars = const [],
   });
@@ -59,6 +61,11 @@ class AddEventPage extends StatefulWidget {
   /// one — every field pre-filled, saved via `updateEvent`. Its
   /// id/createdAt/creator fields never change regardless of what's edited.
   final BarangayEvent? existingEvent;
+
+  /// When editing ALL dates of an event on several dates: the other dates
+  /// (rows) of [existingEvent]'s series. Empty when creating, when editing
+  /// an ordinary event, or when editing just one date of a series.
+  final List<BarangayEvent> seriesSiblings;
 
   /// Same-day, same-venue overlap check owned by the calendar screen
   /// (reads its live `_events`) — passed in rather than duplicated here.
@@ -112,6 +119,15 @@ class _AddEventPageState extends State<AddEventPage> {
   /// same as an event that's never had any overrides set.
   final Map<DateTime, ({TimeOfDay start, TimeOfDay end})> _perDayOverrides = {};
 
+  /// "More dates": the start day (a local calendar date, like [_startDate])
+  /// of each other date this event happens on, sorted. Every date copies
+  /// the first one's length, times, and per-day schedule; each is saved as
+  /// its own event, linked by [BarangayEvent.seriesId].
+  final List<DateTime> _moreDates = [];
+
+  /// Including the first date.
+  static const _maxDates = 60;
+
   static const _maxAttachments = 5;
 
   /// Matches the file server's limit (hostinger/public_html/api). Checked
@@ -141,6 +157,25 @@ class _AddEventPageState extends State<AddEventPage> {
   int get _attachmentCount => _existingAttachments.length + _pendingAttachments.length;
 
   bool get _isEditing => widget.existingEvent != null;
+
+  /// Editing every date of an event on several dates at once.
+  bool get _editingAllDates => widget.seriesSiblings.isNotEmpty;
+
+  /// Editing just one date of an event on several dates — its other dates
+  /// are left alone, so "More dates" isn't offered.
+  bool get _editingOneDate => _isEditing && widget.existingEvent!.isInSeries && !_editingAllDates;
+
+  /// Adding or removing dates creates and deletes events, which only the
+  /// person who posted the event may do (the database allows nothing else).
+  bool get _canChangeDates =>
+      !_isEditing ||
+      (widget.existingEvent!.createdById != null &&
+          widget.existingEvent!.createdById == widget.creatorProfile?.id);
+
+  /// How many days after its start each date ends (0 = a one-day event).
+  int get _spanDays => _utcDay(_endDate).difference(_utcDay(_startDate)).inDays;
+
+  static DateTime _utcDay(DateTime day) => DateTime.utc(day.year, day.month, day.day);
 
   DateTime get _today {
     final now = DateTime.now();
@@ -229,7 +264,12 @@ class _AddEventPageState extends State<AddEventPage> {
           end: TimeOfDay(hour: override.endMinutes ~/ 60, minute: override.endMinutes % 60),
         );
       }
-      unawaited(_loadExistingAttachments(existing.id));
+      for (final sibling in widget.seriesSiblings) {
+        _moreDates.add(DateTime(sibling.startTime.year, sibling.startTime.month, sibling.startTime.day));
+      }
+      _moreDates.sort();
+      // Every date of an event on several dates shares its home date's files.
+      unawaited(_loadExistingAttachments(existing.homeId));
     } else {
       // Callers pass a UTC-midnight day key (e.g. DayDetailPage.date);
       // re-read it as a plain local calendar date so the past-date check
@@ -304,23 +344,30 @@ class _AddEventPageState extends State<AddEventPage> {
   }
 
   /// Checks every day from [_startDate] to [_endDate] (just [_startDate]
-  /// for a single-day event, since they're the same) against
+  /// for a single-day event, since they're the same) — and the same days
+  /// of every one of [_moreDates] — against
   /// [AddEventPage.findOverlappingEvents], using that day's own window
   /// from [_windowForFormDay] — each existing event's time-of-day window
   /// applies on every day *it* spans too, so a 3-day event timed 7–8 AM
   /// only conflicts with something else scheduled 7–8 AM, leaving the
   /// rest of those days free. An event conflicting on more than one
   /// spanned day is only reported once (its first conflicting day). When
-  /// editing, the event being edited never conflicts with itself.
+  /// editing, the event being edited (any of its dates) never conflicts
+  /// with itself.
   List<({BarangayEvent event, DateTime day})> _computeConflicts() {
     final seen = <String>{};
     final entries = <({BarangayEvent event, DateTime day})>[];
-    for (var day = _startDate; !day.isAfter(_endDate); day = day.add(const Duration(days: 1))) {
-      final window = _windowForFormDay(day);
-      for (final event in widget.findOverlappingEvents(_effectiveLocation, day, window.start, window.end)) {
-        if (_isEditing && event.id == widget.existingEvent!.id) continue;
-        if (seen.add(event.id)) {
-          entries.add((event: event, day: day));
+    final ownHomeId = widget.existingEvent?.homeId;
+    for (final first in [_startDate, ..._moreDates]) {
+      final offset = _utcDay(first).difference(_utcDay(_startDate)).inDays;
+      for (var day = _startDate; !day.isAfter(_endDate); day = day.add(const Duration(days: 1))) {
+        final window = _windowForFormDay(day);
+        final date = DateTime(day.year, day.month, day.day + offset);
+        for (final event in widget.findOverlappingEvents(_effectiveLocation, date, window.start, window.end)) {
+          if (_isEditing && (event.id == widget.existingEvent!.id || event.homeId == ownHomeId)) continue;
+          if (seen.add(event.id)) {
+            entries.add((event: event, day: date));
+          }
         }
       }
     }
@@ -423,6 +470,122 @@ class _AddEventPageState extends State<AddEventPage> {
     });
   }
 
+  /// Whether a date starting on [start] would overlap the first date or one
+  /// of [_moreDates] (each lasts [_spanDays] + 1 days).
+  bool _overlapsADate(DateTime start) {
+    for (final other in [_startDate, ..._moreDates]) {
+      if (_utcDay(start).difference(_utcDay(other)).inDays.abs() <= _spanDays) return true;
+    }
+    return false;
+  }
+
+  /// Two of this event's dates overlap — possible after making the event
+  /// longer or moving its first date once more dates were added.
+  bool get _datesOverlap {
+    final starts = [_startDate, ..._moreDates].map(_utcDay).toList()..sort();
+    for (var i = 1; i < starts.length; i++) {
+      if (starts[i].difference(starts[i - 1]).inDays <= _spanDays) return true;
+    }
+    return false;
+  }
+
+  /// Replaces whatever message is showing, so adding dates quickly doesn't
+  /// queue up a line of stale messages.
+  void _showMessage(String text) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  static final DateTime _lastPickableDate = DateTime(2030, 12, 31);
+
+  Future<void> _addMoreDate() async {
+    final l10n = AppLocalizations.of(context)!;
+    if (_moreDates.length + 1 >= _maxDates) {
+      _showMessage(l10n.moreDatesTooMany(_maxDates));
+      return;
+    }
+    // Suggest the first free day after the latest date.
+    final latest = [_startDate, ..._moreDates].reduce((a, b) => a.isAfter(b) ? a : b);
+    var suggestion = DateTime(latest.year, latest.month, latest.day + _spanDays + 1);
+    if (suggestion.isBefore(_today)) suggestion = _today;
+    if (suggestion.isAfter(_lastPickableDate)) suggestion = _lastPickableDate;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: suggestion,
+      firstDate: _today,
+      lastDate: _lastPickableDate,
+      helpText: l10n.moreDatesPickHelp,
+    );
+    if (picked == null || !mounted) return;
+    final day = DateTime(picked.year, picked.month, picked.day);
+    if (_overlapsADate(day)) {
+      _showMessage(l10n.moreDatesOverlap);
+      return;
+    }
+    setState(() {
+      _moreDates
+        ..add(day)
+        ..sort();
+      _recomputeConflicts();
+    });
+  }
+
+  /// Adds the same weekday(s) of every following week, up to a picked date
+  /// — e.g. a Saturday–Sunday event repeated on every weekend of the month.
+  Future<void> _repeatWeekly() async {
+    final l10n = AppLocalizations.of(context)!;
+    if (_spanDays >= 7) {
+      _showMessage(l10n.moreDatesTooLongForWeekly);
+      return;
+    }
+    final firstRepeat = DateTime(_startDate.year, _startDate.month, _startDate.day + 7);
+    if (firstRepeat.isAfter(_lastPickableDate)) return;
+    // About a month ahead, the usual case.
+    var initial = DateTime(_startDate.year, _startDate.month + 1, _startDate.day);
+    if (initial.isBefore(firstRepeat)) initial = firstRepeat;
+    if (initial.isAfter(_lastPickableDate)) initial = _lastPickableDate;
+    final until = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: firstRepeat,
+      lastDate: _lastPickableDate,
+      helpText: l10n.moreDatesRepeatUntil,
+    );
+    if (until == null || !mounted) return;
+    var added = 0;
+    var full = false;
+    setState(() {
+      for (var day = firstRepeat; !day.isAfter(until); day = DateTime(day.year, day.month, day.day + 7)) {
+        if (_moreDates.length + 1 >= _maxDates) {
+          full = true;
+          break;
+        }
+        if (_overlapsADate(day)) continue;
+        _moreDates.add(day);
+        added++;
+      }
+      _moreDates.sort();
+      _recomputeConflicts();
+    });
+    _showMessage(full ? l10n.moreDatesTooMany(_maxDates) : l10n.moreDatesAdded(added));
+  }
+
+  void _removeMoreDate(DateTime day) {
+    setState(() {
+      _moreDates.remove(day);
+      _recomputeConflicts();
+    });
+  }
+
+  /// "Sat, Nov 7" or "Sat, Nov 7 – Sun, Nov 8" for the date starting on
+  /// [start] (with the year when it isn't this year).
+  String _dateLabel(DateTime start) {
+    String format(DateTime d) => DateFormat(d.year == _today.year ? 'EEE, MMM d' : 'EEE, MMM d, y').format(d);
+    if (_spanDays == 0) return format(start);
+    return '${format(start)} – ${format(DateTime(start.year, start.month, start.day + _spanDays))}';
+  }
+
   String _typeHelperText() {
     final l10n = AppLocalizations.of(context)!;
     final calendarId = _calendarId;
@@ -467,7 +630,7 @@ class _AddEventPageState extends State<AddEventPage> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Text(
-                    _isMultiDay
+                    _isMultiDay || _moreDates.isNotEmpty
                         ? '• ${entry.event.title} • ${DateFormat('MMM d').format(entry.day)}, '
                             '${_eventTimeLabel(entry.event)}'
                         : '• ${entry.event.title} • ${_eventTimeLabel(entry.event)}',
@@ -533,6 +696,13 @@ class _AddEventPageState extends State<AddEventPage> {
       return;
     }
 
+    if (_datesOverlap) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.moreDatesSomeOverlap)),
+      );
+      return;
+    }
+
     final finalConflicts = _computeConflicts();
     if (finalConflicts.isNotEmpty) {
       final proceed = await _confirmOverlapDialog(finalConflicts);
@@ -564,56 +734,91 @@ class _AddEventPageState extends State<AddEventPage> {
 
     setState(() => _saving = true);
     final existing = widget.existingEvent;
-    final eventId = existing?.id ?? DateTime.now().microsecondsSinceEpoch.toString();
+    final idBase = DateTime.now().microsecondsSinceEpoch;
+    final eventId = existing?.id ?? idBase.toString();
+
+    // The first date, as the form shows it. Every other date is this one
+    // moved to another day (see _placed).
+    final firstDate = BarangayEvent(
+      id: eventId,
+      title: title,
+      location: location,
+      startTime: _startDateTime,
+      endTime: _endDateTime,
+      description: description,
+      createdAt: existing?.createdAt ?? DateTime.now(),
+      createdByName: existing != null ? existing.createdByName : widget.creatorProfile?.displayName,
+      createdByDepartment: existing != null ? existing.createdByDepartment : widget.creatorProfile?.department,
+      createdById: existing != null ? existing.createdById : widget.creatorProfile?.id,
+      createdByAvatarUrl: existing != null ? existing.createdByAvatarUrl : widget.creatorProfile?.avatarUrl,
+      eventType: _calendarId != null ? EventType.calendar : _eventType,
+      calendarId: _calendarId,
+      calendarName: _calendarId != null ? _calendarName(_calendarId!) : null,
+      colorKey: _colorKey,
+      contactNumber: contactNumber.isEmpty ? null : contactNumber,
+      groupId: group?.id,
+      groupName: group?.name,
+      dailyOverrides: dailyOverrides,
+    );
+
+    // One date of a series edited on its own keeps its place in the series;
+    // otherwise the event is a series exactly when it has more dates.
+    final asSeries = !_editingOneDate && (_moreDates.isNotEmpty || _editingAllDates);
+    final homeId = existing?.homeId ?? eventId;
+    final dateCount = asSeries ? 1 + _moreDates.length : 1;
+    var failedDates = 0;
     try {
-      if (existing != null) {
-        await widget.eventRepository.updateEvent(
-          BarangayEvent(
-            id: eventId,
-            title: title,
-            location: location,
-            startTime: _startDateTime,
-            endTime: _endDateTime,
-            description: description,
-            createdAt: existing.createdAt,
-            createdByName: existing.createdByName,
-            createdByDepartment: existing.createdByDepartment,
-            createdById: existing.createdById,
-            createdByAvatarUrl: existing.createdByAvatarUrl,
-            eventType: _calendarId != null ? EventType.calendar : _eventType,
-            calendarId: _calendarId,
-            calendarName: _calendarId != null ? _calendarName(_calendarId!) : null,
-            colorKey: _colorKey,
-            contactNumber: contactNumber.isEmpty ? null : contactNumber,
-            groupId: group?.id,
-            groupName: group?.name,
-            dailyOverrides: dailyOverrides,
-          ),
-        );
+      final String? firstSeriesId;
+      if (_editingOneDate) {
+        firstSeriesId = existing!.seriesId;
+      } else if (!asSeries) {
+        firstSeriesId = null;
+      } else if (dateCount > 1 || existing?.id != homeId) {
+        // (A date that isn't the home keeps pointing at it even when it's
+        // the only date left: deleting the home below hands it the chat
+        // and makes it an ordinary event — see rehome_event_series.)
+        firstSeriesId = homeId;
       } else {
-        await widget.eventRepository.addEvent(
-          BarangayEvent(
-            id: eventId,
-            title: title,
-            location: location,
-            startTime: _startDateTime,
-            endTime: _endDateTime,
-            description: description,
-            createdAt: DateTime.now(),
-            createdByName: widget.creatorProfile?.displayName,
-            createdByDepartment: widget.creatorProfile?.department,
-            createdById: widget.creatorProfile?.id,
-            createdByAvatarUrl: widget.creatorProfile?.avatarUrl,
-            eventType: _calendarId != null ? EventType.calendar : _eventType,
-            calendarId: _calendarId,
-            calendarName: _calendarId != null ? _calendarName(_calendarId!) : null,
-            colorKey: _colorKey,
-            contactNumber: contactNumber.isEmpty ? null : contactNumber,
-            groupId: group?.id,
-            groupName: group?.name,
-            dailyOverrides: dailyOverrides,
-          ),
-        );
+        firstSeriesId = null;
+      }
+      final first = _placed(firstDate, id: eventId, startDay: _startDate, seriesId: firstSeriesId);
+      // The home date goes first: the other dates can only join a series
+      // whose home row already exists.
+      if (existing != null) {
+        await widget.eventRepository.updateEvent(first);
+      } else {
+        await widget.eventRepository.addEvent(first);
+      }
+
+      if (asSeries) {
+        final siblingsByDay = {for (final sibling in widget.seriesSiblings) _utcDay(sibling.startTime): sibling};
+        for (var i = 0; i < _moreDates.length; i++) {
+          final day = _moreDates[i];
+          final sibling = siblingsByDay.remove(_utcDay(day));
+          try {
+            if (sibling != null) {
+              await widget.eventRepository.updateEvent(
+                _placed(firstDate, id: sibling.id, startDay: day, seriesId: homeId, keep: sibling),
+              );
+            } else {
+              await widget.eventRepository.addEvent(
+                _placed(firstDate, id: (idBase + i + 1).toString(), startDay: day, seriesId: homeId),
+              );
+            }
+          } catch (_) {
+            failedDates++;
+          }
+        }
+        // Dates taken off the list. The home date goes last, so its chat
+        // and files move to a date that's staying.
+        final removed = siblingsByDay.values.toList()..sort((a, b) => (a.id == homeId ? 1 : 0) - (b.id == homeId ? 1 : 0));
+        for (final sibling in removed) {
+          try {
+            await widget.eventRepository.deleteEvent(sibling.id);
+          } catch (_) {
+            failedDates++;
+          }
+        }
       }
     } catch (error) {
       if (!mounted) return;
@@ -626,15 +831,21 @@ class _AddEventPageState extends State<AddEventPage> {
       );
       return;
     }
+    if (failedDates > 0 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.moreDatesSomeFailed(failedDates))),
+      );
+    }
 
     // Uploaded now that the event has a real id — a brand-new event's id
     // was only ever a locally-generated placeholder until addEvent above
     // actually succeeded. A failed upload here doesn't undo the
     // already-saved event; the user can just re-add the file via Edit.
+    // Every date shares the home date's files.
     var failedUploads = 0;
     for (final file in _pendingAttachments) {
       try {
-        await widget.eventRepository.uploadEventAttachment(eventId, file.name, file.bytes, mimeType: file.mimeType);
+        await widget.eventRepository.uploadEventAttachment(homeId, file.name, file.bytes, mimeType: file.mimeType);
       } catch (_) {
         failedUploads++;
       }
@@ -650,7 +861,51 @@ class _AddEventPageState extends State<AddEventPage> {
       date: DateTime.utc(_startDate.year, _startDate.month, _startDate.day),
       title: title,
       groupName: group?.name,
+      dateCount: dateCount,
     ));
+  }
+
+  /// [template] (the form's first date) moved to start on [startDay],
+  /// keeping its length, clock times and per-day schedule. [keep] is an
+  /// existing date being updated: its own creation details stay.
+  static BarangayEvent _placed(
+    BarangayEvent template, {
+    required String id,
+    required DateTime startDay,
+    required String? seriesId,
+    BarangayEvent? keep,
+  }) {
+    final offset = _utcDay(startDay).difference(_utcDay(template.startTime)).inDays;
+    DateTime shift(DateTime t) => DateTime(t.year, t.month, t.day + offset, t.hour, t.minute);
+    return BarangayEvent(
+      id: id,
+      title: template.title,
+      location: template.location,
+      startTime: shift(template.startTime),
+      endTime: shift(template.endTime),
+      description: template.description,
+      createdAt: keep?.createdAt ?? template.createdAt,
+      createdByName: keep != null ? keep.createdByName : template.createdByName,
+      createdByDepartment: keep != null ? keep.createdByDepartment : template.createdByDepartment,
+      createdById: keep != null ? keep.createdById : template.createdById,
+      createdByAvatarUrl: keep != null ? keep.createdByAvatarUrl : template.createdByAvatarUrl,
+      eventType: template.eventType,
+      calendarId: template.calendarId,
+      calendarName: template.calendarName,
+      colorKey: template.colorKey,
+      contactNumber: template.contactNumber,
+      groupId: template.groupId,
+      groupName: template.groupName,
+      dailyOverrides: [
+        for (final o in template.dailyOverrides)
+          DailyOverride(
+            day: DateTime.utc(o.day.year, o.day.month, o.day.day + offset),
+            startMinutes: o.startMinutes,
+            endMinutes: o.endMinutes,
+          ),
+      ],
+      seriesId: seriesId,
+    );
   }
 
   Future<void> _loadExistingAttachments(String eventId) async {
@@ -780,12 +1035,12 @@ class _AddEventPageState extends State<AddEventPage> {
           // "no id yet" gap for a brand-new event.
           try {
             await widget.eventRepository.uploadEventAttachment(
-              existing.id,
+              existing.homeId,
               prepared.name,
               prepared.bytes,
               mimeType: prepared.mimeType,
             );
-            await _loadExistingAttachments(existing.id);
+            await _loadExistingAttachments(existing.homeId);
           } catch (error) {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -1360,6 +1615,8 @@ class _AddEventPageState extends State<AddEventPage> {
           const SizedBox(height: 16),
           _buildPerDaySchedule(),
         ],
+        const SizedBox(height: 16),
+        if (_editingOneDate) _buildOneDateNote() else _buildMoreDates(),
         const SizedBox(height: 20),
         FilledButton.icon(
           style: FilledButton.styleFrom(
@@ -1371,6 +1628,138 @@ class _AddEventPageState extends State<AddEventPage> {
           label: Text(_saving ? l10n.savingButton : (_isEditing ? l10n.saveChangesButton : l10n.saveEventButton)),
         ),
       ],
+    );
+  }
+
+  /// "More dates": other days this event happens on, e.g. every weekend of
+  /// a month — added one by one, or every week up to a picked date. Each is
+  /// a copy of the first date (same length, times and per-day schedule).
+  Widget _buildMoreDates() {
+    final l10n = AppLocalizations.of(context)!;
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final count = _moreDates.length + 1;
+
+    Widget dateRow(DateTime start, {required bool first}) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            FaIcon(
+              first ? FontAwesomeIcons.calendarDay : FontAwesomeIcons.calendarPlus,
+              size: 14,
+              color: colorScheme.primary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _dateLabel(start),
+                style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
+            if (first)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  l10n.moreDatesFirst,
+                  style: textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                ),
+              )
+            else if (_canChangeDates)
+              IconButton(
+                key: Key('add-event-remove-date-${DateFormat('yyyy-MM-dd').format(start)}'),
+                tooltip: l10n.moreDatesRemove,
+                visualDensity: VisualDensity.compact,
+                onPressed: _saving ? null : () => _removeMoreDate(start),
+                icon: FaIcon(FontAwesomeIcons.xmark, size: 14, color: colorScheme.onSurfaceVariant),
+              ),
+          ],
+        ),
+      );
+    }
+
+    return GlassPanel(
+      key: const Key('add-event-more-dates'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  l10n.moreDatesTitle,
+                  style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+              if (_moreDates.isNotEmpty)
+                Text(
+                  l10n.moreDatesCount(count),
+                  key: const Key('add-event-date-count'),
+                  style: textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700, color: colorScheme.primary),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _editingAllDates ? l10n.editingAllDatesNote(count) : l10n.moreDatesHint,
+            style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+          ),
+          if (_isEditing && !_canChangeDates) ...[
+            const SizedBox(height: 4),
+            Text(
+              l10n.moreDatesCreatorOnly,
+              style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+            ),
+          ],
+          if (_moreDates.isNotEmpty) ...[
+            const Divider(height: 20),
+            dateRow(_startDate, first: true),
+            for (final day in _moreDates) dateRow(day, first: false),
+          ],
+          if (_canChangeDates) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  key: const Key('add-event-add-date'),
+                  onPressed: _saving ? null : () => unawaited(_addMoreDate()),
+                  icon: const FaIcon(FontAwesomeIcons.plus, size: 12),
+                  label: Text(l10n.moreDatesAdd),
+                ),
+                OutlinedButton.icon(
+                  key: const Key('add-event-repeat-weekly'),
+                  onPressed: _saving ? null : () => unawaited(_repeatWeekly()),
+                  icon: const FaIcon(FontAwesomeIcons.repeat, size: 12),
+                  label: Text(l10n.moreDatesRepeatWeekly),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Shown instead of "More dates" while editing one date of an event on
+  /// several dates.
+  Widget _buildOneDateNote() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return GlassPanel(
+      key: const Key('add-event-one-date-note'),
+      child: Row(
+        children: [
+          FaIcon(FontAwesomeIcons.circleInfo, size: 14, color: colorScheme.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              AppLocalizations.of(context)!.editingOneDateNote,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -415,7 +415,7 @@
 
     <footer>
       <span>Municipality of Bongabong, Oriental Mindoro, Philippines</span>
-      <a href="https://github.com/Vincentjhon31/barangay-events" target="_blank" rel="noopener">View eCalendar on GitHub</a>
+      <a href="https://calendar.bongabong.gov.ph/download/" target="_blank" rel="noopener">Download eCalendar</a>
     </footer>
   </div>
 
@@ -440,8 +440,11 @@
       'sb_publishable_XnqlZ-m2efmbasNuZ7fyVg_74qTnghA'
     );
 
-    var GH_REPO = 'Vincentjhon31/barangay-events';
-    var INSTALL_URL = 'https://vincentjhon31.github.io/barangay-events/';
+    // eCalendar's download page on the LGU's own site: its latest.json is
+    // written by the release workflow, and api/download.php counts downloads
+    // (see hostinger/public_html/api/releases.php and download.php).
+    var SITE = 'https://calendar.bongabong.gov.ph';
+    var INSTALL_URL = SITE + '/download/';
 
     // ---- Light / dark mode toggle (same pattern as docs/lgu-admin) ----
     var THEME_STORAGE_KEY = 'ebongabong-store-theme';
@@ -502,63 +505,39 @@
     document.getElementById('carousel-next').addEventListener('click', function () { goToSlide(currentSlide + 1); armAutoAdvance(); });
     armAutoAdvance();
 
-    // ---- GitHub release data (latest release info + all-time download count) ----
+    // ---- Release data (latest version + all-time download count) ----
     function escapeHtml(str) {
       var div = document.createElement('div');
       div.textContent = str == null ? '' : String(str);
       return div.innerHTML;
     }
 
-    var releaseInfo = { version: null, notes: '', url: 'https://github.com/' + GH_REPO + '/releases/latest' };
+    var releaseInfo = { version: null, notes: '', url: INSTALL_URL };
     var totalDownloads = null;
 
-    // The first line of the release notes that actually says something:
-    // skips blank lines, the release workflow's "Check out the past
-    // releases" boilerplate, headings, and tip blocks, and strips Markdown
-    // (links, emphasis, list bullets) since this is shown as plain text.
-    function releaseSummary(body) {
-      var lines = (body || '').split('\n');
-      for (var i = 0; i < lines.length; i++) {
-        var line = lines[i].trim();
-        if (!line) continue;
-        if (/^check out the \[past releases\]/i.test(line)) continue;
-        if (/^#/.test(line) || /^>/.test(line)) continue;
-        // The what's-new markers around the user-facing bullets.
-        if (/^<!--/.test(line)) continue;
-        if (/^no notable changes/i.test(line)) continue;
-        return line
-          .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-          .replace(/[*_`]/g, '')
-          .replace(/^[-•]\s*/, '');
-      }
-      return 'No release notes provided.';
-    }
-
-    fetch('https://api.github.com/repos/' + GH_REPO + '/releases/latest')
-      .then(function (r) { return r.json(); })
-      .then(function (release) {
-        releaseInfo.version = release.tag_name || null;
-        releaseInfo.notes = releaseSummary(release.body);
-        releaseInfo.url = release.html_url || releaseInfo.url;
-        document.getElementById('release-slide-title').textContent =
-          releaseInfo.version ? ('eCalendar ' + releaseInfo.version + ' is out now') : 'Latest eCalendar release';
+    fetch(SITE + '/download/latest.json', { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (latest) {
+        var release = latest.android || latest.windows;
+        if (!release) throw new Error('nothing published yet');
+        releaseInfo.version = 'v' + release.version;
+        // The first plain-language "What's new" note for that version.
+        releaseInfo.notes = (release.whats_new || [])[0] || "See what's new on the download page.";
+        releaseInfo.url = latest.page || INSTALL_URL;
+        document.getElementById('release-slide-title').textContent = 'eCalendar ' + releaseInfo.version + ' is out now';
         document.getElementById('release-slide-body').textContent = releaseInfo.notes;
       })
       .catch(function () {
         document.getElementById('release-slide-title').textContent = 'eCalendar releases';
-        document.getElementById('release-slide-body').textContent = 'See the latest release on GitHub.';
+        document.getElementById('release-slide-body').textContent = 'See the latest version on the download page.';
       });
 
-    fetch('https://api.github.com/repos/' + GH_REPO + '/releases?per_page=100')
-      .then(function (r) { return r.json(); })
-      .then(function (releases) {
-        var total = 0;
-        (releases || []).forEach(function (rel) {
-          (rel.assets || []).forEach(function (asset) { total += asset.download_count || 0; });
-        });
-        totalDownloads = total;
+    fetch(SITE + '/api/download.php?action=stats', { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (stats) {
+        totalDownloads = stats.total;
         var el = document.getElementById('modal-stat-downloads');
-        if (el) el.textContent = formatCount(total);
+        if (el) el.textContent = formatCount(stats.total);
       })
       .catch(function () { totalDownloads = null; });
 

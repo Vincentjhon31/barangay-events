@@ -370,3 +370,32 @@ function folder_usage(string $dir): array
     }
     return ['bytes' => $bytes, 'files' => $files];
 }
+
+// ---------- App downloads (download/ folder, see releases.php) ----------
+
+// e-calendar-X.Y.Z.apk (Android) or e-calendar-X.Y.Z-setup.exe (Windows) —
+// the only files the download folder ever holds.
+const RELEASE_FILE_PATTERN = '/^e-calendar-(\d{1,3}\.\d{1,3}\.\d{1,4})(\.apk|-setup\.exe)$/';
+const RELEASE_PLATFORMS = ['android' => '.apk', 'windows' => '-setup.exe'];
+
+function download_dir(): string
+{
+    return defined('DOWNLOAD_DIR') ? (string) constant('DOWNLOAD_DIR') : __DIR__ . '/../download';
+}
+
+function download_public_url(): string
+{
+    if (defined('DOWNLOAD_PUBLIC_URL')) {
+        return rtrim((string) constant('DOWNLOAD_PUBLIC_URL'), '/');
+    }
+    return (string) preg_replace('#/api/?$#', '/download', rtrim(API_PUBLIC_URL, '/'));
+}
+
+/** [version, platform] for a valid release file name, else stops. */
+function parse_file_name(string $name): array
+{
+    if (!preg_match(RELEASE_FILE_PATTERN, $name, $m)) {
+        fail('Not a release file name.', 400);
+    }
+    return [$m[1], $m[2] === '.apk' ? 'android' : 'windows'];
+}

@@ -83,11 +83,16 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           VERSION="${VERSION%%+*}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          # The permanent QR/download link is the GitHub Pages redirect at
-          # https://vincentjhon31.github.io/barangay-events/ (docs/index.html),
-          # which always forwards to this versioned file.
           cp build/app/outputs/flutter-apk/app-release.apk "build/app/outputs/flutter-apk/e-calendar-${VERSION}.apk"
           ls -lh build/app/outputs/flutter-apk/e-calendar-*.apk
+
+      - name: Publish APK to the download page
+        # https://calendar.bongabong.gov.ph/download/ — where people download
+        # the app and where the app checks for updates (lib/app_update_service_io.dart).
+        # Fails the release if it can't, since nobody would get the update.
+        env:
+          RELEASE_UPLOAD_SECRET: ${{ secrets.RELEASE_UPLOAD_SECRET }}
+        run: python3 scripts/publish_release.py android "build/app/outputs/flutter-apk/e-calendar-${{ steps.version.outputs.version }}.apk"
 
       - name: Build categorized changelog
         id: build_changelog
@@ -122,6 +127,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  notify:
+    # After both app jobs, so Windows users aren't told about an update whose
+    # installer isn't on the download page yet. Still runs if only the
+    # Windows job failed — Android users shouldn't miss out because of it.
+    needs: [build, build-windows]
+    if: ${{ always() && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
       - name: Notify app-update push channel
         # Non-fatal: a release should still succeed even if this secret
         # hasn't been configured yet (see README.md's "Push Notifications"
@@ -138,7 +152,7 @@ jobs:
 
           VERSION="${GITHUB_REF_NAME#v}"
           VERSION="${VERSION%%+*}"
-          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${GITHUB_REF_NAME}"
+          RELEASE_URL="https://calendar.bongabong.gov.ph/download/"
 
           curl -sf -X POST \
             "https://xuxnoydakqembrytdbyz.supabase.co/functions/v1/send-app-update-notification" \
@@ -203,6 +217,16 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
             "/DMyAppVersion=$version" `
             "windows\installer\eBongabongCalendar.iss"
+
+      - name: Publish Windows installer to the download page
+        # Same as the APK step in the build job.
+        shell: pwsh
+        env:
+          RELEASE_UPLOAD_SECRET: ${{ secrets.RELEASE_UPLOAD_SECRET }}
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v') -replace '\+.*',''
+          python scripts\publish_release.py windows "installer_output\e-calendar-$version-setup.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Add Windows installer to GitHub Release
         uses: softprops/action-gh-release@v2

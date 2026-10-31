@@ -18,6 +18,14 @@
     but it can't catch everything.
 -->
 
+## 1.18.0
+- Post an event that happens on several dates in one go, like every weekend of the month: use "More dates" or "Repeat every week" when adding an event. Each date gets its own reminder, and everyone shares one chat and the same files.
+- When editing or deleting an event with several dates, choose just that date or all of them.
+- See all your event chats in one place: tap "Chats" at the top of the Feed. Search by event name or by words in a message.
+- Tapping a notification now opens the event only once.
+- Your choice of dots or event titles on the calendar now follows you to your other phones and computers.
+- Updates now come from the Municipality's own website: calendar.bongabong.gov.ph/download
+
 ## 1.17.0
 - Chat with others on any public or group event: tap the round chat button on the event's details.
 - Send emoji, a quick thumbs up, and edit or delete your own messages.

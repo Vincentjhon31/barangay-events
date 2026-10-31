@@ -7,9 +7,10 @@ How it stays secure: every request carries the user's Supabase login token, and 
 Everything goes **inside the subdomain's folder** (`calendar`, the folder that holds the web app's `index.html`):
 
 ```
-hostinger/public_html/api/     -> calendar/api/
-hostinger/public_html/media/   -> calendar/media/
-hostinger/private/             -> calendar/private/
+hostinger/public_html/api/      -> calendar/api/
+hostinger/public_html/media/    -> calendar/media/
+hostinger/public_html/download/ -> calendar/download/   (the app's download page, see below)
+hostinger/private/              -> calendar/private/
 hostinger/tests/               -> do NOT upload (local tests for developers)
 ```
 
@@ -57,10 +58,32 @@ calendar/
 
 The API and everyone's files now live in the same folder as the web app, so:
 
-- [ ] Upload/replace the web build's files — **never delete `api/`, `media/`, or `private/`**.
+- [ ] Upload/replace the web build's files — **never delete `api/`, `media/`, `private/`, `download/`, or `lgu-admin/`**.
 - [ ] Don't use "delete all and re-upload" on the `calendar` folder. **Deleting `private/` deletes every event attachment; deleting `media/` deletes everyone's uploaded profile pictures.** If you must clear the folder, download those three folders first and put them back.
 - [ ] If the web build comes with its own `.htaccess` that sends every address to `index.html`, make sure it keeps the usual "skip real files" lines (`RewriteCond %{REQUEST_FILENAME} !-f` and `!-d`), or `/api/...` stops working.
 - [ ] Afterwards, open **https://calendar.bongabong.gov.ph/api/** again: `"ok": true` and `"private_protected": true`.
+
+## App downloads (`download/`)
+
+**https://calendar.bongabong.gov.ph/download/** is where people download the Android and Windows apps, and where the apps (1.18 and newer) check for updates. The release workflow fills it automatically: when a version tag is pushed, it uploads the APK and the Windows installer through `api/releases.php` and rewrites `download/releases.json` (every version and its "What's new" notes) and `download/latest.json` (what the app's update check reads). Only the newest 3 versions keep their files; older versions keep their notes. Download buttons go through `api/download.php`, which counts downloads for the store page.
+
+`api/releases.php` has its **own secret**, separate from everything else on the hosting account, and can only write inside `download/`. Without the secret file, uploads are switched off.
+
+### One-time setup
+1. Upload `hostinger/public_html/download/` into `calendar/download/` — including its hidden **`.htaccess`** (no folder listings, no scripts, files always download).
+2. Upload the new and updated API files into `calendar/api/`: `releases.php`, `download.php`, and `_lib.php`.
+3. Make a long random secret (at least 32 characters; e.g. run `python -c "import secrets; print(secrets.token_urlsafe(48))"`). Put it, alone on one line, in a new file **`calendar/private/release-upload-secret.txt`**.
+4. Put the **same value** in the GitHub repository: Settings → Secrets and variables → Actions → New repository secret, named **`RELEASE_UPLOAD_SECRET`**. A release fails without it.
+5. Optional: so the store page's download total doesn't restart at zero, add `const DOWNLOADS_BEFORE_MOVE = <number>;` to `private/api-config.php`, with the GitHub total at the time of the switch (`gh api "repos/<owner>/<repo>/releases?per_page=100" --jq '[.[].assets[].download_count] | add'`).
+6. Open https://calendar.bongabong.gov.ph/download/ — before the first release it says "The first download will appear here soon."
+
+To put an existing version on the page without a new release (e.g. to fill it before switching), run from the repository folder, with the secret in `RELEASE_UPLOAD_SECRET` and the tag in `GITHUB_REF_NAME` (e.g. `v1.17.0+29`):
+```
+python scripts/publish_release.py android e-calendar-1.17.0.apk
+python scripts/publish_release.py windows e-calendar-1.17.0-setup.exe
+```
+
+If the secret ever leaks, replace the value in both places; the old one stops working immediately.
 
 ## Troubleshooting
 
@@ -72,10 +95,13 @@ The API and everyone's files now live in the same folder as the web app, so:
 | The portal shows "Couldn't reach the file server" | The `api` folder isn't uploaded, or the portal runs on an address not in `ALLOWED_ORIGINS` in `api-config.php` — add it there. |
 | "That file is too large" for small files | Raise upload_max_filesize / post_max_size (step 6). |
 | Pictures upload but don't show | `media/` permissions (755), or the `MEDIA_PUBLIC_URL` address in `api-config.php`. |
+| Release fails at "Publish APK to the download page" with 503 | `private/release-upload-secret.txt` is missing or shorter than 32 characters. |
+| … with 403 | The GitHub secret `RELEASE_UPLOAD_SECRET` doesn't match the file on the server. |
+| The download page says the list couldn't be loaded | `download/releases.json` was deleted (e.g. by a web deploy). Re-run the release's publish steps, or publish the current files as above. |
 
 ## Testing locally (developers)
 
 ```
 python hostinger/tests/run_tests.py
 ```
-Runs the API under PHP's built-in server against a fake Supabase, in the same `calendar/` layout, and checks permissions, file types, signed links, profile pictures, the backup endpoints, and that the health check catches an unprotected `private` folder (PHP's built-in server ignores `.htaccess`, so there it correctly reports `false`). Needs PHP 8 with gd, curl, and fileinfo. Doesn't touch Hostinger or Supabase.
+Runs the API under PHP's built-in server against a fake Supabase, in the same `calendar/` layout, and checks permissions, file types, signed links, profile pictures, the backup endpoints, release uploads and the download counter, and that the health check catches an unprotected `private` folder (PHP's built-in server ignores `.htaccess`, so there it correctly reports `false`). Needs PHP 8 with gd, curl, and fileinfo. Doesn't touch Hostinger or Supabase.

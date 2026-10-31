@@ -778,6 +778,224 @@ class AppLocalizationsFil extends AppLocalizations {
   }
 
   @override
+  String get chatsButton => 'Mga chat';
+
+  @override
+  String get chatsButtonTooltip => 'Iyong mga chat';
+
+  @override
+  String chatsButtonUnreadTooltip(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Iyong mga chat · $count hindi pa nababasa',
+      one: 'Iyong mga chat · 1 hindi pa nababasa',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get chatsTitle => 'Mga chat';
+
+  @override
+  String get chatsSubtitle =>
+      'Lahat ng chat ng kaganapan na kasali ka, pinakabago muna.';
+
+  @override
+  String get chatsSearchLabel => 'Maghanap sa mga chat';
+
+  @override
+  String get chatsSearchHint => 'Pangalan ng kaganapan, o salita sa mensahe';
+
+  @override
+  String get chatsFilterAll => 'Lahat';
+
+  @override
+  String get chatsFilterUnread => 'Hindi pa nababasa';
+
+  @override
+  String get chatsFilterGroups => 'Mga grupo';
+
+  @override
+  String get chatsFilterPublic => 'Pampubliko';
+
+  @override
+  String get chatsTypePublic => 'Pampubliko';
+
+  @override
+  String get chatsEmpty =>
+      'Wala pang chat. Magbukas ng kaganapan at pindutin ang chat button nito para magsimula. Lalabas dito ang mga chat na sinalihan mo, ang chat ng sarili mong mga kaganapan, at ang chat ng iyong mga grupo.';
+
+  @override
+  String get chatsEmptyFiltered => 'Walang tugmang chat.';
+
+  @override
+  String get chatsLoadFailed =>
+      'Hindi ma-load ang mga pinakabagong mensahe. Suriin ang iyong koneksyon at subukang muli.';
+
+  @override
+  String chatsPreviewYou(String message) {
+    return 'Ikaw: $message';
+  }
+
+  @override
+  String chatsPreviewOther(String name, String message) {
+    return '$name: $message';
+  }
+
+  @override
+  String chatsMessageCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count na mensahe',
+      one: '1 mensahe',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get chatsSectionChats => 'Mga chat';
+
+  @override
+  String get chatsSectionMessages => 'Mga mensahe';
+
+  @override
+  String get chatsSearchTooShort =>
+      'Mag-type ng hindi bababa sa 2 titik para maghanap sa loob ng mga mensahe.';
+
+  @override
+  String get chatsSearchNoChats => 'Walang tugmang pangalan ng chat.';
+
+  @override
+  String chatsSearchNoMessages(String query) {
+    return 'Walang mensaheng may \"$query\".';
+  }
+
+  @override
+  String get chatsSearchFailed =>
+      'Hindi makapaghanap ng mensahe. Suriin ang iyong koneksyon at subukang muli.';
+
+  @override
+  String get moreDatesTitle => 'Iba pang petsa';
+
+  @override
+  String get moreDatesHint =>
+      'Parehong oras at lugar sa ibang araw, gaya ng tuwing Sabado at Linggo. May sariling paalala ang bawat petsa, at iisa ang chat at mga file para sa lahat.';
+
+  @override
+  String get moreDatesAdd => 'Magdagdag ng petsa';
+
+  @override
+  String get moreDatesRepeatWeekly => 'Ulitin bawat linggo';
+
+  @override
+  String get moreDatesPickHelp => 'Magdagdag ng petsa';
+
+  @override
+  String get moreDatesRepeatUntil => 'Ulitin bawat linggo hanggang';
+
+  @override
+  String get moreDatesFirst => 'Unang petsa';
+
+  @override
+  String get moreDatesRemove => 'Alisin ang petsang ito';
+
+  @override
+  String moreDatesCount(int count) {
+    return '$count na petsa';
+  }
+
+  @override
+  String get moreDatesOverlap =>
+      'Nagsasapaw ang petsang iyan sa isa pang petsa ng kaganapang ito.';
+
+  @override
+  String get moreDatesSomeOverlap =>
+      'May mga petsang nagsasapawan. Alisin ang isa, o paikliin ang kaganapan.';
+
+  @override
+  String moreDatesTooMany(int max) {
+    return 'Hanggang $max na petsa lang ang puwede sa isang kaganapan.';
+  }
+
+  @override
+  String get moreDatesTooLongForWeekly =>
+      'Hindi puwedeng ulitin bawat linggo ang kaganapang lampas 6 na araw. Idagdag na lang isa-isa ang mga petsa nito.';
+
+  @override
+  String moreDatesAdded(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Naidagdag ang $count na petsa.',
+      one: 'Naidagdag ang 1 petsa.',
+      zero:
+          'Walang naidagdag: nagsasapaw ang mga linggong iyon sa mga petsang nasa listahan na.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String moreDatesSomeFailed(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Hindi na-save ang $count na petsa. Suriin ang iyong koneksyon, saka i-edit ang kaganapan para idagdag ulit ang mga ito.',
+      one:
+          'Hindi na-save ang 1 petsa. Suriin ang iyong koneksyon, saka i-edit ang kaganapan para idagdag ito ulit.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get moreDatesCreatorOnly =>
+      'Ang nag-post lang ng kaganapang ito ang puwedeng magdagdag o mag-alis ng mga petsa nito.';
+
+  @override
+  String get editingOneDateNote =>
+      'Isa ito sa mga petsa ng kaganapang may ilang petsa. Sa petsang ito lang mailalapat ang iyong mga pagbabago.';
+
+  @override
+  String editingAllDatesNote(int count) {
+    return 'Mailalapat ang iyong mga pagbabago sa lahat ng $count na petsa ng kaganapang ito.';
+  }
+
+  @override
+  String get seriesEditTitle => 'Aling mga petsa ang ie-edit?';
+
+  @override
+  String get seriesDeleteTitle => 'Aling mga petsa ang buburahin?';
+
+  @override
+  String seriesScopeBody(String title, int count) {
+    return 'Nasa $count na petsa ang \"$title\".';
+  }
+
+  @override
+  String get seriesThisDate => 'Ang petsang ito lang';
+
+  @override
+  String seriesAllDates(int count) {
+    return 'Lahat ng $count na petsa';
+  }
+
+  @override
+  String get detailDates => 'Mga petsa';
+
+  @override
+  String feedMoreDates(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '+$count pang petsa',
+      one: '+1 pang petsa',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String typeHelperCalendar(String calendar) {
     return 'Makikita ito ng lahat sa tab na $calendar, at aabisuhan ang lahat.';
   }
@@ -1719,7 +1937,7 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get privacyCollectBody =>
-      'Kapag gumawa ka ng account, kinokolekta namin ang iyong email address at ang mga detalyeng idadagdag mo sa iyong profile — pangalan, departamento, numero ng telepono, address, maikling bio, at larawan sa profile: isa sa mga nakahandang larawan ng app, o larawang pipiliin mo mula sa gallery ng iyong device (ang isang larawang pipiliin mo lang ang binabasa ng app, at hindi nito ginagamit ang iyong camera). Ang mga na-upload na larawan at mga file na idinadagdag mo sa mga kaganapan ay iniimbak sa sariling web server ng munisipyo. Iniimbak din namin ang mga kaganapan, grupo, at kagustuhan (wika, tema, sukat ng display, paalala) na itinakda mo habang ginagamit ang app.';
+      'Kapag gumawa ka ng account, kinokolekta namin ang iyong email address at ang mga detalyeng idadagdag mo sa iyong profile — pangalan, departamento, numero ng telepono, address, maikling bio, at larawan sa profile: isa sa mga nakahandang larawan ng app, o larawang pipiliin mo mula sa gallery ng iyong device (ang isang larawang pipiliin mo lang ang binabasa ng app, at hindi nito ginagamit ang iyong camera). Ang mga na-upload na larawan at mga file na idinadagdag mo sa mga kaganapan ay iniimbak sa sariling web server ng munisipyo. Iniimbak din namin ang mga kaganapan, grupo, at kagustuhan (wika, tema, sukat ng display, view ng kalendaryo, paalala) na itinakda mo habang ginagamit ang app.';
 
   @override
   String get privacyUseHeading => 'Paano Namin Ginagamit ang Iyong Impormasyon';

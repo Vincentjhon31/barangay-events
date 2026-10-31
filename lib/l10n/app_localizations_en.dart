@@ -772,6 +772,222 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get chatsButton => 'Chats';
+
+  @override
+  String get chatsButtonTooltip => 'Your chats';
+
+  @override
+  String chatsButtonUnreadTooltip(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Your chats · $count unread',
+      one: 'Your chats · 1 unread',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get chatsTitle => 'Chats';
+
+  @override
+  String get chatsSubtitle => 'Every event chat you\'re in, newest first.';
+
+  @override
+  String get chatsSearchLabel => 'Search chats';
+
+  @override
+  String get chatsSearchHint => 'Event name, or words in a message';
+
+  @override
+  String get chatsFilterAll => 'All';
+
+  @override
+  String get chatsFilterUnread => 'Unread';
+
+  @override
+  String get chatsFilterGroups => 'Groups';
+
+  @override
+  String get chatsFilterPublic => 'Public';
+
+  @override
+  String get chatsTypePublic => 'Public';
+
+  @override
+  String get chatsEmpty =>
+      'No chats yet. Open an event and tap its chat button to start one. Chats you join, chats on your own events, and your groups\' chats all show up here.';
+
+  @override
+  String get chatsEmptyFiltered => 'No chats match.';
+
+  @override
+  String get chatsLoadFailed =>
+      'Couldn\'t load the latest messages. Check your connection and try again.';
+
+  @override
+  String chatsPreviewYou(String message) {
+    return 'You: $message';
+  }
+
+  @override
+  String chatsPreviewOther(String name, String message) {
+    return '$name: $message';
+  }
+
+  @override
+  String chatsMessageCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count messages',
+      one: '1 message',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get chatsSectionChats => 'Chats';
+
+  @override
+  String get chatsSectionMessages => 'Messages';
+
+  @override
+  String get chatsSearchTooShort =>
+      'Type at least 2 letters to search inside messages.';
+
+  @override
+  String get chatsSearchNoChats => 'No chat names match.';
+
+  @override
+  String chatsSearchNoMessages(String query) {
+    return 'No messages contain \"$query\".';
+  }
+
+  @override
+  String get chatsSearchFailed =>
+      'Couldn\'t search messages. Check your connection and try again.';
+
+  @override
+  String get moreDatesTitle => 'More dates';
+
+  @override
+  String get moreDatesHint =>
+      'Same time and place on other days, like every weekend. Each date gets its own reminders, and everyone shares one chat and the same files.';
+
+  @override
+  String get moreDatesAdd => 'Add a date';
+
+  @override
+  String get moreDatesRepeatWeekly => 'Repeat every week';
+
+  @override
+  String get moreDatesPickHelp => 'Add a date';
+
+  @override
+  String get moreDatesRepeatUntil => 'Repeat every week until';
+
+  @override
+  String get moreDatesFirst => 'First date';
+
+  @override
+  String get moreDatesRemove => 'Remove this date';
+
+  @override
+  String moreDatesCount(int count) {
+    return '$count dates';
+  }
+
+  @override
+  String get moreDatesOverlap =>
+      'That date overlaps another date of this event.';
+
+  @override
+  String get moreDatesSomeOverlap =>
+      'Some dates overlap each other. Remove one, or make the event shorter.';
+
+  @override
+  String moreDatesTooMany(int max) {
+    return 'An event can have up to $max dates.';
+  }
+
+  @override
+  String get moreDatesTooLongForWeekly =>
+      'An event longer than 6 days can\'t repeat every week. Add its dates one by one instead.';
+
+  @override
+  String moreDatesAdded(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Added $count dates.',
+      one: 'Added 1 date.',
+      zero: 'No dates added: those weeks overlap dates already on the list.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String moreDatesSomeFailed(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          '$count dates couldn\'t be saved. Check your connection, then edit the event to add them again.',
+      one:
+          '1 date couldn\'t be saved. Check your connection, then edit the event to add it again.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get moreDatesCreatorOnly =>
+      'Only the person who posted this event can add or remove its dates.';
+
+  @override
+  String get editingOneDateNote =>
+      'This is one date of an event on several dates. Your changes apply to this date only.';
+
+  @override
+  String editingAllDatesNote(int count) {
+    return 'Your changes apply to all $count dates of this event.';
+  }
+
+  @override
+  String get seriesEditTitle => 'Edit which dates?';
+
+  @override
+  String get seriesDeleteTitle => 'Delete which dates?';
+
+  @override
+  String seriesScopeBody(String title, int count) {
+    return '\"$title\" is on $count dates.';
+  }
+
+  @override
+  String get seriesThisDate => 'Only this date';
+
+  @override
+  String seriesAllDates(int count) {
+    return 'All $count dates';
+  }
+
+  @override
+  String get detailDates => 'Dates';
+
+  @override
+  String feedMoreDates(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '+$count more dates',
+      one: '+1 more date',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String typeHelperCalendar(String calendar) {
     return 'Everyone sees it under the $calendar tab, and everyone gets a notification.';
   }
@@ -1699,7 +1915,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get privacyCollectBody =>
-      'When you create an account, we collect your email address and the details you choose to add to your profile — display name, department, phone number, address, a short bio, and a profile picture: either one of the app\'s preset pictures, or a photo you choose from your device\'s gallery (the app only reads the one photo you pick, and never uses your camera). Uploaded photos and files you attach to events are stored on the municipality\'s own web server. We also store the events, groups, and preferences (language, theme, display size, reminders) you set up while using the app.';
+      'When you create an account, we collect your email address and the details you choose to add to your profile — display name, department, phone number, address, a short bio, and a profile picture: either one of the app\'s preset pictures, or a photo you choose from your device\'s gallery (the app only reads the one photo you pick, and never uses your camera). Uploaded photos and files you attach to events are stored on the municipality\'s own web server. We also store the events, groups, and preferences (language, theme, display size, calendar view, reminders) you set up while using the app.';
 
   @override
   String get privacyUseHeading => 'How We Use Your Information';

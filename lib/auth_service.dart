@@ -268,18 +268,19 @@ abstract class AppAuthService {
   Future<void> deleteUploadedPhoto();
 
   /// Raw `theme_mode`/`ui_style`/`language`/`display_mode`/
-  /// `reminder_preference` values from the signed-in user's profile
-  /// (mirrors `ThemeMode`/`UiStyle`/`Locale`/`DisplayMode`/
-  /// `ReminderPreference` `.name`s/codes), or null if unavailable — lets a
-  /// chosen appearance/language/display-size/reminder setting follow the
-  /// user across devices.
+  /// `reminder_preference`/`calendar_cell_style` values from the signed-in
+  /// user's profile (mirrors `ThemeMode`/`UiStyle`/`Locale`/`DisplayMode`/
+  /// `ReminderPreference`/`CalendarCellStyle` `.name`s/codes), or null if
+  /// unavailable — lets a chosen appearance/language/display-size/reminder/
+  /// calendar-cell setting follow the user across devices.
   Future<
       ({
         String themeMode,
         String uiStyle,
         String language,
         String displayMode,
-        String reminderPreference
+        String reminderPreference,
+        String calendarCellStyle
       })?> fetchPreferences();
   Future<void> savePreferences({
     required String themeMode,
@@ -287,6 +288,7 @@ abstract class AppAuthService {
     required String language,
     required String displayMode,
     required String reminderPreference,
+    required String calendarCellStyle,
   });
 
   /// Persists the Calendar tab's Group filter selection (see
@@ -523,7 +525,8 @@ class SupabaseAuthService implements AppAuthService {
         String uiStyle,
         String language,
         String displayMode,
-        String reminderPreference
+        String reminderPreference,
+        String calendarCellStyle
       })?> fetchPreferences() async {
     final user = _client.auth.currentUser;
     if (user == null) return null;
@@ -532,7 +535,8 @@ class SupabaseAuthService implements AppAuthService {
       final row = await _client
           .from('profiles')
           .select(
-              'theme_mode, ui_style, language, display_mode, reminder_preference')
+              'theme_mode, ui_style, language, display_mode, reminder_preference, '
+              'calendar_cell_style')
           .eq('id', user.id)
           .maybeSingle();
       final mode = row?['theme_mode'] as String?;
@@ -540,11 +544,13 @@ class SupabaseAuthService implements AppAuthService {
       final language = row?['language'] as String?;
       final displayMode = row?['display_mode'] as String?;
       final reminderPreference = row?['reminder_preference'] as String?;
+      final calendarCellStyle = row?['calendar_cell_style'] as String?;
       if (mode == null ||
           style == null ||
           language == null ||
           displayMode == null ||
-          reminderPreference == null) {
+          reminderPreference == null ||
+          calendarCellStyle == null) {
         return null;
       }
       return (
@@ -553,6 +559,7 @@ class SupabaseAuthService implements AppAuthService {
         language: language,
         displayMode: displayMode,
         reminderPreference: reminderPreference,
+        calendarCellStyle: calendarCellStyle,
       );
     } catch (_) {
       return null;
@@ -566,18 +573,21 @@ class SupabaseAuthService implements AppAuthService {
     required String language,
     required String displayMode,
     required String reminderPreference,
+    required String calendarCellStyle,
   }) async {
     final user = _client.auth.currentUser;
     if (user == null) return;
 
     // A targeted update (not upsert) so this never clobbers other profile
-    // fields when only appearance/language/display-size/reminders changed.
+    // fields when only appearance/language/display-size/reminders/
+    // calendar-cell style changed.
     await _client.from('profiles').update({
       'theme_mode': themeMode,
       'ui_style': uiStyle,
       'language': language,
       'display_mode': displayMode,
       'reminder_preference': reminderPreference,
+      'calendar_cell_style': calendarCellStyle,
     }).eq('id', user.id);
   }
 
@@ -663,6 +673,7 @@ class MemoryAuthService implements AppAuthService {
   String? _language;
   String? _displayMode;
   String? _reminderPreference;
+  String? _calendarCellStyle;
   String _kioskPasscode = '0000';
 
   @override
@@ -829,18 +840,21 @@ class MemoryAuthService implements AppAuthService {
         String uiStyle,
         String language,
         String displayMode,
-        String reminderPreference
+        String reminderPreference,
+        String calendarCellStyle
       })?> fetchPreferences() async {
     final mode = _themeMode;
     final style = _uiStyle;
     final language = _language;
     final displayMode = _displayMode;
     final reminderPreference = _reminderPreference;
+    final calendarCellStyle = _calendarCellStyle;
     if (mode == null ||
         style == null ||
         language == null ||
         displayMode == null ||
-        reminderPreference == null) {
+        reminderPreference == null ||
+        calendarCellStyle == null) {
       return null;
     }
     return (
@@ -849,6 +863,7 @@ class MemoryAuthService implements AppAuthService {
       language: language,
       displayMode: displayMode,
       reminderPreference: reminderPreference,
+      calendarCellStyle: calendarCellStyle,
     );
   }
 
@@ -859,12 +874,14 @@ class MemoryAuthService implements AppAuthService {
     required String language,
     required String displayMode,
     required String reminderPreference,
+    required String calendarCellStyle,
   }) async {
     _themeMode = themeMode;
     _uiStyle = uiStyle;
     _language = language;
     _displayMode = displayMode;
     _reminderPreference = reminderPreference;
+    _calendarCellStyle = calendarCellStyle;
   }
 
   @override

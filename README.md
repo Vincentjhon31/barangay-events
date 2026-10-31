@@ -4,20 +4,19 @@ A Flutter calendar app for barangay event scheduling and sharing.
 
 ## Download the App
 
-**Permanent download link (always the latest version):**
+**Download page (Android and Windows, always the latest version):**
 
-https://vincentjhon31.github.io/barangay-events/
+https://calendar.bongabong.gov.ph/download/
 
-Or scan this QR code — it points to the same permanent link, so it never needs
-to be reprinted when a new version is released:
+The page shows its own QR code. The release workflow fills it on every
+release, and the app checks it for updates — see `hostinger/README.md`
+("App downloads").
 
-![Download e-Calendar](docs/download-qr.png)
-
-The link is a small GitHub Pages redirect ([docs/index.html](docs/index.html))
-that always forwards to the newest release's **versioned** APK
-(`e-calendar-1.3.0.apk`, `e-calendar-1.4.0.apk`, …), so downloaded files show
-which version they are instead of all sharing one name. GitHub Pages must stay
-enabled (Settings → Pages → Deploy from branch `main`, folder `/docs`).
+The old address https://vincentjhon31.github.io/barangay-events/ (and the
+QR code in `docs/download-qr.png`, which points there) forwards to the
+download page ([docs/index.html](docs/index.html); after the code repository
+goes private, the public stub repository serves it — see `GITHUB.md`,
+section 5).
 
 ## Local Build
 

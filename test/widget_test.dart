@@ -1836,6 +1836,11 @@ void main() {
         300,
         scrollable: find.byType(Scrollable).first,
       );
+      // scrollUntilVisible can stop with the button just below the edge
+      // (the "More dates" panel sits above it), and the "Added …" message
+      // from saving the event can still cover the bottom of the screen.
+      await tester.ensureVisible(find.text('Save changes'));
+      ScaffoldMessenger.of(tester.element(find.text('Save changes'))).hideCurrentSnackBar();
       await tester.pumpAndSettle();
       await tester.tap(find.text('Save changes'));
       await tester.pumpAndSettle();
@@ -2331,6 +2336,39 @@ void main() {
       SharedPreferences.setMockInitialValues({'app_reminder_preference': 'off'});
       final controller = await ThemeController.load();
       expect(controller.reminderPreference, ReminderPreference.off);
+    });
+  });
+
+  group('calendar cell style follows the profile', () {
+    test('picking Event titles saves it to the profile', () async {
+      SharedPreferences.setMockInitialValues({});
+      final auth = MemoryAuthService.signedIn();
+      final controller = ThemeController()..attachAuthService(auth);
+
+      await controller.setCalendarCellStyle(CalendarCellStyle.titles);
+
+      final saved = await auth.fetchPreferences();
+      expect(saved?.calendarCellStyle, 'titles');
+    });
+
+    test('a saved choice is restored on the next session', () async {
+      SharedPreferences.setMockInitialValues({});
+      final controller = ThemeController();
+
+      await controller.applyRemote(calendarCellStyle: 'titles');
+
+      expect(controller.calendarCellStyle, CalendarCellStyle.titles);
+      final reloaded = await ThemeController.load();
+      expect(reloaded.calendarCellStyle, CalendarCellStyle.titles);
+    });
+
+    test('an unknown value is ignored', () async {
+      SharedPreferences.setMockInitialValues({});
+      final controller = ThemeController();
+
+      await controller.applyRemote(calendarCellStyle: 'bogus');
+
+      expect(controller.calendarCellStyle, CalendarCellStyle.dots);
     });
   });
 
@@ -2838,6 +2876,25 @@ void main() {
       expect(find.text('Barangay Assembly'), findsOneWidget);
     });
 
+    testWidgets('a tap delivered twice opens the details only once',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+          pushNotificationServiceFactory: () async =>
+              _TappedNotificationPushService('seed-assembly', times: 2),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Event Details'), findsOneWidget);
+      // One back closes it: no second copy underneath.
+      Navigator.of(tester.element(find.text('Event Details'))).pop();
+      await tester.pumpAndSettle();
+      expect(find.text('Event Details'), findsNothing);
+    });
+
     testWidgets('tapping a notification for an unknown event does nothing',
         (WidgetTester tester) async {
       await tester.pumpWidget(
@@ -3305,10 +3362,12 @@ void main() {
 /// Fires [onNotificationTapped] with a fixed [eventId] as soon as
 /// [initialize] runs — simulates the app cold-starting from a tapped push
 /// notification (see PushNotificationService.onNotificationTapped).
+/// [times] > 1 delivers that same tap again, as Android can.
 class _TappedNotificationPushService implements PushNotificationService {
-  _TappedNotificationPushService(this.eventId);
+  _TappedNotificationPushService(this.eventId, {this.times = 1});
 
   final String eventId;
+  final int times;
 
   @override
   Future<void> initialize({
@@ -3319,7 +3378,9 @@ class _TappedNotificationPushService implements PushNotificationService {
     void Function(String eventId)? onChatNotificationTapped,
     bool Function(String eventId)? isChatOpen,
   }) async {
-    onNotificationTapped?.call(eventId);
+    for (var i = 0; i < times; i++) {
+      onNotificationTapped?.call(eventId);
+    }
   }
 
   @override

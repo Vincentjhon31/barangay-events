@@ -42,6 +42,10 @@ interface BarangayEventRow {
   calendar_name?: string | null;
   created_by_name: string | null;
   created_by_department: string | null;
+  // An event on several dates is one row per date, all sharing the home
+  // row's id here (the home row's own series_id is its own id); null for an
+  // ordinary event. See "Events on several dates" in barangay_events.sql.
+  series_id?: string | null;
 }
 
 interface WebhookPayload {
@@ -84,7 +88,8 @@ function resolveTopic(event: BarangayEventRow): string | null {
 // group is renamed (rename_group in barangay_events.sql) — without this,
 // renaming a group with 30 events would send its members 30 pushes.
 // calendar_name likewise when a calendar is renamed.
-const IGNORED_UPDATE_COLUMNS = new Set(["group_name", "calendar_name", "updated_at"]);
+// series_id: a date taking over as home after the old home date was deleted.
+const IGNORED_UPDATE_COLUMNS = new Set(["group_name", "calendar_name", "updated_at", "series_id"]);
 
 function hasMeaningfulChange(
   record: BarangayEventRow | null,
@@ -126,10 +131,13 @@ function buildMessage(
     };
   }
 
+  // The home date of an event on several dates speaks for all of them.
+  const severalDates = event.series_id === event.id ? " (on several dates)" : "";
+
   if (event.event_type === "shared") {
     return {
       title: event.group_name ?? "Group update",
-      body: `New event: ${event.title}`,
+      body: `New event: ${event.title}${severalDates}`,
     };
   }
 
@@ -139,7 +147,7 @@ function buildMessage(
 
   return {
     title: calendarName ? `New ${calendarName} event` : "New public event",
-    body: author ? `${event.title} — posted by ${author}` : event.title,
+    body: author ? `${event.title}${severalDates} — posted by ${author}` : `${event.title}${severalDates}`,
   };
 }
 
@@ -174,6 +182,12 @@ Deno.serve(async (req) => {
   const event = payload.record ?? payload.old_record;
   if (!event) {
     return new Response("Ignored: no row data in payload", { status: 200 });
+  }
+
+  // Only the home date of an event on several dates notifies — otherwise
+  // posting, editing, or deleting "all dates" would send one push per date.
+  if (event.series_id && event.series_id !== event.id) {
+    return new Response("Ignored: another date of an event the home date already covers", { status: 200 });
   }
 
   if (payload.type === "UPDATE" && !hasMeaningfulChange(payload.record, payload.old_record)) {

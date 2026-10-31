@@ -28,11 +28,9 @@ BLOCKED = [
 ]
 
 
-def main():
-    if len(sys.argv) != 2:
-        sys.exit('usage: whats_new_for_release.py <tag, e.g. v1.17.0+29>')
-    version = re.sub(r'^v', '', sys.argv[1]).split('+')[0]
-
+def all_notes():
+    """Every version's bullets in NOTES_FILE, newest section first:
+    {"1.17.0": ["...", ...], ...}."""
     text = open(NOTES_FILE, encoding='utf-8').read()
     text = re.sub(r'<!--.*?-->', '', text, flags=re.S)
 
@@ -45,8 +43,13 @@ def main():
             items.setdefault(current, [])
         elif current and line.startswith('- ') and line[2:].strip():
             items[current].append(line[2:].strip())
+    return items
 
-    notes = items.get(version) or []
+
+def checked_notes(version):
+    """[version]'s bullets; exits with an explanation if there are none or
+    one mentions an internal detail (see the module docstring)."""
+    notes = all_notes().get(version) or []
     if not notes:
         sys.exit(f'No "What\'s new" notes for {version}. Add a "## {version}" section with "- " bullets '
                  f'at the top of {NOTES_FILE} (plain language for users), then tag again.')
@@ -59,8 +62,18 @@ def main():
     if problems:
         sys.exit('The "What\'s new" notes for ' + version + ' mention internal details. They are shown to '
                  'every user, so describe what people notice instead:\n' + '\n'.join(problems))
+    return notes
 
-    for note in notes:
+
+def version_of(tag):
+    """"v1.17.0+29" -> "1.17.0"."""
+    return re.sub(r'^v', '', tag).split('+')[0]
+
+
+def main():
+    if len(sys.argv) != 2:
+        sys.exit('usage: whats_new_for_release.py <tag, e.g. v1.17.0+29>')
+    for note in checked_notes(version_of(sys.argv[1])):
         print('- ' + note)
 
 

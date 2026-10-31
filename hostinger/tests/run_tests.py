@@ -227,6 +227,124 @@ def main():
         check('path traversal is refused', s == 400, (s, b))
         s, b, _ = request('POST', API + '/admin.php?action=put&area=media&path=avatars/x.php', 'tok-super', files={'file': ('x.php', fake, 'text/plain')})
         check('restore never writes a script', s == 400, (s, b))
+
+        # ---------- Release uploads (the release workflow) ----------
+        rel = API + '/releases.php'
+        download = os.path.join(site, 'download')
+        files_dir = os.path.join(download, 'files')
+
+        def raw(method, url, data=b'', headers=None):
+            req = urllib.request.Request(url, data=data, method=method, headers=dict(headers or {}))
+            try:
+                with urllib.request.urlopen(req, timeout=30) as res:
+                    return res.status, res.read()
+            except urllib.error.HTTPError as e:
+                return e.code, e.read()
+
+        s, b = raw('POST', rel + '?action=publish', b'{}', {'X-Release-Secret': 'x' * 40})
+        check('release uploads are off until the secret file exists', s == 503, (s, b))
+        secret = 'release-test-secret-' + uuid.uuid4().hex
+        with open(os.path.join(site, 'private', 'release-upload-secret.txt'), 'w') as f:
+            f.write(secret + '\n')
+        auth = {'X-Release-Secret': secret}
+        s, b = raw('POST', rel + '?action=publish', b'{}', {'X-Release-Secret': 'wrong' * 10})
+        check('a wrong release secret is refused', s == 403, (s, b))
+        s, b = raw('GET', rel)
+        check('releases.php only takes POST', s == 404, (s, b))
+
+        def upload(name, data, chunk=10):
+            for offset in range(0, len(data), chunk):
+                s, b = raw('POST', f'{rel}?action=chunk&name={name}&offset={offset}&total={len(data)}',
+                           data[offset:offset + chunk], auth)
+                if s != 200:
+                    return s, b
+            return s, b
+
+        apk = os.urandom(25)
+        s, b = upload('e-calendar-1.18.0.apk', apk)
+        check('a file arrives in pieces and appears when complete',
+              s == 200 and jbody(b).get('complete') is True
+              and open(os.path.join(files_dir, 'e-calendar-1.18.0.apk'), 'rb').read() == apk, (s, b))
+        for bad in ['evil.php', '..%2Fapi%2Fx.apk', 'e-calendar-1.18.0.apk.php', 'e-calendar-1.18.apk']:
+            s, b = raw('POST', f'{rel}?action=chunk&name={bad}&offset=0&total=5', b'12345', auth)
+            check(f'only release file names are accepted ({bad})', s == 400, (s, b))
+        s, b = raw('POST', f'{rel}?action=chunk&name=e-calendar-1.18.0-setup.exe&offset=0&total=20', b'0123456789', auth)
+        s, b = raw('POST', f'{rel}?action=chunk&name=e-calendar-1.18.0-setup.exe&offset=5&total=20', b'0123456789', auth)
+        check('a piece out of order is refused and says where to resume', s == 409 and jbody(b).get('received') == 10, (s, b))
+        s, b = raw('POST', f'{rel}?action=chunk&name=e-calendar-1.18.0-setup.exe&offset=10&total=15', b'0123456789', auth)
+        check('more data than the stated size is refused', s == 400, (s, b))
+
+        import hashlib
+
+        def publish(version, build, platform, data, changelog=None):
+            name = f'e-calendar-{version}' + ('.apk' if platform == 'android' else '-setup.exe')
+            body = {'version': version, 'build': build, 'date': '2026-11-05', 'platform': platform, 'file': name,
+                    'size': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
+                    'changelog': changelog or {}}
+            return raw('POST', rel + '?action=publish', json.dumps(body).encode(), dict(auth, **{'Content-Type': 'application/json'}))
+
+        def read_json(name):
+            with open(os.path.join(download, name), encoding='utf-8') as f:
+                return json.load(f)
+
+        s, b = publish('1.18.0', 30, 'android', b'not the uploaded bytes')
+        check('publishing checks the file against its size and checksum', s == 409, (s, b))
+        changelog = {'1.18.0': ['Chats page', '<b>bold</b>\x07'], '1.17.0': ['Event chat']}
+        s, b = publish('1.18.0', 30, 'android', apk, changelog)
+        latest = read_json('latest.json') if s == 200 else {}
+        check('publishing Android writes latest.json for Android only',
+              s == 200 and latest.get('android', {}).get('version') == '1.18.0'
+              and latest['android'].get('url', '').endswith('/download/files/e-calendar-1.18.0.apk')
+              and latest['android'].get('download', '').endswith('/api/download.php?file=e-calendar-1.18.0.apk')
+              and latest.get('windows') is None and latest.get('page', '').endswith('/download/'), (s, b))
+        releases = read_json('releases.json')['releases'] if s == 200 else []
+        check('the version list keeps every version\'s notes, newest first',
+              [r['version'] for r in releases] == ['1.18.0', '1.17.0']
+              and releases[0]['whats_new'] == ['Chats page', '<b>bold</b>'] and releases[1]['files'] == {}, releases)
+
+        exe = os.urandom(15)
+        upload('e-calendar-1.18.0-setup.exe', exe)
+        s, b = publish('1.18.0', 30, 'windows', exe)
+        latest = read_json('latest.json')
+        check('publishing Windows adds it to the same version',
+              s == 200 and latest['windows']['version'] == '1.18.0' and latest['android']['version'] == '1.18.0'
+              and set(read_json('releases.json')['releases'][0]['files']) == {'android', 'windows'}, (s, b))
+
+        for i, version in enumerate(['1.18.1', '1.18.2', '1.19.0']):
+            data = os.urandom(12)
+            upload(f'e-calendar-{version}.apk', data)
+            publish(version, 31 + i, 'android', data)
+        releases = read_json('releases.json')['releases']
+        old = [r for r in releases if r['version'] == '1.18.0'][0]
+        check('only the newest 3 versions keep their files; older notes stay',
+              read_json('latest.json')['android']['version'] == '1.19.0'
+              and not os.path.isfile(os.path.join(files_dir, 'e-calendar-1.18.0.apk'))
+              and 'android' not in old['files'] and 'windows' in old['files'] and old['whats_new'], releases)
+
+        # ---------- Download counter ----------
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *args, **kwargs):
+                return None
+
+        no_redirect = urllib.request.build_opener(NoRedirect)
+
+        def location(url):
+            try:
+                no_redirect.open(url, timeout=10)
+                return None
+            except urllib.error.HTTPError as e:
+                return e.code, e.headers.get('Location', '')
+
+        got = location(API + '/download.php?file=e-calendar-1.19.0.apk')
+        location(API + '/download.php?file=e-calendar-1.18.0-setup.exe')
+        check('a download is counted and sent to the file',
+              got and got[0] == 302 and got[1].endswith('/download/files/e-calendar-1.19.0.apk'), got)
+        got = location(API + '/download.php?file=e-calendar-1.18.0.apk')
+        check('a download that no longer exists goes to the page', got and got[1].endswith('/download/'), got)
+        got = location(API + '/download.php?file=../private/api-config.php')
+        check('the counter only sends release files', got and got[1].endswith('/download/'), got)
+        s, b, _ = request('GET', API + '/download.php?action=stats')
+        check('download stats count each platform', s == 200 and jbody(b) == {'android': 1, 'windows': 1, 'total': 2}, (s, b))
     finally:
         server.terminate()
         probe.terminate()

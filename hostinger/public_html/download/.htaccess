@@ -1,0 +1,34 @@
+# eBongabong Calendar download page.
+# Its files (files/, releases.json, latest.json) are written by the release
+# workflow through api/releases.php — never edit or delete them by hand, and
+# keep this whole folder when uploading a new web build.
+
+Options -Indexes
+
+# Nothing in here is ever run as a script.
+<FilesMatch "\.(php[0-9]?|phtml|phar|pl|py|cgi|sh|asp|aspx|jsp)$">
+  Require all denied
+</FilesMatch>
+# Lock file and half-finished uploads aren't for visitors.
+<FilesMatch "(^\.|\.part$|\.tmp$)">
+  Require all denied
+</FilesMatch>
+
+AddType application/vnd.android.package-archive .apk
+AddType application/vnd.microsoft.portable-executable .exe
+
+<IfModule mod_headers.c>
+  # The page and the version lists change with every release: always check.
+  <FilesMatch "\.(html|json)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+  # The lists are public; let the store page read them from another site.
+  <FilesMatch "\.json$">
+    Header set Access-Control-Allow-Origin "*"
+  </FilesMatch>
+  # App files always download instead of opening.
+  <FilesMatch "\.(apk|exe)$">
+    Header set Content-Disposition "attachment"
+    Header set X-Content-Type-Options "nosniff"
+  </FilesMatch>
+</IfModule>

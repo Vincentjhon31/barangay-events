@@ -4,16 +4,19 @@ import 'dart:io';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_update_service.dart';
-import 'whats_new.dart';
 
-class GitHubReleaseUpdateService implements AppUpdateService {
-  GitHubReleaseUpdateService({
-    required this.repositoryOwner,
-    required this.repositoryName,
-  });
+/// Checks the app's download page on the LGU's own site
+/// (https://calendar.bongabong.gov.ph/download/) for a newer version. The
+/// release workflow keeps `latest.json` there up to date — see
+/// scripts/publish_release.py and hostinger/public_html/api/releases.php.
+/// (Before 1.18 the app asked GitHub, which stops answering once the code
+/// repository is private.)
+class DownloadPageUpdateService implements AppUpdateService {
+  DownloadPageUpdateService({Uri? latestUri}) : latestUri = latestUri ?? defaultLatestUri;
 
-  final String repositoryOwner;
-  final String repositoryName;
+  static final Uri defaultLatestUri = Uri.https('calendar.bongabong.gov.ph', '/download/latest.json');
+
+  final Uri latestUri;
 
   @override
   Future<AppUpdateInfo?> checkForUpdate() async {
@@ -31,90 +34,57 @@ class GitHubReleaseUpdateService implements AppUpdateService {
   @override
   Future<AppReleaseInfo> fetchLatestRelease() async {
     final packageInfo = await PackageInfo.fromPlatform();
-    final currentVersion = packageInfo.version;
-    final currentBuildNumber = packageInfo.buildNumber;
-    final latestRelease = await _fetchLatestRelease();
-    final latestVersion = _normalizeVersion(latestRelease.tagName);
+    final latest = await _fetchLatest();
+    // Windows gets the installer; every other platform that checks (in
+    // practice Android) gets the APK.
+    final entry = latest[Platform.isWindows ? 'windows' : 'android'];
+    if (entry is! Map<String, dynamic>) {
+      throw HttpException('No download for this platform on the download page yet', uri: latestUri);
+    }
+    final pageUrl = latest['page'] as String? ?? latestUri.resolve('./').toString();
+    final build = (entry['build'] as num?)?.toInt() ?? 0;
+    final version = '${entry['version']}+$build';
+    final whatsNew = (entry['whats_new'] as List<dynamic>? ?? const [])
+        .whereType<String>()
+        .toList();
 
     return AppReleaseInfo(
-      version: latestVersion,
-      releaseUrl: latestRelease.releaseUrl,
-      downloadUrl: latestRelease.platformDownloadUrl ?? latestRelease.releaseUrl,
-      releaseNotes: latestRelease.body,
-      whatsNew: publicNotesFromReleaseBody(latestRelease.body),
+      version: version,
+      releaseUrl: pageUrl,
+      // Through the download counter when the page offers one.
+      downloadUrl: entry['download'] as String? ?? entry['url'] as String? ?? pageUrl,
+      releaseNotes: whatsNew.join('\n'),
+      whatsNew: whatsNew,
       isNewerThanInstalled: _isNewerVersion(
-        latestVersion,
-        '$currentVersion+$currentBuildNumber',
+        version,
+        '${packageInfo.version}+${packageInfo.buildNumber}',
       ),
     );
   }
 
-  Future<_GitHubRelease> _fetchLatestRelease() async {
+  Future<Map<String, dynamic>> _fetchLatest() async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     try {
-      final uri = Uri.https(
-        'api.github.com',
-        '/repos/$repositoryOwner/$repositoryName/releases/latest',
-      );
-      final request = await client.getUrl(uri);
+      final request = await client.getUrl(latestUri);
       request.headers
-        ..set(HttpHeaders.acceptHeader, 'application/vnd.github+json')
-        ..set(HttpHeaders.userAgentHeader, 'barangay-events-app');
+        ..set(HttpHeaders.acceptHeader, 'application/json')
+        ..set(HttpHeaders.cacheControlHeader, 'no-cache')
+        ..set(HttpHeaders.userAgentHeader, 'ebongabong-calendar-app');
 
       final response = await request.close();
       final body = await utf8.decodeStream(response);
 
       if (response.statusCode != HttpStatus.ok) {
         throw HttpException(
-          'GitHub release check failed with status ${response.statusCode}',
-          uri: uri,
+          'Update check failed with status ${response.statusCode}',
+          uri: latestUri,
         );
       }
-
-      final json = jsonDecode(body) as Map<String, dynamic>;
-      final assets = (json['assets'] as List<dynamic>? ?? [])
-          .whereType<Map<String, dynamic>>();
-      String? platformDownloadUrl;
-
-      for (final asset in assets) {
-        final name = (asset['name'] as String? ?? '').toLowerCase();
-        final url = asset['browser_download_url'] as String?;
-        if (url == null) continue;
-        // Windows ships as an installer (e-calendar-<version>-setup.exe),
-        // Android as a plain .apk — see windows/installer/*.iss and the
-        // release workflow's "Rename APK" step respectively.
-        final isPlatformAsset =
-            Platform.isWindows ? name.endsWith('-setup.exe') : name.endsWith('.apk');
-        if (isPlatformAsset) {
-          platformDownloadUrl = url;
-          break;
-        }
-      }
-
-      return _GitHubRelease(
-        tagName: json['tag_name'] as String? ?? '',
-        releaseUrl: json['html_url'] as String? ?? '',
-        platformDownloadUrl: platformDownloadUrl,
-        body: (json['body'] as String? ?? '').trim(),
-      );
+      return jsonDecode(body) as Map<String, dynamic>;
     } finally {
       client.close();
     }
   }
-}
-
-class _GitHubRelease {
-  const _GitHubRelease({
-    required this.tagName,
-    required this.releaseUrl,
-    required this.platformDownloadUrl,
-    required this.body,
-  });
-
-  final String tagName;
-  final String releaseUrl;
-  final String? platformDownloadUrl;
-  final String body;
 }
 
 String _normalizeVersion(String version) {

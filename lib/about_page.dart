@@ -28,7 +28,7 @@ class AboutPage extends StatefulWidget {
 class _AboutPageState extends State<AboutPage> {
   // Permanent URL printed on the QR code below — always forwards to the
   // newest release's APK (see docs/index.html), so it never goes stale.
-  static const String _downloadUrl = 'https://vincentjhon31.github.io/barangay-events/';
+  static const String _downloadUrl = 'https://calendar.bongabong.gov.ph/download/';
 
   String? _installedVersion;
 

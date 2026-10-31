@@ -30,10 +30,12 @@ class EventChatActivity extends ChangeNotifier {
   static const String _lastSeenPrefKey = 'event_chat_last_seen_v1';
 
   Map<String, EventChatSummary> _summaries = const {};
+  Set<String> _postedInEventIds = const {};
   final Map<String, int> _lastSeenMillis = {};
   StreamSubscription<void>? _activitySubscription;
   bool _refreshing = false;
   bool _refreshQueued = false;
+  Completer<void>? _followUp;
   bool _disposed = false;
 
   /// The event whose chat page is open right now, if any — a push for
@@ -49,30 +51,68 @@ class EventChatActivity extends ChangeNotifier {
   }
 
   /// Re-fetches every chat's summary. Calls that arrive mid-fetch are
-  /// coalesced into one follow-up fetch rather than piling up.
+  /// coalesced into one follow-up fetch rather than piling up, and complete
+  /// when that follow-up does — so awaiting this always means the counts
+  /// are at least as fresh as when it was called.
   Future<void> refresh() async {
     if (_refreshing) {
       _refreshQueued = true;
-      return;
+      return (_followUp ??= Completer<void>()).future;
     }
     _refreshing = true;
     try {
       final summaries = await repository.fetchEventChatSummaries();
+      Set<String>? postedIn;
+      try {
+        postedIn = await repository.fetchMyChatEventIds();
+      } catch (_) {
+        // Keep the last known set — only "your chats" depends on it.
+      }
       if (_disposed) return;
       _summaries = summaries;
+      if (postedIn != null) _postedInEventIds = postedIn;
       notifyListeners();
     } catch (_) {
       // Just the indicators — keep the last known counts.
     } finally {
       _refreshing = false;
+      final followUp = _followUp;
+      _followUp = null;
       if (_refreshQueued && !_disposed) {
         _refreshQueued = false;
-        unawaited(refresh());
+        unawaited(refresh().whenComplete(() => followUp?.complete()));
+      } else {
+        followUp?.complete();
       }
     }
   }
 
   int countFor(String eventId) => _summaries[eventId]?.messageCount ?? 0;
+
+  /// When [eventId]'s chat last got a message, or null if it has none.
+  DateTime? lastMessageAt(String eventId) => _summaries[eventId]?.lastMessageAt;
+
+  /// Whether [event]'s chat is one of this user's own chats on the Chats
+  /// page: it has messages and they posted in it, it's their event, or
+  /// it's a group event (only members can see those). The same people a
+  /// new message notifies — see notify_event_comment in
+  /// supabase/barangay_events.sql.
+  /// (Every date of an event on several dates shares one chat — its
+  /// [BarangayEvent.homeId].)
+  bool isMyChat(BarangayEvent event) {
+    if (countFor(event.homeId) == 0) return false;
+    return event.eventType == EventType.shared ||
+        (currentUserId != null && event.createdById == currentUserId) ||
+        _postedInEventIds.contains(event.homeId);
+  }
+
+  /// How many of this user's own chats (see [isMyChat]) among [events]
+  /// have something unread — the badge on the Feed tab's Chats button.
+  /// An event on several dates counts once.
+  int unreadChatCount(Iterable<BarangayEvent> events) => {
+        for (final event in events)
+          if (isMyChat(event) && hasUnread(event.homeId)) event.homeId,
+      }.length;
 
   /// Whether [eventId]'s chat has a message from someone else that arrived
   /// after this user last looked at that chat.

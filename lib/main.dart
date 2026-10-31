@@ -22,6 +22,7 @@ import 'app_update_service_factory.dart';
 import 'attachment_image_viewer.dart';
 import 'auth_service.dart';
 import 'avatar_image.dart';
+import 'chats_page.dart';
 import 'day_detail_page.dart';
 import 'day_timeline_view.dart';
 import 'event_calendars.dart';
@@ -78,13 +79,10 @@ Future<void> main() async {
   runApp(
     BarangayCalendarApp(
       themeController: themeController,
-      // Resolves to the GitHub-release checker on io platforms and to null on
+      // Resolves to the download-page checker on io platforms and to null on
       // web, where there's no app binary to update (and no dart:io to check
       // with). Every updateService call site is already null-safe.
-      updateService: createDefaultUpdateService(
-        repositoryOwner: 'Vincentjhon31',
-        repositoryName: 'barangay-events',
-      ),
+      updateService: createDefaultUpdateService(),
       // One instance for the whole process (every sign-in reuses it) — see
       // FirebasePushNotificationService for why a fresh one per sign-in
       // stacked duplicate notifications.
@@ -325,6 +323,7 @@ class _AuthenticatedShellState extends State<AuthenticatedShell> {
         language: prefs.language,
         displayMode: prefs.displayMode,
         reminderPreference: prefs.reminderPreference,
+        calendarCellStyle: prefs.calendarCellStyle,
       ));
     }));
   }
@@ -1161,6 +1160,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
   bool get _hasUnseenFeedItems => _events.any(
       (event) => event.createdAt.millisecondsSinceEpoch > _feedLastSeenMillis);
 
+  /// Stands in for [_chatActivity] in a guest session, which has no chat.
+  static final Listenable _noChatActivity = ChangeNotifier();
+
+  /// The Chats page is for a real signed-in session only — a guest or kiosk
+  /// session has no one to chat as.
+  bool get _canOpenChats =>
+      _chatActivity != null && _currentUserId != null && !_isReadOnlySession;
+
+  int get _unreadChatCount =>
+      _canOpenChats ? _chatActivity!.unreadChatCount(_events) : 0;
+
   CalendarFormat get _calendarFormat => _viewMode == _CalendarViewMode.week
       ? CalendarFormat.week
       : CalendarFormat.month;
@@ -1528,13 +1538,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
     required List<BarangayEvent> incoming,
   }) {
     final previousIds = previous.map((event) => event.id).toSet();
+    // The dates of an event on several dates arrive one save at a time; a
+    // date of a series already on screen isn't a new event.
+    final previousHomeIds = previous.map((event) => event.homeId).toSet();
     final userId = _currentUserId;
     final now = DateTime.now();
-    final freshlyPosted = incoming.where((event) {
-      if (previousIds.contains(event.id)) return false;
+    final freshlyPosted = _oneCardPerSeries(incoming.where((event) {
+      if (previousIds.contains(event.id) || previousHomeIds.contains(event.homeId)) return false;
       if (userId != null && event.createdById == userId) return false;
       return now.difference(event.createdAt) < const Duration(minutes: 2);
-    }).toList();
+    }).toList());
 
     if (freshlyPosted.isEmpty) return;
 
@@ -1621,6 +1634,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
     await _openEventChat(event);
   }
 
+  /// The event [_openEventById] is opening or showing, until its sheet
+  /// closes — a second tap for it (or the same tap delivered twice) is
+  /// ignored instead of stacking another copy of the sheet on top.
+  String? _notificationEventId;
+
   /// Opens [eventId]'s detail sheet in response to a tapped push
   /// notification (see PushNotificationService.onNotificationTapped) —
   /// checks the already-loaded [_events] list first (the common case,
@@ -1628,16 +1646,22 @@ class _CalendarScreenState extends State<CalendarScreen> {
   /// for an event not yet in that list (e.g. a cold-started app whose
   /// event stream hasn't emitted yet).
   Future<void> _openEventById(String eventId) async {
-    BarangayEvent? event;
-    for (final candidate in _events) {
-      if (candidate.id == eventId) {
-        event = candidate;
-        break;
+    if (_notificationEventId == eventId) return;
+    _notificationEventId = eventId;
+    try {
+      BarangayEvent? event;
+      for (final candidate in _events) {
+        if (candidate.id == eventId) {
+          event = candidate;
+          break;
+        }
       }
+      event ??= await widget.eventRepository.getEventById(eventId);
+      if (event == null || !mounted) return;
+      await _showEventDetails(event);
+    } finally {
+      if (_notificationEventId == eventId) _notificationEventId = null;
     }
-    event ??= await widget.eventRepository.getEventById(eventId);
-    if (event == null || !mounted) return;
-    await _showEventDetails(event);
   }
 
   void _enqueueNewEventNotice(_NewEventNotice notice) {
@@ -1771,8 +1795,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       // Kept plain instead of surfacing `e` to end users, but printed here
       // so running the .exe from a console (see main.cpp's AttachConsole)
       // shows the real reason — e.g. network/proxy/firewall blocking
-      // api.github.com, or a GitHub API rate limit — on a machine where
-      // the update check silently fails.
+      // calendar.bongabong.gov.ph — on a machine where the update check
+      // silently fails.
       debugPrint('Update check failed: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2055,20 +2079,25 @@ class _CalendarScreenState extends State<CalendarScreen> {
             bottom: 20,
             child: SafeArea(
               top: false,
-              child: LiquidTabBar(
-                items: [
-                  (icon: FontAwesomeIcons.calendarDays, label: l10n.tabCalendar),
-                  (icon: FontAwesomeIcons.newspaper, label: l10n.tabFeed),
-                  if (_showGroupsTab)
-                    (icon: FontAwesomeIcons.peopleGroup, label: l10n.tabGroups),
-                  (icon: FontAwesomeIcons.user, label: l10n.tabProfile),
-                ],
-                selectedIndex: _selectedTab,
-                onSelect: _handleTabSelected,
-                dotIndices: {
-                  if (_hasUnseenFeedItems) 1,
-                  if (_availableUpdate != null) _profileTabIndex,
-                },
+              // Rebuilt on chat activity too: an unread chat also dots the
+              // Feed tab, where the Chats button lives.
+              child: ListenableBuilder(
+                listenable: _chatActivity ?? _noChatActivity,
+                builder: (context, _) => LiquidTabBar(
+                  items: [
+                    (icon: FontAwesomeIcons.calendarDays, label: l10n.tabCalendar),
+                    (icon: FontAwesomeIcons.newspaper, label: l10n.tabFeed),
+                    if (_showGroupsTab)
+                      (icon: FontAwesomeIcons.peopleGroup, label: l10n.tabGroups),
+                    (icon: FontAwesomeIcons.user, label: l10n.tabProfile),
+                  ],
+                  selectedIndex: _selectedTab,
+                  onSelect: _handleTabSelected,
+                  dotIndices: {
+                    if (_hasUnseenFeedItems || _unreadChatCount > 0) 1,
+                    if (_availableUpdate != null) _profileTabIndex,
+                  },
+                ),
               ),
             ),
           ),
@@ -2162,9 +2191,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            result.groupName != null
-                ? 'Added "${result.title}" to ${result.groupName}.'
-                : 'Added "${result.title}" to the calendar.',
+            '${result.groupName != null ? 'Added "${result.title}" to ${result.groupName}' : 'Added "${result.title}" to the calendar'}'
+            '${result.dateCount > 1 ? ' on ${result.dateCount} dates' : ''}.',
           ),
         ),
       );
@@ -2174,6 +2202,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
   /// Edit an existing event — creator, or (for a Group event) an admin of
   /// the group it's posted to. Reuses AddEventPage in edit mode, pre-filled.
   Future<void> _openEditEvent(BarangayEvent event) async {
+    // An event on several dates: edit just this date, or all of them.
+    var seriesSiblings = const <BarangayEvent>[];
+    final dates = _seriesDates(event);
+    if (dates.length > 1) {
+      final allDates = await _askSeriesScope(event, dates.length, delete: false);
+      if (allDates == null || !mounted) return;
+      if (allDates) seriesSiblings = dates.where((date) => date.id != event.id).toList();
+    }
+
     List<BarangayGroup> myGroups = const [];
     try {
       myGroups = await widget.eventRepository.listMyGroups();
@@ -2199,6 +2236,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           handledCalendars: _handledCalendars,
           initialDate: event.startTime,
           existingEvent: event,
+          seriesSiblings: seriesSiblings,
           creatorProfile: _userProfile ?? widget.authService?.currentUser,
           findOverlappingEvents: (location, date, start, end) =>
               findOverlappingEvents(_events, location, date, start, end),
@@ -3088,12 +3126,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final isToday = selected == null || isSameDay(selected, DateTime.now());
     return Row(
       children: [
-        Text(
-          isToday ? l10n.upcomingHeader : l10n.eventsForDate(_formatDate(selected)),
-          style: Theme.of(context)
-              .textTheme
-              .titleMedium
-              ?.copyWith(fontWeight: FontWeight.w800),
+        // Flexible: "Events for Saturday, November 14, 2026" is wider than a
+        // phone, so it wraps instead of overflowing.
+        Flexible(
+          child: Text(
+            isToday ? l10n.upcomingHeader : l10n.eventsForDate(_formatDate(selected)),
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w800),
+          ),
         ),
       ],
     );
@@ -3177,7 +3219,41 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return haystack.contains(query);
     }).toList();
     events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return events;
+    return _oneCardPerSeries(events);
+  }
+
+  /// Every date of [event]'s series, earliest first — just [event] for an
+  /// ordinary event. (A series' dates share their visibility, so they're
+  /// all in [_events].)
+  List<BarangayEvent> _seriesDates(BarangayEvent event) {
+    if (!event.isInSeries) return [event];
+    final dates = _events.where((e) => e.homeId == event.homeId).toList()
+      ..sort((a, b) => a.startTime.compareTo(b.startTime));
+    return dates.isEmpty ? [event] : dates;
+  }
+
+  /// An event on several dates is one post in the Feed (and one "new
+  /// event" notice), not one per date: shown by its next date that hasn't
+  /// ended, or its latest date once they all have. Keeps [events]' order.
+  List<BarangayEvent> _oneCardPerSeries(List<BarangayEvent> events) {
+    final now = DateTime.now();
+    final shown = <String, BarangayEvent>{};
+    for (final event in events) {
+      final current = shown[event.homeId];
+      if (current == null) {
+        shown[event.homeId] = event;
+        continue;
+      }
+      final currentUpcoming = !current.endTime.isBefore(now);
+      final eventUpcoming = !event.endTime.isBefore(now);
+      final better = currentUpcoming != eventUpcoming
+          ? eventUpcoming
+          : eventUpcoming
+              ? event.startTime.isBefore(current.startTime)
+              : event.startTime.isAfter(current.startTime);
+      if (better) shown[event.homeId] = event;
+    }
+    return shown.values.toList();
   }
 
   /// Day-group header for the feed's timeline, based on when the event was
@@ -3214,7 +3290,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
         children: [
-          _buildPageHeader(l10n.feedTitle, l10n.feedSubtitle),
+          Row(
+            children: [
+              Expanded(child: _buildPageHeader(l10n.feedTitle, l10n.feedSubtitle)),
+              if (_canOpenChats) ...[
+                const SizedBox(width: 12),
+                _buildChatsButton(),
+              ],
+            ],
+          ),
           const SizedBox(height: 16),
           TextField(
             controller: _feedSearchController,
@@ -3263,6 +3347,77 @@ class _CalendarScreenState extends State<CalendarScreen> {
             ],
           ],
         ],
+      ),
+    );
+  }
+
+  /// The Feed tab's Chats button (top right, like Messenger's on a news
+  /// feed): opens [ChatsPage], with a badge counting chats that have
+  /// something unread.
+  Widget _buildChatsButton() {
+    final l10n = AppLocalizations.of(context)!;
+    final colorScheme = Theme.of(context).colorScheme;
+    return ListenableBuilder(
+      listenable: _chatActivity!,
+      builder: (context, _) {
+        final unread = _unreadChatCount;
+        return Tooltip(
+          message: unread > 0 ? l10n.chatsButtonUnreadTooltip(unread) : l10n.chatsButtonTooltip,
+          child: Badge(
+            key: const Key('feed-chats-badge'),
+            isLabelVisible: unread > 0,
+            label: Text(unread > 99 ? '99+' : '$unread'),
+            offset: const Offset(-4, -4),
+            child: InkWell(
+              key: const Key('feed-chats-button'),
+              borderRadius: BorderRadius.circular(16),
+              onTap: _openChatsPage,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withValues(alpha: 0.22),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: colorScheme.primary.withValues(alpha: 0.35)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    FaIcon(FontAwesomeIcons.solidComments, size: 16, color: colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Text(
+                      l10n.chatsButton,
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: colorScheme.primary,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openChatsPage() async {
+    final activity = _chatActivity;
+    final userId = _currentUserId;
+    if (activity == null || userId == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChatsPage(
+          repository: widget.eventRepository,
+          activity: activity,
+          currentUserId: userId,
+          events: () => _events,
+          onOpenChat: _openEventChat,
+          eventBadge: (event) => IconBadge(
+            icon: _getEventIcon(event.title),
+            tint: colorForKey(event.colorKey) ?? _getEventTint(event.title),
+          ),
+        ),
       ),
     );
   }
@@ -3503,6 +3658,27 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                     ],
                   ),
+                  // One card stands for every date of an event on several
+                  // dates (see _oneCardPerSeries).
+                  if (_seriesDates(event).length > 1) ...[
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        FaIcon(FontAwesomeIcons.repeat, size: 12, color: colorScheme.primary),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            AppLocalizations.of(context)!.feedMoreDates(_seriesDates(event).length - 1),
+                            key: Key('feed-more-dates-${event.homeId}'),
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: colorScheme.primary,
+                                ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 3),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -4276,6 +4452,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     // Time/Location/Posted-by/Group, all sharing one tint (the event's own
     // type color) and grouped into a single card with dividers, instead of
     // four separately-tinted, identically-shaped floating containers.
+    final seriesDates = _seriesDates(event);
     final infoRows = <Widget>[
       _DetailInfoRow(
         icon: FontAwesomeIcons.clock,
@@ -4283,6 +4460,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
         label: l10n.detailTime,
         value: _timeRangeLabel(event),
       ),
+      // Every date of an event on several dates, this one included.
+      if (seriesDates.length > 1)
+        _DetailInfoRow(
+          key: const Key('event-details-dates'),
+          icon: FontAwesomeIcons.repeat,
+          tint: eventTint,
+          label: l10n.detailDates,
+          value: seriesDates.map(_dateRangeLabel).join('\n'),
+        ),
       _DetailInfoRow(
         icon: FontAwesomeIcons.locationDot,
         tint: eventTint,
@@ -4474,9 +4660,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           ],
 
                           // Attachments (loaded on demand — see
-                          // _EventAttachmentsSection).
+                          // _EventAttachmentsSection). Every date of an
+                          // event on several dates shares one set of files.
                           _EventAttachmentsSection(
-                            eventId: event.id,
+                            eventId: event.homeId,
                             repository: widget.eventRepository,
                             tint: eventTint,
                             iconFor: _getFileIcon,
@@ -4734,7 +4921,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final activity = _chatActivity;
     if (activity == null || !_canChatAbout(event)) return const SizedBox.shrink();
     return EventChatIndicator(
-      eventId: event.id,
+      // Shared by every date of an event on several dates.
+      eventId: event.homeId,
       activity: activity,
       onTap: () => unawaited(_openEventChat(event)),
     );
@@ -4907,8 +5095,69 @@ class _CalendarScreenState extends State<CalendarScreen> {
         _adminGroupIds.contains(event.groupId);
   }
 
+  /// For an event on several dates ([count] of them): act on just
+  /// [event]'s date (false) or on every date (true); null if cancelled.
+  /// For Delete it's also the confirmation.
+  Future<bool?> _askSeriesScope(BarangayEvent event, int count, {required bool delete}) {
+    final l10n = AppLocalizations.of(context)!;
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(delete ? l10n.seriesDeleteTitle : l10n.seriesEditTitle),
+        content: Text(l10n.seriesScopeBody(event.title, count)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            key: const Key('series-scope-this-date'),
+            style: delete ? TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error) : null,
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l10n.seriesThisDate),
+          ),
+          FilledButton(
+            key: const Key('series-scope-all-dates'),
+            style: delete ? FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error) : null,
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(l10n.seriesAllDates(count)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _confirmDeleteEvent(BarangayEvent event) async {
     final l10n = AppLocalizations.of(context)!;
+    final dates = _seriesDates(event);
+    if (dates.length > 1) {
+      final allDates = await _askSeriesScope(event, dates.length, delete: true);
+      if (allDates == null) return;
+      if (allDates) {
+        // The home date last: deleting it first would hand the shared chat
+        // and files to a date about to be deleted too.
+        final ordered = [
+          ...dates.where((date) => date.id != event.homeId),
+          ...dates.where((date) => date.id == event.homeId),
+        ];
+        for (final date in ordered) {
+          await widget.eventRepository.deleteEvent(date.id);
+        }
+      } else {
+        // Its chat and files stay with the other dates.
+        await widget.eventRepository.deleteEvent(event.id);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(allDates
+              ? 'Deleted "${event.title}" (all ${dates.length} dates).'
+              : 'Deleted "${event.title}" on ${_dateRangeLabel(event)}.'),
+        ),
+      );
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -5085,6 +5334,7 @@ class _PosterAvatar extends StatelessWidget {
 
 class _DetailInfoRow extends StatelessWidget {
   const _DetailInfoRow({
+    super.key,
     required this.icon,
     required this.tint,
     required this.label,

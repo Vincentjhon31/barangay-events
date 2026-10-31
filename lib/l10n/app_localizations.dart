@@ -1442,6 +1442,300 @@ abstract class AppLocalizations {
   /// **'{count, plural, =1{1 chat message · new} other{{count} chat messages · new}}'**
   String eventChatIndicatorUnreadTooltip(int count);
 
+  /// No description provided for @chatsButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Chats'**
+  String get chatsButton;
+
+  /// No description provided for @chatsButtonTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Your chats'**
+  String get chatsButtonTooltip;
+
+  /// No description provided for @chatsButtonUnreadTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Your chats · 1 unread} other{Your chats · {count} unread}}'**
+  String chatsButtonUnreadTooltip(int count);
+
+  /// No description provided for @chatsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Chats'**
+  String get chatsTitle;
+
+  /// No description provided for @chatsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Every event chat you\'re in, newest first.'**
+  String get chatsSubtitle;
+
+  /// No description provided for @chatsSearchLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Search chats'**
+  String get chatsSearchLabel;
+
+  /// No description provided for @chatsSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Event name, or words in a message'**
+  String get chatsSearchHint;
+
+  /// No description provided for @chatsFilterAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get chatsFilterAll;
+
+  /// No description provided for @chatsFilterUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'Unread'**
+  String get chatsFilterUnread;
+
+  /// No description provided for @chatsFilterGroups.
+  ///
+  /// In en, this message translates to:
+  /// **'Groups'**
+  String get chatsFilterGroups;
+
+  /// No description provided for @chatsFilterPublic.
+  ///
+  /// In en, this message translates to:
+  /// **'Public'**
+  String get chatsFilterPublic;
+
+  /// No description provided for @chatsTypePublic.
+  ///
+  /// In en, this message translates to:
+  /// **'Public'**
+  String get chatsTypePublic;
+
+  /// No description provided for @chatsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No chats yet. Open an event and tap its chat button to start one. Chats you join, chats on your own events, and your groups\' chats all show up here.'**
+  String get chatsEmpty;
+
+  /// No description provided for @chatsEmptyFiltered.
+  ///
+  /// In en, this message translates to:
+  /// **'No chats match.'**
+  String get chatsEmptyFiltered;
+
+  /// No description provided for @chatsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the latest messages. Check your connection and try again.'**
+  String get chatsLoadFailed;
+
+  /// No description provided for @chatsPreviewYou.
+  ///
+  /// In en, this message translates to:
+  /// **'You: {message}'**
+  String chatsPreviewYou(String message);
+
+  /// No description provided for @chatsPreviewOther.
+  ///
+  /// In en, this message translates to:
+  /// **'{name}: {message}'**
+  String chatsPreviewOther(String name, String message);
+
+  /// No description provided for @chatsMessageCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 message} other{{count} messages}}'**
+  String chatsMessageCount(int count);
+
+  /// No description provided for @chatsSectionChats.
+  ///
+  /// In en, this message translates to:
+  /// **'Chats'**
+  String get chatsSectionChats;
+
+  /// No description provided for @chatsSectionMessages.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages'**
+  String get chatsSectionMessages;
+
+  /// No description provided for @chatsSearchTooShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Type at least 2 letters to search inside messages.'**
+  String get chatsSearchTooShort;
+
+  /// No description provided for @chatsSearchNoChats.
+  ///
+  /// In en, this message translates to:
+  /// **'No chat names match.'**
+  String get chatsSearchNoChats;
+
+  /// No description provided for @chatsSearchNoMessages.
+  ///
+  /// In en, this message translates to:
+  /// **'No messages contain \"{query}\".'**
+  String chatsSearchNoMessages(String query);
+
+  /// No description provided for @chatsSearchFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t search messages. Check your connection and try again.'**
+  String get chatsSearchFailed;
+
+  /// No description provided for @moreDatesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'More dates'**
+  String get moreDatesTitle;
+
+  /// No description provided for @moreDatesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Same time and place on other days, like every weekend. Each date gets its own reminders, and everyone shares one chat and the same files.'**
+  String get moreDatesHint;
+
+  /// No description provided for @moreDatesAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a date'**
+  String get moreDatesAdd;
+
+  /// No description provided for @moreDatesRepeatWeekly.
+  ///
+  /// In en, this message translates to:
+  /// **'Repeat every week'**
+  String get moreDatesRepeatWeekly;
+
+  /// No description provided for @moreDatesPickHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a date'**
+  String get moreDatesPickHelp;
+
+  /// No description provided for @moreDatesRepeatUntil.
+  ///
+  /// In en, this message translates to:
+  /// **'Repeat every week until'**
+  String get moreDatesRepeatUntil;
+
+  /// No description provided for @moreDatesFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'First date'**
+  String get moreDatesFirst;
+
+  /// No description provided for @moreDatesRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove this date'**
+  String get moreDatesRemove;
+
+  /// No description provided for @moreDatesCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} dates'**
+  String moreDatesCount(int count);
+
+  /// No description provided for @moreDatesOverlap.
+  ///
+  /// In en, this message translates to:
+  /// **'That date overlaps another date of this event.'**
+  String get moreDatesOverlap;
+
+  /// No description provided for @moreDatesSomeOverlap.
+  ///
+  /// In en, this message translates to:
+  /// **'Some dates overlap each other. Remove one, or make the event shorter.'**
+  String get moreDatesSomeOverlap;
+
+  /// No description provided for @moreDatesTooMany.
+  ///
+  /// In en, this message translates to:
+  /// **'An event can have up to {max} dates.'**
+  String moreDatesTooMany(int max);
+
+  /// No description provided for @moreDatesTooLongForWeekly.
+  ///
+  /// In en, this message translates to:
+  /// **'An event longer than 6 days can\'t repeat every week. Add its dates one by one instead.'**
+  String get moreDatesTooLongForWeekly;
+
+  /// No description provided for @moreDatesAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No dates added: those weeks overlap dates already on the list.} =1{Added 1 date.} other{Added {count} dates.}}'**
+  String moreDatesAdded(int count);
+
+  /// No description provided for @moreDatesSomeFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 date couldn\'t be saved. Check your connection, then edit the event to add it again.} other{{count} dates couldn\'t be saved. Check your connection, then edit the event to add them again.}}'**
+  String moreDatesSomeFailed(int count);
+
+  /// No description provided for @moreDatesCreatorOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the person who posted this event can add or remove its dates.'**
+  String get moreDatesCreatorOnly;
+
+  /// No description provided for @editingOneDateNote.
+  ///
+  /// In en, this message translates to:
+  /// **'This is one date of an event on several dates. Your changes apply to this date only.'**
+  String get editingOneDateNote;
+
+  /// No description provided for @editingAllDatesNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Your changes apply to all {count} dates of this event.'**
+  String editingAllDatesNote(int count);
+
+  /// No description provided for @seriesEditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit which dates?'**
+  String get seriesEditTitle;
+
+  /// No description provided for @seriesDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete which dates?'**
+  String get seriesDeleteTitle;
+
+  /// No description provided for @seriesScopeBody.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{title}\" is on {count} dates.'**
+  String seriesScopeBody(String title, int count);
+
+  /// No description provided for @seriesThisDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Only this date'**
+  String get seriesThisDate;
+
+  /// No description provided for @seriesAllDates.
+  ///
+  /// In en, this message translates to:
+  /// **'All {count} dates'**
+  String seriesAllDates(int count);
+
+  /// No description provided for @detailDates.
+  ///
+  /// In en, this message translates to:
+  /// **'Dates'**
+  String get detailDates;
+
+  /// No description provided for @feedMoreDates.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{+1 more date} other{+{count} more dates}}'**
+  String feedMoreDates(int count);
+
   /// No description provided for @typeHelperCalendar.
   ///
   /// In en, this message translates to:
@@ -3011,7 +3305,7 @@ abstract class AppLocalizations {
   /// No description provided for @privacyCollectBody.
   ///
   /// In en, this message translates to:
-  /// **'When you create an account, we collect your email address and the details you choose to add to your profile — display name, department, phone number, address, a short bio, and a profile picture: either one of the app\'s preset pictures, or a photo you choose from your device\'s gallery (the app only reads the one photo you pick, and never uses your camera). Uploaded photos and files you attach to events are stored on the municipality\'s own web server. We also store the events, groups, and preferences (language, theme, display size, reminders) you set up while using the app.'**
+  /// **'When you create an account, we collect your email address and the details you choose to add to your profile — display name, department, phone number, address, a short bio, and a profile picture: either one of the app\'s preset pictures, or a photo you choose from your device\'s gallery (the app only reads the one photo you pick, and never uses your camera). Uploaded photos and files you attach to events are stored on the municipality\'s own web server. We also store the events, groups, and preferences (language, theme, display size, calendar view, reminders) you set up while using the app.'**
   String get privacyCollectBody;
 
   /// No description provided for @privacyUseHeading.

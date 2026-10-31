@@ -105,6 +105,7 @@ class BarangayEvent {
     this.createdByAvatarUrl,
     this.calendarId,
     this.calendarName,
+    this.seriesId,
   });
 
   final String id;
@@ -148,6 +149,23 @@ class BarangayEvent {
   /// written by [toSupabaseJson].
   final String? calendarId;
   final String? calendarName;
+
+  /// Links the dates of an event that happens on several separate dates
+  /// (e.g. every weekend of a month): each date is its own row — its own
+  /// reminders, calendar entry, and place in conflict checks — and they all
+  /// share this id, which is the id of the series' "home" date (that row's
+  /// own seriesId is its own id). Null for an ordinary event. See [homeId].
+  final String? seriesId;
+
+  /// The event whose chat and attached files this one uses: the series'
+  /// home date, so every date of an event shares one conversation and one
+  /// set of files — or the event itself when it's not part of a series.
+  /// (Deleting the home date moves them to the next date server-side; see
+  /// the "Events on several dates" block in supabase/barangay_events.sql.)
+  String get homeId => seriesId ?? id;
+
+  /// Whether this event is one date of an event with several dates.
+  bool get isInSeries => seriesId != null;
 
   /// "Name • Department", or whichever half is available; null when neither is.
   String? get creatorLabel {
@@ -232,6 +250,7 @@ class BarangayEvent {
       createdByAvatarUrl: createdByAvatarUrl,
       calendarId: calendarId,
       calendarName: calendarName,
+      seriesId: seriesId,
     );
   }
 
@@ -256,6 +275,7 @@ class BarangayEvent {
       'contactNumber': contactNumber,
       'calendarId': calendarId,
       'calendarName': calendarName,
+      'seriesId': seriesId,
     };
   }
 
@@ -280,6 +300,7 @@ class BarangayEvent {
       'color_key': colorKey,
       'contact_number': contactNumber,
       'calendar_id': calendarId,
+      'series_id': seriesId,
     };
   }
 
@@ -307,6 +328,7 @@ class BarangayEvent {
       contactNumber: json['contactNumber'] as String?,
       calendarId: json['calendarId'] as String?,
       calendarName: json['calendarName'] as String?,
+      seriesId: json['seriesId'] as String?,
     );
   }
 
@@ -335,6 +357,7 @@ class BarangayEvent {
       createdByAvatarUrl: row['created_by_avatar_url'] as String?,
       calendarId: row['calendar_id'] as String?,
       calendarName: row['calendar_name'] as String?,
+      seriesId: row['series_id'] as String?,
     );
   }
 
@@ -902,6 +925,22 @@ abstract class EventRepository {
   /// (the value carries no data), like [watchMyGroupMemberships].
   Stream<void> watchEventChatActivity();
 
+  /// The newest message (not deleted) of each chat the caller can see,
+  /// keyed by event id — the preview line on the Chats page. Only the
+  /// latest [chatPreviewWindow] messages overall are looked at, so an old,
+  /// quiet chat may have no entry (the page shows its message count).
+  Future<Map<String, EventComment>> fetchLatestEventComments();
+
+  /// Ids of the events whose chat the caller has posted in, even if that
+  /// message was later deleted — with group chats and chats on the
+  /// caller's own events, the "your chats" list on the Chats page.
+  Future<Set<String>> fetchMyChatEventIds();
+
+  /// Messages (not deleted) whose text contains [query], ignoring case,
+  /// newest first, across every chat the caller can read — at most
+  /// [chatSearchLimit].
+  Future<List<EventComment>> searchEventComments(String query);
+
   Future<void> dispose();
 }
 
@@ -909,6 +948,12 @@ abstract class EventRepository {
 /// keeps — a long-running event chat shouldn't stream its whole history
 /// into memory on every open.
 const int eventCommentWindow = 300;
+
+/// See [EventRepository.fetchLatestEventComments].
+const int chatPreviewWindow = 500;
+
+/// See [EventRepository.searchEventComments].
+const int chatSearchLimit = 50;
 
 class MemoryEventRepository implements EventRepository {
   MemoryEventRepository._(this._events);
@@ -966,9 +1011,85 @@ class MemoryEventRepository implements EventRepository {
 
   @override
   Future<void> deleteEvent(String eventId) async {
+    _rehomeSeriesBeforeDelete(eventId);
     _events = _events.where((event) => event.id != eventId).toList();
     _updates.add(_sortedEvents);
   }
+
+  /// Mirrors the server's rehome_event_series trigger: deleting the home
+  /// date of a several-date event hands its chat and files to the next
+  /// date (same creator), which becomes the new home.
+  void _rehomeSeriesBeforeDelete(String eventId) {
+    final deleted = _events.where((e) => e.id == eventId).firstOrNull;
+    if (deleted == null || deleted.seriesId != deleted.id) return;
+    final rest = _events
+        .where((e) => e.seriesId == eventId && e.id != eventId && e.createdById == deleted.createdById)
+        .toList()
+      ..sort((a, b) => a.startTime.compareTo(b.startTime));
+    if (rest.isEmpty) return;
+    final next = rest.first.id;
+    for (var i = 0; i < _comments.length; i++) {
+      final c = _comments[i];
+      if (c.eventId != eventId) continue;
+      _comments[i] = EventComment(
+        id: c.id,
+        eventId: next,
+        userId: c.userId,
+        body: c.body,
+        createdAt: c.createdAt,
+        authorName: c.authorName,
+        authorAvatarUrl: c.authorAvatarUrl,
+        authorRole: c.authorRole,
+        editedAt: c.editedAt,
+        deletedAt: c.deletedAt,
+        deletedBy: c.deletedBy,
+      );
+    }
+    for (var i = 0; i < _attachments.length; i++) {
+      final a = _attachments[i];
+      if (a.eventId != eventId) continue;
+      _attachments[i] = EventAttachment(
+        id: a.id,
+        eventId: next,
+        storagePath: a.storagePath,
+        fileName: a.fileName,
+        mimeType: a.mimeType,
+        sizeBytes: a.sizeBytes,
+        storageProvider: a.storageProvider,
+      );
+    }
+    // A series of one is just an event again.
+    final newSeriesId = rest.length > 1 ? next : null;
+    _events = [
+      for (final e in _events)
+        if (e.seriesId == eventId && e.id != eventId) _withSeriesId(e, newSeriesId) else e,
+    ];
+    _commentChanges.add(null);
+  }
+
+  static BarangayEvent _withSeriesId(BarangayEvent e, String? seriesId) => BarangayEvent(
+        id: e.id,
+        title: e.title,
+        location: e.location,
+        startTime: e.startTime,
+        endTime: e.endTime,
+        description: e.description,
+        attendanceStatus: e.attendanceStatus,
+        createdAt: e.createdAt,
+        createdByName: e.createdByName,
+        createdByDepartment: e.createdByDepartment,
+        createdById: e.createdById,
+        eventType: e.eventType,
+        groupId: e.groupId,
+        groupName: e.groupName,
+        dailyOverrides: e.dailyOverrides,
+        colorKey: e.colorKey,
+        contactNumber: e.contactNumber,
+        createdByAvatarUrl: e.createdByAvatarUrl,
+        calendarId: e.calendarId,
+        calendarName: e.calendarName,
+        seriesId: seriesId,
+      );
 
   @override
   Future<void> updateAttendanceStatus(String eventId, String? status) async {
@@ -1549,6 +1670,34 @@ class MemoryEventRepository implements EventRepository {
   Stream<void> watchEventChatActivity() => _commentChanges.stream;
 
   @override
+  Future<Map<String, EventComment>> fetchLatestEventComments() async {
+    final latest = <String, EventComment>{};
+    for (final comment in _comments.where((c) => !c.isDeleted)) {
+      final existing = latest[comment.eventId];
+      if (existing == null || comment.createdAt.isAfter(existing.createdAt)) {
+        latest[comment.eventId] = comment;
+      }
+    }
+    return latest;
+  }
+
+  @override
+  Future<Set<String>> fetchMyChatEventIds() async {
+    return _comments.where((c) => c.userId == _mockUserId).map((c) => c.eventId).toSet();
+  }
+
+  @override
+  Future<List<EventComment>> searchEventComments(String query) async {
+    final needle = query.trim().toLowerCase();
+    if (needle.isEmpty) return const [];
+    final matches = _comments
+        .where((c) => !c.isDeleted && c.body.toLowerCase().contains(needle))
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return matches.take(chatSearchLimit).toList();
+  }
+
+  @override
   Future<void> dispose() async {
     await _updates.close();
     await _membershipChanges.close();
@@ -1629,20 +1778,28 @@ class SupabaseEventRepository implements EventRepository {
     );
   }
 
-  /// Writes an event, and if the database doesn't have the calendar_id
-  /// column yet (the calendars SQL block not run), retries without it —
-  /// so a newer app never breaks event saving against an older database.
+  /// Writes an event, and if the database doesn't have one of the newer
+  /// columns yet (calendar_id: the calendars SQL block; series_id: "Events
+  /// on several dates"), retries without it — so a newer app never breaks
+  /// event saving against an older database. (Without series_id, the dates
+  /// of a several-date event are saved as separate, unlinked events.)
   Future<void> _writeEvent(
     Map<String, dynamic> json,
     Future<dynamic> Function(Map<String, dynamic> json) write,
   ) async {
-    try {
-      await write(json);
-    } on PostgrestException catch (error) {
-      final missingCalendarColumn = error.message.contains('calendar_id') &&
-          (error.code == 'PGRST204' || error.code == '42703');
-      if (!missingCalendarColumn) rethrow;
-      await write(Map.of(json)..remove('calendar_id'));
+    var attempt = json;
+    while (true) {
+      try {
+        await write(attempt);
+        return;
+      } on PostgrestException catch (error) {
+        final missing = error.code == 'PGRST204' || error.code == '42703';
+        final column = ['calendar_id', 'series_id']
+            .where((name) => attempt.containsKey(name) && error.message.contains(name))
+            .firstOrNull;
+        if (!missing || column == null) rethrow;
+        attempt = Map.of(attempt)..remove(column);
+      }
     }
   }
 
@@ -2087,6 +2244,53 @@ class SupabaseEventRepository implements EventRepository {
       for (final row in rows.cast<Map<String, dynamic>>())
         row['out_event_id'] as String: EventChatSummary.fromSupabase(row),
     };
+  }
+
+  // The three Chats-page queries below read event_comments directly: its
+  // RLS policies already limit them to chats the caller can see, so no
+  // new SQL is needed.
+  @override
+  Future<Map<String, EventComment>> fetchLatestEventComments() async {
+    final rows = await _client
+        .from('event_comments')
+        .select()
+        .isFilter('deleted_at', null)
+        .order('created_at', ascending: false)
+        .limit(chatPreviewWindow);
+    final latest = <String, EventComment>{};
+    for (final row in rows) {
+      final comment = EventComment.fromSupabase(row);
+      // Newest first, so the first one seen per chat is its latest.
+      latest.putIfAbsent(comment.eventId, () => comment);
+    }
+    return latest;
+  }
+
+  @override
+  Future<Set<String>> fetchMyChatEventIds() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return {};
+    final rows = await _client.from('event_comments').select('event_id').eq('user_id', userId);
+    return {for (final row in rows) row['event_id'] as String};
+  }
+
+  @override
+  Future<List<EventComment>> searchEventComments(String query) async {
+    final needle = query.trim().toLowerCase();
+    if (needle.isEmpty) return const [];
+    // A typed % or _ acts as a LIKE wildcard here and widens the match; the
+    // exact check below drops anything that doesn't really contain it.
+    final rows = await _client
+        .from('event_comments')
+        .select()
+        .isFilter('deleted_at', null)
+        .ilike('body', '%$needle%')
+        .order('created_at', ascending: false)
+        .limit(chatSearchLimit);
+    return rows
+        .map(EventComment.fromSupabase)
+        .where((c) => c.body.toLowerCase().contains(needle))
+        .toList();
   }
 
   @override

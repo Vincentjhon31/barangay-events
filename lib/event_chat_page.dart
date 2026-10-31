@@ -52,7 +52,7 @@ class _EventChatButtonState extends State<EventChatButton> {
 
   Future<void> _loadCount() async {
     try {
-      final count = await widget.repository.countEventComments(widget.event.id);
+      final count = await widget.repository.countEventComments(widget.event.homeId);
       if (mounted) setState(() => _count = count);
     } catch (_) {
       // Just the badge — the button still works without it.
@@ -143,13 +143,13 @@ class _EventChatPageState extends State<EventChatPage> {
   @override
   void initState() {
     super.initState();
-    _comments = widget.repository.watchEventComments(widget.event.id);
+    _comments = widget.repository.watchEventComments(widget.event.homeId);
     final activity = widget.activity;
     if (activity != null) {
-      activity.openChatEventId = widget.event.id;
+      activity.openChatEventId = widget.event.homeId;
       // After this frame — marking seen notifies the indicators, and
       // initState runs mid-build.
-      WidgetsBinding.instance.addPostFrameCallback((_) => activity.markSeen(widget.event.id));
+      WidgetsBinding.instance.addPostFrameCallback((_) => activity.markSeen(widget.event.homeId));
     }
     _controller.addListener(_onTextChanged);
     // Typing again closes the emoji panel, like every messaging app.
@@ -164,10 +164,10 @@ class _EventChatPageState extends State<EventChatPage> {
   void dispose() {
     final activity = widget.activity;
     if (activity != null) {
-      if (activity.openChatEventId == widget.event.id) activity.openChatEventId = null;
+      if (activity.openChatEventId == widget.event.homeId) activity.openChatEventId = null;
       // Deferred: dispose runs while the widget tree is locked, and
       // marking seen notifies listeners that rebuild.
-      final eventId = widget.event.id;
+      final eventId = widget.event.homeId;
       scheduleMicrotask(() => activity.markSeen(eventId));
     }
     _controller.removeListener(_onTextChanged);
@@ -184,7 +184,7 @@ class _EventChatPageState extends State<EventChatPage> {
   }
 
   void _retryLoad() {
-    setState(() => _comments = widget.repository.watchEventComments(widget.event.id));
+    setState(() => _comments = widget.repository.watchEventComments(widget.event.homeId));
   }
 
   Future<void> _send({String? override}) async {
@@ -197,7 +197,7 @@ class _EventChatPageState extends State<EventChatPage> {
     setState(() => _sending = true);
     if (override == null) _controller.clear();
     try {
-      await widget.repository.addEventComment(widget.event.id, body);
+      await widget.repository.addEventComment(widget.event.homeId, body);
     } catch (_) {
       if (!mounted) return;
       // Give the unsent text back rather than losing it.
@@ -490,7 +490,7 @@ class _EventChatPageState extends State<EventChatPage> {
         if (activity != null && comments.isNotEmpty) {
           final newest = comments.first.createdAt;
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            activity.markSeen(widget.event.id, upTo: newest);
+            activity.markSeen(widget.event.homeId, upTo: newest);
           });
         }
         if (comments.isEmpty) {

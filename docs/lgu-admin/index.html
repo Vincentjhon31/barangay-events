@@ -468,6 +468,55 @@
     }
     .label-sm { display: none; font-size: 12.5px; color: var(--ink-3); font-weight: 700; margin-right: 6px; }
 
+    /* ---------- Schedule & report ---------- */
+    .seg.compact { margin: 0; }
+    .seg.compact button { padding: 6px 12px; font-size: 13.5px; }
+    .sched-day { padding: 9px 18px; font-size: 12.5px; font-weight: 700; color: var(--ink-3); background: var(--surface-2); border-bottom: 1px solid var(--line); }
+    .sched-day.today { color: var(--brand-ink); }
+    .sched-row { grid-template-columns: 96px minmax(0, 1fr) auto; }
+    .sched-time strong { display: block; font-size: 14.5px; }
+    .sched-time span { display: block; font-size: 12.5px; color: var(--ink-3); }
+    .sched-row .meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+    .pill.now { color: var(--ok); background: var(--ok-soft); }
+    .panel-foot { padding: 12px 18px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-3); }
+    .duty-n {
+      width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;
+      background: var(--brand-soft); color: var(--brand-ink); font-weight: 700; font-size: 13px;
+    }
+    .dash-duty { grid-template-columns: 26px minmax(0, 1fr) auto; }
+    .dash-duty strong { display: block; font-size: 14.5px; }
+    .qty { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .period-nav { display: inline-flex; align-items: center; gap: 6px; }
+    .period-nav strong { min-width: 150px; text-align: center; font-size: 15px; }
+    .ar-row { grid-template-columns: minmax(260px, 1fr) 76px 116px 76px 92px 64px; align-items: start; }
+    .ar-row > div:not(.duty) { padding-top: 2px; }
+    .ar-row .duty { display: flex; gap: 12px; min-width: 0; }
+    .ar-row .duty-text { font-size: 14.5px; }
+    .ar-row .ar-ind-sm { display: none; font-size: 13px; color: var(--ink-3); font-weight: 700; }
+    .ar-row select, .ar-row input { min-height: 34px; padding: 4px 8px; font-size: 14px; }
+    .ar-row select { width: 64px; }
+    .ar-row input[type="number"] { width: 58px; }
+    .ar-row .pts { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .link-btn { border: 0; background: none; padding: 0; margin-top: 4px; color: var(--brand-ink); font-weight: 700; font-size: 13px; cursor: pointer; }
+    .ar-total { grid-template-columns: 1fr auto; font-weight: 700; background: var(--surface-2); }
+    .ar-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 14px; }
+    .ar-items li { display: flex; gap: 10px; align-items: baseline; }
+    .ar-items .when { flex: 0 0 92px; color: var(--ink-3); font-size: 13px; font-weight: 700; }
+    .ar-items .x { margin-left: auto; border: 0; background: none; color: var(--ink-3); cursor: pointer; font-size: 17px; line-height: 1; padding: 0 4px; }
+    .ar-items .x:hover { color: var(--danger); }
+    .ar-add { display: grid; grid-template-columns: 150px 76px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+    .ar-add input { min-height: 36px; padding: 6px 10px; }
+    @media (max-width: 899px) {
+      .ar-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .ar-row > .duty { grid-column: 1 / -1; }
+      .ar-row > .ar-ind { display: none; }
+      .ar-row .ar-ind-sm { display: block; }
+      .ar-add { grid-template-columns: 1fr 76px; }
+      .ar-add input[type="text"], .ar-add button { grid-column: 1 / -1; }
+      .sched-row { grid-template-columns: 76px minmax(0, 1fr); }
+      .sched-row > .actions { grid-column: 2; justify-content: flex-start; }
+    }
+
     /* ---------- Settings ---------- */
     .settings { display: grid; grid-template-columns: 200px 1fr; gap: 24px; align-items: start; }
     .settings-nav { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 88px; }
@@ -622,6 +671,25 @@
         <!-- Dashboard -->
         <section id="view-dashboard" class="stack hidden" aria-labelledby="page-title">
           <div id="attention"></div>
+          <div class="panel">
+            <div class="panel-head">
+              <div><h2 id="schedule-title">Schedule</h2><p id="schedule-sub"></p></div>
+              <span class="spacer"></span>
+              <label class="sr-only" for="schedule-filter">Whose schedule</label>
+              <select id="schedule-filter" style="width:auto;min-height:34px;padding:4px 8px;font-size:14px"></select>
+              <div class="seg compact" id="schedule-range" role="group" aria-label="How far ahead">
+                <button type="button" data-range="today" aria-pressed="true">Today</button>
+                <button type="button" data-range="week" aria-pressed="false">This week</button>
+                <button type="button" data-range="month" aria-pressed="false">This month</button>
+              </div>
+              <button class="btn primary sm" type="button" id="schedule-add">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                Add
+              </button>
+            </div>
+            <ul class="rows" id="schedule-list"></ul>
+            <div class="panel-foot" id="schedule-foot"></div>
+          </div>
           <div>
             <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px;flex-wrap:wrap">
               <h2 style="font-size:17px">Next 7 days</h2>
@@ -633,14 +701,39 @@
           <div class="panel"><div class="counts" id="counts"></div></div>
           <div class="two-col">
             <div class="panel">
-              <div class="panel-head"><div><h2>Coming up</h2><p>The next public and group events.</p></div></div>
-              <ul class="rows" id="dash-upcoming"></ul>
+              <div class="panel-head"><div><h2>Your report</h2><p id="dash-report-sub"></p></div><span class="spacer"></span><a href="#report" style="font-weight:700;font-size:14px">Open report</a></div>
+              <ul class="rows" id="dash-report"></ul>
             </div>
             <div class="panel">
               <div class="panel-head"><div><h2>Newest accounts</h2><p>People who signed up most recently.</p></div><span class="spacer"></span><a href="#users" style="font-weight:700;font-size:14px">All users</a></div>
               <ul class="rows" id="dash-newest"></ul>
             </div>
           </div>
+        </section>
+
+        <!-- Report -->
+        <section id="view-report" class="stack hidden">
+          <div class="panel">
+            <div class="panel-head">
+              <div><h2>A. Core functions</h2><p>Specific duties and responsibilities. Quantities are counted from eCalendar; open a duty to see what's counted and to add work done outside the system.</p></div>
+              <span class="spacer"></span>
+              <div class="period-nav">
+                <button class="icon-btn" type="button" id="report-prev" aria-label="Earlier period"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+                <strong id="report-period"></strong>
+                <button class="icon-btn" type="button" id="report-next" aria-label="Later period"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
+              </div>
+              <label class="sr-only" for="report-span">Period length</label>
+              <select id="report-span" style="width:auto;min-height:34px;padding:4px 8px;font-size:14px">
+                <option value="half">Half month</option>
+                <option value="month">Whole month</option>
+              </select>
+              <button class="btn ghost sm" type="button" id="report-copy">Copy for Excel</button>
+            </div>
+            <div id="report-msg" style="padding:0 18px"></div>
+            <div class="row row-head ar-row" aria-hidden="true"><span>Duty</span><span>Quantity</span><span class="ar-ind">Indicator</span><span>Rating</span><span>Weight</span><span>Points</span></div>
+            <ul class="rows" id="report-list"></ul>
+          </div>
+          <p style="color:var(--ink-3);font-size:13px;margin:0 2px">"Copy for Excel" copies Quantity, Performance indicator, Rating, Weight, and Points for the six duties. Click the QUANTITY cell of duty 1 in your report and paste. Ratings, weights, and the work you add here are saved with the app's settings, so backups include them.</p>
         </section>
 
         <!-- Users -->
@@ -988,8 +1081,12 @@
     );
 
     // Avatars are preset pictures bundled with the app (assets/avatars/...);
-    // this page is served from docs/ only, so load them from the repo.
-    var AVATAR_BASE = 'https://raw.githubusercontent.com/Vincentjhon31/barangay-events/main/';
+    // load them from the web app on the same site, which serves its bundled
+    // files under assets/ (so assets/avatars/x.png is at assets/assets/avatars/x.png).
+    var AVATAR_BASE = 'https://calendar.bongabong.gov.ph/assets/';
+    // Added to backups as schema.sql. Only readable while the code repository
+    // is public; once it's private, backups skip it (manifest: includes_schema).
+    var SCHEMA_URL = 'https://raw.githubusercontent.com/Vincentjhon31/barangay-events/main/supabase/barangay_events.sql';
     // The Hostinger file API (hostinger/public_html/api in the repo):
     // attachments, uploaded profile photos, and superadmin preset pictures.
     var FILE_API = 'https://calendar.bongabong.gov.ph/api';
@@ -1226,6 +1323,7 @@
     // ---------- Navigation ----------
     var NAV = [
       { id: 'dashboard', label: 'Dashboard', sub: '', icon: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>' },
+      { id: 'report', label: 'Report', sub: 'Your accomplishment report: duties, quantities, ratings, and points', icon: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/>' },
       { id: 'users', label: 'Users', sub: 'Accounts, roles, and LGU applications', icon: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20v-1a5 5 0 0 1 5-5h3a5 5 0 0 1 5 5v1"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20v-1a4.5 4.5 0 0 0-3-4.2"/>' },
       { id: 'events', label: 'Events', sub: 'Public and group events in the app', icon: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>' },
       { id: 'calendars', label: 'Calendars', sub: 'Extra calendars in the app, like Sports, and who handles them', icon: '<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>' },
@@ -1275,6 +1373,9 @@
           if (t === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
         });
       }
+      // Counts change with every event or account edit, so they're fetched
+      // fresh whenever they come into view.
+      if (route.view === 'dashboard' || route.view === 'report') loadReports();
       window.scrollTo(0, 0);
     }
     window.addEventListener('hashchange', showRoute);
@@ -1353,21 +1454,470 @@
         return '<div><div class="n">' + esc(c.n) + '</div><div class="l">' + esc(c.l) + '</div><div class="d">' + esc(c.d) + '</div></div>';
       }).join('');
 
-      // Coming up
-      var next = upcomingEvents().slice(0, 5);
-      $('dash-upcoming').innerHTML = eventsError
-        ? '<li class="empty">' + esc(eventsError) + '</li>'
-        : next.length ? next.map(function (ev) {
-            return '<li class="row" style="grid-template-columns:56px 1fr">' + dateBlock(ev) +
-              '<div style="min-width:0"><div class="ev-title">' + esc(ev.title) + '</div><div class="ev-sub">' + esc(timeLabel(ev)) + ' at ' + esc(ev.location) + '</div>' +
-              '<div style="margin-top:4px">' + typePill(ev) + '</div></div></li>';
-          }).join('')
-        : '<li class="empty"><strong>Nothing coming up</strong>Post a public event from the Events page.</li>';
+      renderSchedule();
+      renderDashReport();
 
       // Newest accounts
       $('dash-newest').innerHTML = users.slice(0, 5).map(function (u) {
         return '<li class="row" style="grid-template-columns:1fr auto">' + whoCell(u) + '<span class="muted">' + esc(formatJoined(u.created_at)) + '</span></li>';
       }).join('') || '<li class="empty">No accounts yet.</li>';
+    }
+
+    // ---------- Schedule (Dashboard) ----------
+    // Today, this week (Monday to Sunday), or this month, for every event or
+    // one calendar, e.g. a "Mayor's Office" calendar for the Mayor's own
+    // activities. The choice is kept in app_settings ('schedule_filter'), so
+    // it follows the superadmin to another device.
+    var scheduleRange = 'today';
+    var fmtShortDay = new Intl.DateTimeFormat('en-PH', { timeZone: 'UTC', month: 'short', day: 'numeric' });
+    var fmtLongDay = new Intl.DateTimeFormat('en-PH', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric' });
+    var fmtMonthYear = new Intl.DateTimeFormat('en-PH', { timeZone: 'UTC', month: 'long', year: 'numeric' });
+    function keyDate(key) { return new Date(key + 'T00:00:00Z'); }
+    function addDays(key, n) { return new Date(keyDate(key).getTime() + n * 86400000).toISOString().slice(0, 10); }
+    function firstOfNextMonth(key) { return new Date(Date.UTC(+key.slice(0, 4), +key.slice(5, 7), 1)).toISOString().slice(0, 10); }
+    function activities(n) { return n + (n === 1 ? ' activity' : ' activities'); }
+    function scheduleFilter() {
+      var f = settings.schedule_filter || 'all';
+      // A calendar that was archived or removed falls back to everything.
+      if (f.indexOf('cal:') === 0) {
+        var cal = calendarById(f.slice(4));
+        if (!cal || cal.archived_at) return 'all';
+      }
+      return f;
+    }
+    function inSchedule(ev) {
+      var f = scheduleFilter();
+      if (f === 'public') return ev.type === 'public';
+      if (f.indexOf('cal:') === 0) return ev.type === 'calendar' && ev.calendarId === f.slice(4);
+      return true;
+    }
+    // `to` is the day after the last day, here and in report periods.
+    function scheduleWindow() {
+      var today = manilaDateKey(nowWallMs());
+      if (scheduleRange === 'week') {
+        var monday = addDays(today, -((keyDate(today).getUTCDay() + 6) % 7));
+        return { from: monday, to: addDays(monday, 7) };
+      }
+      if (scheduleRange === 'month') return { from: today.slice(0, 8) + '01', to: firstOfNextMonth(today) };
+      return { from: today, to: addDays(today, 1) };
+    }
+    function scheduleRow(ev, key, now) {
+      var s = ev.start.slice(0, 10), e = ev.end.slice(0, 10);
+      var time;
+      if (isAllDay(ev) || (s < key && e > key)) time = '<strong>All day</strong>';
+      else if (s < key) time = '<strong>Until ' + esc(fmtTime.format(wall(ev.end))) + '</strong>';
+      else time = '<strong>' + esc(fmtTime.format(wall(ev.start))) + '</strong><span>to ' +
+        esc(e === key ? fmtTime.format(wall(ev.end)) : fmtShortDay.format(keyDate(e))) + '</span>';
+      var ended = wall(ev.end).getTime() < now;
+      var live = !ended && wall(ev.start).getTime() <= now;
+      var poster = [ev.posterName, ev.posterDept].filter(Boolean).join(', ');
+      return '<li class="row sched-row' + (ended ? ' past' : '') + '"><div class="sched-time">' + time + '</div>' +
+        '<div style="min-width:0"><div class="ev-title">' + esc(ev.title) + '</div>' +
+        '<div class="ev-sub">' + esc(ev.location) + (poster ? ' &middot; ' + esc(poster) : '') + '</div>' +
+        '<div class="meta">' + typePill(ev) + (live ? '<span class="pill now"><span class="dot"></span>Happening now</span>' : '') + '</div></div>' +
+        '<div class="actions"><button class="btn ghost sm" type="button" data-open-event="' + esc(ev.id) + '">Edit</button></div></li>';
+    }
+    function renderSchedule() {
+      var f = scheduleFilter();
+      $('schedule-filter').innerHTML = '<option value="all">All events</option><option value="public">Public events</option>' +
+        activeCalendars().map(function (c) { return '<option value="cal:' + esc(c.id) + '">' + esc(c.name) + ' calendar</option>'; }).join('');
+      $('schedule-filter').value = f;
+      document.querySelectorAll('#schedule-range button').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b.dataset.range === scheduleRange));
+      });
+      var cal = f.indexOf('cal:') === 0 ? calendarById(f.slice(4)) : null;
+      $('schedule-title').textContent = cal ? cal.name + ' schedule' : f === 'public' ? 'Public events' : 'Schedule';
+
+      var win = scheduleWindow();
+      var now = nowWallMs();
+      var list = events.filter(function (ev) {
+        return inSchedule(ev) && ev.start.slice(0, 10) < win.to && ev.end.slice(0, 10) >= win.from;
+      }).sort(function (a, b) { return wall(a.start) - wall(b.start); });
+      var when = scheduleRange === 'today' ? 'Today, ' + fmtLongDay.format(keyDate(win.from))
+        : scheduleRange === 'week' ? 'This week, ' + fmtShortDay.format(keyDate(win.from)) + ' – ' + fmtShortDay.format(keyDate(addDays(win.to, -1)))
+        : fmtMonthYear.format(keyDate(win.from));
+      $('schedule-sub').textContent = when + ' · ' + activities(list.length);
+
+      if (eventsError) {
+        $('schedule-list').innerHTML = '<li class="empty">' + esc(eventsError) + '</li>';
+      } else if (!list.length) {
+        $('schedule-list').innerHTML = '<li class="empty"><strong>Nothing scheduled</strong>' +
+          (scheduleRange === 'today' ? 'Nothing on the schedule today.' : 'Nothing on the schedule this ' + scheduleRange + '.') + '</li>';
+      } else {
+        var today = manilaDateKey(now);
+        var html = '';
+        for (var key = win.from; key < win.to; key = addDays(key, 1)) {
+          var day = list.filter(function (ev) { return ev.start.slice(0, 10) <= key && ev.end.slice(0, 10) >= key; });
+          if (!day.length) continue;
+          if (scheduleRange !== 'today') {
+            html += '<li class="sched-day' + (key === today ? ' today' : '') + '">' + esc(fmtDate.format(keyDate(key))) + (key === today ? ' &middot; Today' : '') + '</li>';
+          }
+          for (var i = 0; i < day.length; i++) html += scheduleRow(day[i], key, now);
+        }
+        $('schedule-list').innerHTML = html;
+      }
+
+      var sent = stats && stats.reminders_sent_24h != null ? ' ' + plural(stats.reminders_sent_24h, 'reminder') + ' sent in the last 24 hours.' : '';
+      $('schedule-foot').textContent = 'The app reminds everyone before each activity, 1 hour or 1 day ahead as each person chose in their settings.' + sent;
+    }
+    $('schedule-range').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-range]');
+      if (!b) return;
+      scheduleRange = b.dataset.range;
+      renderSchedule();
+    });
+    $('schedule-filter').addEventListener('change', function () {
+      var value = $('schedule-filter').value;
+      settings.schedule_filter = value;
+      renderSchedule();
+      saveSetting('schedule_filter', value).catch(function (err) { toast(errorText(err)); });
+    });
+    $('schedule-add').addEventListener('click', function () {
+      openEventForm(null);
+      var f = scheduleFilter();
+      if (f.indexOf('cal:') === 0) {
+        $('ev-post-to').value = f.slice(4);
+        $('ev-post-to').dispatchEvent(new Event('change'));
+      }
+    });
+
+    // ---------- Report ----------
+    // The superadmin's duties as they appear in the semi-monthly Performance
+    // Report ("A. Core functions"). Edit this list if the duties change.
+    // `auto` says what eCalendar counts by itself; null = added by hand only.
+    var DUTIES = [
+      { n: 1, short: 'Schedule managed and updated', indicator: 'Coordination',
+        text: 'Manage and update the Municipal Mayor\'s schedule, appointments, meetings, events, and other official activities using the eCalendar System/App.',
+        auto: 'Events you posted, changed, or removed, in the app or here. Each event counts once.',
+        example: 'e.g. Rescheduled the Mayor\'s courtesy call' },
+      { n: 2, short: 'Schedule monitored', indicator: 'Monitoring',
+        text: 'Monitor the Mayor\'s daily, weekly, and monthly schedule and provide reminders for upcoming appointments, meetings, and activities.',
+        auto: 'Activities on the schedule during the period: public, group, and calendar events.',
+        example: 'e.g. Reminded the Mayor of the 2 PM meeting' },
+      { n: 3, short: 'Meetings and events prepared', indicator: 'Coordination',
+        text: 'Assist the Mayor in organizing and preparing for meetings, events, programs, field activities, and other official engagements.',
+        auto: null,
+        example: 'e.g. Prepared the venue and agenda for the barangay officials\' meeting' },
+      { n: 4, short: 'Users assisted', indicator: 'Assist',
+        text: 'Manage and assist in the use of the eCalendar and other digital systems/applications used by the Mayor\'s Office.',
+        auto: 'Accounts you created, edited, or deleted, LGU applications you reviewed, and roles, admin permissions, passwords, and kiosk settings you changed.',
+        example: 'e.g. Showed office staff how to post events' },
+      { n: 5, short: 'Systems maintained', indicator: 'Maintenance',
+        text: 'Provide basic IT support and assist in the development, updating, and maintenance of systems, databases, websites, and other digital tools used by the Mayor\'s Office and the Municipality.',
+        auto: 'Backups and restores, and changes to calendars, calendar handlers, and event locations.',
+        example: 'e.g. Fixed the office printer' },
+      { n: 6, short: 'Other tasks', indicator: 'Performed',
+        text: 'Perform other related tasks as assigned by the Municipal Mayor or authorized officer.',
+        auto: null,
+        example: 'e.g. Delivered documents for the Mayor' }
+    ];
+    var DEFAULT_WEIGHT = 4; // percent, as in the report template
+
+    // Periods follow the report: the 1st to the 15th and the 16th to the end
+    // of the month, or a whole month.
+    function periodFor(key, span) {
+      var first = key.slice(0, 8) + '01', mid = key.slice(0, 8) + '16', next = firstOfNextMonth(key);
+      if (span === 'month') return { from: first, to: next, span: span };
+      return key < mid ? { from: first, to: mid, span: span } : { from: mid, to: next, span: span };
+    }
+    function shiftPeriod(p, dir) { return dir < 0 ? periodFor(addDays(p.from, -1), p.span) : periodFor(p.to, p.span); }
+    function periodId(p) { return p.from + '_' + p.to; }
+    function periodLabel(p) {
+      var from = keyDate(p.from);
+      if (p.span === 'month') return fmtMonthYear.format(from);
+      return fmtShortDay.format(from) + ' – ' + keyDate(addDays(p.to, -1)).getUTCDate() + ', ' + from.getUTCFullYear();
+    }
+    function currentPeriod() { return periodFor(manilaDateKey(nowWallMs()), 'half'); }
+    var reportPeriod = currentPeriod();
+    var reportCache = {};   // periodId -> admin_report_data result
+    var reportLoading = {}; // periodId -> request in flight
+    var reportError = null;
+    var expandedDuty = null;
+
+    function loadReport(p) {
+      var id = periodId(p);
+      if (reportLoading[id]) return reportLoading[id];
+      reportLoading[id] = sb.rpc('admin_report_data', { p_from: p.from, p_to: p.to }).then(function (res) {
+        if (res.error) {
+          reportError = missingBackend(res.error)
+            ? 'Counting event changes, account help, and backups isn\'t set up yet. Run the "Accomplishment report" block at the end of supabase/barangay_events.sql. Activities on the schedule and work you add by hand still count.'
+            : errorText(res.error);
+        } else {
+          reportError = null;
+          reportCache[id] = res.data || {};
+        }
+      }).then(function () {
+        delete reportLoading[id];
+        renderReport(); renderDashReport();
+      });
+      return reportLoading[id];
+    }
+    function loadReports() {
+      var now = currentPeriod();
+      var jobs = [loadReport(now)];
+      if (periodId(reportPeriod) !== periodId(now)) jobs.push(loadReport(reportPeriod));
+      return Promise.all(jobs);
+    }
+
+    // Work added by hand and ratings, one app_settings row per month:
+    // 'ar_YYYY-MM' = { entries: [{ id, duty, date, qty, note }], ratings: { periodId: { duty: 1-5 } } }.
+    function arStore(monthKey) {
+      var v = settings['ar_' + monthKey] || {};
+      return { entries: (v.entries || []).slice(), ratings: Object.assign({}, v.ratings) };
+    }
+    function saveArStore(monthKey, store) {
+      settings['ar_' + monthKey] = store;
+      renderReport(); renderDashReport();
+      return saveSetting('ar_' + monthKey, store).catch(function (err) { toast(errorText(err)); return loadSettings(); });
+    }
+    function weightOf(n) {
+      var w = settings.ar_weights && settings.ar_weights[n];
+      return typeof w === 'number' ? w : DEFAULT_WEIGHT;
+    }
+    // Logged times are real instants; event times and created_at are
+    // Philippine wall-clock labeled UTC (see the Time section).
+    function realDateKey(iso) { return manilaDateKey(new Date(iso).getTime() + MANILA_MS); }
+    function accountItem(a) {
+      if (a.kind === 'account.delete') return 'Deleted an account';
+      var u = userById(a.ref);
+      var who = u ? (u.display_name || u.email) : 'someone (account since deleted)';
+      switch (a.kind) {
+        case 'account.create': return 'Created an account for ' + who;
+        case 'account.edit': return 'Edited the account of ' + who;
+        case 'account.password': return 'Reset the password of ' + who;
+        case 'account.application': return (a.title === 'approved' ? 'Approved' : 'Declined') + ' the LGU application of ' + who;
+        case 'account.role': return 'Changed the role of ' + who + ' to ' + (ROLE_LABEL[a.title] || a.title);
+        case 'account.permissions': return 'Changed the admin permissions of ' + who;
+        case 'account.kiosk': return 'Turned kiosk mode ' + (a.title === 'on' ? 'on' : 'off') + ' for ' + who;
+        case 'account.passcode': return 'Reset the kiosk passcode of ' + who;
+        default: return 'Helped ' + who;
+      }
+    }
+    function setupItem(a) {
+      var parts = a.kind.split('.');
+      var verb = { add: 'Added', update: 'Changed', delete: 'Removed' }[parts[1]] || 'Changed';
+      var cal = a.title ? 'the ' + a.title + ' calendar' : 'a calendar';
+      if (parts[0] === 'calendar') return verb + ' ' + cal;
+      if (parts[0] === 'handler') return parts[1] === 'delete' ? 'Removed a handler from ' + cal : 'Added a handler to ' + cal;
+      return verb + ' the event location ' + (a.title || '');
+    }
+    function byDate(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }
+    function dutyRows(p) {
+      var data = reportCache[periodId(p)] || {};
+      var activity = data.activity || [];
+      var store = arStore(p.from.slice(0, 7));
+      var ratings = store.ratings[periodId(p)] || {};
+      var auto = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+
+      // 1: each event once, however many times it was touched.
+      var touched = {};
+      function touch(ref, date, verb, title) {
+        var t = touched[ref] || (touched[ref] = { date: date, verbs: [], title: title });
+        if (date < t.date) t.date = date;
+        if (t.verbs.indexOf(verb) < 0) t.verbs.push(verb);
+        t.title = title || t.title;
+      }
+      (data.events_added || []).forEach(function (e) { touch(e.ref, String(e.at).slice(0, 10), 'posted', e.title); });
+      activity.forEach(function (a) {
+        var verb = { 'event.add': 'posted', 'event.update': 'changed', 'event.delete': 'removed' }[a.kind];
+        if (verb) touch(a.ref, realDateKey(a.at), verb, a.title);
+      });
+      Object.keys(touched).forEach(function (ref) {
+        var t = touched[ref], verbs = t.verbs.join(', ');
+        auto[1].push({ date: t.date, text: verbs.charAt(0).toUpperCase() + verbs.slice(1) + ': ' + (t.title || 'an event') });
+      });
+
+      // 2: activities on the schedule during the period.
+      events.forEach(function (ev) {
+        var s = ev.start.slice(0, 10);
+        if (s < p.to && ev.end.slice(0, 10) >= p.from) {
+          auto[2].push({ date: s < p.from ? p.from : s, text: ev.title + ' (' + timeLabel(ev) + ')' });
+        }
+      });
+
+      // 4: help with accounts. 5: backups and setup.
+      activity.forEach(function (a) {
+        if (a.kind.indexOf('account.') === 0) auto[4].push({ date: realDateKey(a.at), text: accountItem(a) });
+        else if (/^(calendar|handler|location)\./.test(a.kind)) auto[5].push({ date: realDateKey(a.at), text: setupItem(a) });
+      });
+      (data.backups || []).forEach(function (b) {
+        auto[5].push({ date: realDateKey(b.at), text: b.kind === 'restore' ? 'Restored the app\'s data from a backup' : 'Backed up all of the app\'s data' });
+      });
+
+      return DUTIES.map(function (d) {
+        var manual = store.entries.filter(function (e) { return e.duty === d.n && e.date >= p.from && e.date < p.to; }).sort(byDate);
+        var added = manual.reduce(function (sum, e) { return sum + (e.qty || 1); }, 0);
+        var rating = ratings[d.n] || null;
+        var weight = weightOf(d.n);
+        return {
+          duty: d, items: auto[d.n].sort(byDate), manual: manual, added: added,
+          qty: auto[d.n].length + added, rating: rating, weight: weight,
+          points: rating ? rating * weight / 100 : null,
+          extra: d.n === 2 && data.reminders_sent != null
+            ? 'The app sent ' + plural(data.reminders_sent, 'reminder') + ' about ' + activities(data.reminded_events || 0) + ' in this period.'
+            : ''
+        };
+      });
+    }
+    function fmtPoints(x) { return x == null ? '–' : String(Math.round(x * 1000) / 1000); }
+
+    function renderDashReport() {
+      var p = currentPeriod();
+      $('dash-report-sub').textContent = periodLabel(p) + ' · A. Core functions';
+      $('dash-report').innerHTML = dutyRows(p).map(function (r) {
+        return '<li class="row dash-duty"><span class="duty-n">' + r.duty.n + '</span>' +
+          '<div style="min-width:0"><strong>' + esc(r.duty.short) + '</strong><span class="muted">' + esc(r.duty.indicator) + '</span></div>' +
+          '<span class="qty">' + r.qty + '</span></li>';
+      }).join('');
+    }
+    function dutyDetail(r, p) {
+      var d = r.duty;
+      var last = addDays(p.to, -1);
+      var today = manilaDateKey(nowWallMs());
+      function item(date, body) {
+        return '<li><span class="when">' + esc(fmtShortDay.format(keyDate(date))) + '</span>' + body + '</li>';
+      }
+      var shown = r.items.slice(0, 100).map(function (it) { return item(it.date, '<span>' + esc(it.text) + '</span>'); }).join('') +
+        (r.items.length > 100 ? '<li><span class="when"></span><span>and ' + (r.items.length - 100) + ' more</span></li>' : '');
+      var manual = r.manual.map(function (e) {
+        return item(e.date, '<span>' + (e.qty > 1 ? '<strong>x' + e.qty + '</strong> ' : '') + esc(e.note) + '</span>' +
+          '<button class="x" type="button" data-ar-remove="' + esc(e.id) + '" aria-label="Remove">&times;</button>');
+      }).join('');
+      return '<li class="detail">' +
+        (d.auto
+          ? '<div><strong>Counted automatically.</strong> ' + esc(d.auto) + (r.extra ? ' ' + esc(r.extra) : '') + '</div>' +
+            (shown ? '<ul class="ar-items">' + shown + '</ul>' : '<div style="color:var(--ink-3)">Nothing counted in this period.</div>')
+          : '') +
+        '<div><strong>Added by you.</strong> Work done outside eCalendar. Each entry adds its count to the quantity.</div>' +
+        (manual ? '<ul class="ar-items">' + manual + '</ul>' : '') +
+        '<form class="ar-add" data-ar-add="' + d.n + '">' +
+          '<input type="date" required min="' + p.from + '" max="' + last + '" value="' + (today >= p.from && today <= last ? today : last) + '" aria-label="Date">' +
+          '<input type="number" required min="1" max="999" value="1" aria-label="How many">' +
+          '<input type="text" required maxlength="300" placeholder="' + esc(d.example) + '" aria-label="What you did">' +
+          '<button class="btn primary sm" type="submit">Add</button>' +
+        '</form></li>';
+    }
+    function renderReport() {
+      var p = reportPeriod;
+      $('report-period').textContent = periodLabel(p);
+      $('report-span').value = p.span;
+      $('report-next').disabled = shiftPeriod(p, 1).from > manilaDateKey(nowWallMs());
+
+      var data = reportCache[periodId(p)];
+      var logSince = data && data.log_since ? realDateKey(data.log_since) : null;
+      var msg = '';
+      if (reportError) msg = '<div class="notice warn">' + esc(reportError) + '</div>';
+      else if (!data) msg = '<div class="notice info">Counting…</div>';
+      else if (!logSince || logSince > p.from) {
+        msg = '<div class="notice info">Changes to events, accounts, and setup are counted from ' +
+          (logSince ? esc(fmtDate.format(keyDate(logSince))) : 'now on') +
+          ', when this report was set up. Events you posted earlier still count; add other earlier work by hand.</div>';
+      }
+      $('report-msg').innerHTML = msg;
+
+      var total = 0, rated = 0;
+      var html = dutyRows(p).map(function (r) {
+        var d = r.duty, open = expandedDuty === d.n;
+        if (r.points != null) { total += r.points; rated++; }
+        var counts = [];
+        if (d.auto) counts.push(r.items.length + ' counted');
+        if (r.added) counts.push(r.added + ' added by you');
+        var row = '<li class="row ar-row">' +
+          '<div class="duty"><span class="duty-n">' + d.n + '</span><div style="min-width:0"><div class="duty-text">' + esc(d.text) + '</div>' +
+            '<span class="ar-ind-sm">' + esc(d.indicator) + '</span>' +
+            '<button class="link-btn" type="button" data-ar-toggle="' + d.n + '" aria-expanded="' + open + '">' +
+              esc((counts.length ? counts.join(' · ') + ' · ' : '') + (open ? 'Hide details' : d.auto ? 'Details' : 'Add work')) + '</button></div></div>' +
+          '<div><span class="label-sm">Quantity</span><span class="qty">' + r.qty + '</span></div>' +
+          '<div class="ar-ind">' + esc(d.indicator) + '</div>' +
+          '<div><span class="label-sm">Rating</span><select data-ar-rating="' + d.n + '" aria-label="Rating for duty ' + d.n + '"><option value="">–</option>' +
+            [5, 4, 3, 2, 1].map(function (v) { return '<option value="' + v + '"' + (r.rating === v ? ' selected' : '') + '>' + v + '</option>'; }).join('') + '</select></div>' +
+          '<div><span class="label-sm">Weight</span><input type="number" min="0" max="100" step="0.5" value="' + r.weight + '" data-ar-weight="' + d.n + '" aria-label="Weight for duty ' + d.n + ', in percent"> %</div>' +
+          '<div><span class="label-sm">Points</span><span class="pts">' + fmtPoints(r.points) + '</span></div></li>';
+        return open ? row + dutyDetail(r, p) : row;
+      }).join('');
+      html += '<li class="row ar-total"><span>Total points' + (rated < DUTIES.length ? ' (' + rated + ' of ' + DUTIES.length + ' duties rated)' : '') + '</span>' +
+        '<span class="pts">' + fmtPoints(rated ? total : null) + '</span></li>';
+      $('report-list').innerHTML = html;
+    }
+    function changeReportPeriod(p) {
+      reportPeriod = p;
+      expandedDuty = null;
+      renderReport();
+      loadReport(p);
+    }
+    $('report-prev').addEventListener('click', function () { changeReportPeriod(shiftPeriod(reportPeriod, -1)); });
+    $('report-next').addEventListener('click', function () { changeReportPeriod(shiftPeriod(reportPeriod, 1)); });
+    $('report-span').addEventListener('change', function () { changeReportPeriod(periodFor(reportPeriod.from, $('report-span').value)); });
+    $('report-list').addEventListener('click', function (e) {
+      var toggle = e.target.closest('[data-ar-toggle]');
+      if (toggle) {
+        var n = +toggle.dataset.arToggle;
+        expandedDuty = expandedDuty === n ? null : n;
+        renderReport();
+        return;
+      }
+      var remove = e.target.closest('[data-ar-remove]');
+      if (remove) {
+        var monthKey = reportPeriod.from.slice(0, 7);
+        var store = arStore(monthKey);
+        store.entries = store.entries.filter(function (en) { return en.id !== remove.dataset.arRemove; });
+        saveArStore(monthKey, store);
+      }
+    });
+    $('report-list').addEventListener('change', function (e) {
+      var el = e.target;
+      if (el.dataset.arRating) {
+        var monthKey = reportPeriod.from.slice(0, 7);
+        var store = arStore(monthKey);
+        var id = periodId(reportPeriod);
+        var ratings = Object.assign({}, store.ratings[id]);
+        if (el.value) ratings[el.dataset.arRating] = +el.value; else delete ratings[el.dataset.arRating];
+        store.ratings[id] = ratings;
+        saveArStore(monthKey, store);
+      } else if (el.dataset.arWeight) {
+        var w = parseFloat(el.value);
+        if (!(w >= 0 && w <= 100)) { renderReport(); return; }
+        var weights = Object.assign({}, settings.ar_weights);
+        weights[el.dataset.arWeight] = w;
+        settings.ar_weights = weights;
+        renderReport(); renderDashReport();
+        saveSetting('ar_weights', weights).catch(function (err) { toast(errorText(err)); return loadSettings(); });
+      }
+    });
+    $('report-list').addEventListener('submit', function (e) {
+      var form = e.target.closest('[data-ar-add]');
+      if (!form) return;
+      e.preventDefault();
+      var inputs = form.querySelectorAll('input');
+      var qty = parseInt(inputs[1].value, 10);
+      var note = inputs[2].value.trim();
+      if (!note || !(qty >= 1)) return;
+      var duty = form.dataset.arAdd;
+      var monthKey = reportPeriod.from.slice(0, 7);
+      var store = arStore(monthKey);
+      store.entries.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), duty: +duty, date: inputs[0].value, qty: Math.min(qty, 999), note: note });
+      saveArStore(monthKey, store);
+      var next = $('report-list').querySelector('[data-ar-add="' + duty + '"] input[type="text"]');
+      if (next) next.focus();
+    });
+    $('report-copy').addEventListener('click', function () {
+      // Same column order as the report: QUANTITY, PERFORMANCE INDICATOR,
+      // RATING, WEIGHT, POINTS; one line per duty.
+      var text = dutyRows(reportPeriod).map(function (r) {
+        return [r.qty, r.duty.indicator, r.rating || '', r.weight + '%', r.points == null ? '' : fmtPoints(r.points)].join('\t');
+      }).join('\n');
+      if (!navigator.clipboard) { toast('This browser can\'t copy from here.'); return; }
+      navigator.clipboard.writeText(text).then(function () {
+        toast('Copied. Click the QUANTITY cell of duty 1 in your report and paste.');
+      }, function () { toast('Couldn\'t copy. Try again, or copy the numbers by hand.'); });
+    });
+
+    // admin-create-account, -update-user, -delete-user, and -reset-password
+    // run with the service role, so the database can't tell who asked; the
+    // portal records them for the Report page (admin_activity_log).
+    function logAccountAction(kind, userId) {
+      sb.from('admin_activity_log').insert({ actor_id: me.id, kind: kind, ref_id: userId || null })
+        .then(function () { loadReports(); });
     }
 
     // ---------- Users ----------
@@ -1507,6 +2057,7 @@
         sb.functions.invoke('admin-reset-password', { body: { userId: userId } }).then(function (res) {
           if (res.error) throw res.error;
           notice(msg, 'New password for ' + esc(email) + ': <code>' + esc(res.data && res.data.newPassword) + '</code>. Copy it now; it won\'t be shown again.', 'ok');
+          logAccountAction('account.password', userId);
         }).catch(function (err) {
           return functionErrorText(err).then(function (t) { notice(msg, esc(t), 'error'); });
         }).then(function () { busy(btn, false); });
@@ -1541,6 +2092,7 @@
         if (res.error) throw res.error;
         $('user-dialog').close();
         toast('Saved changes to ' + name + '.');
+        logAccountAction('account.edit', u.user_id);
         return loadUsers();
       }).catch(function (err) {
         return functionErrorText(err).then(function (t) { notice(msg, esc(t), 'error'); });
@@ -1563,6 +2115,7 @@
           if (res.error) throw res.error;
           expandedUser = null;
           toast('Deleted ' + who + '.');
+          logAccountAction('account.delete', userId);
           return Promise.all([loadUsers(), loadApplications(), loadStats()]);
         }).catch(function (err) {
           busy(btn, false);
@@ -1767,6 +2320,7 @@
         }).then(function (res) {
           if (res.error) throw res.error;
           notice($('add-account-msg'), 'Created ' + esc(email) + '. They can sign in now.', 'ok');
+          logAccountAction('account.create', res.data && res.data.id);
           e.target.reset(); $('new-perms').innerHTML = permsHtml(null, 'new-perm'); syncDepartmentField();
           loadUsers();
         }).catch(function (err) {
@@ -1858,7 +2412,7 @@
         sb.rpc('admin_delete_event', { p_event_id: ev.id }).then(function (res) {
           if (res.error) throw res.error;
           toast('Deleted "' + ev.title + '".');
-          return Promise.all([loadEvents(), loadStats()]);
+          return Promise.all([loadEvents(), loadStats(), loadReports()]);
         }).catch(function (err) { busy(btn, false); toast(errorText(err)); });
       });
     }
@@ -1976,7 +2530,7 @@
         if (res.error) throw res.error;
         $('event-dialog').close();
         toast(editingEvent ? 'Saved "' + title + '".' : 'Posted "' + title + '".');
-        return Promise.all([loadEvents(), loadStats()]);
+        return Promise.all([loadEvents(), loadStats(), loadReports()]);
       }).catch(function (err) { notice(msg, esc(errorText(err)), 'error'); }).then(function () { busy(btn, false); });
     });
 
@@ -2455,7 +3009,7 @@
         }).then(function (r) { hostinger = r; });
       }).then(function () {
         setProgress('backup', 0.72, 'Adding the database structure…');
-        return fetch(AVATAR_BASE + 'supabase/barangay_events.sql').then(function (r) { return r.ok ? r.text() : null; }).catch(function () { return null; });
+        return fetch(SCHEMA_URL).then(function (r) { return r.ok ? r.text() : null; }).catch(function () { return null; });
       }).then(function (schema) {
         if (schema) zip.file('schema.sql', schema);
         var manifest = {
@@ -2790,7 +3344,7 @@
       return sb.rpc('list_all_users').then(function (res) {
         if (res.error) throw res.error;
         users = res.data || [];
-        renderUsers(); renderAdmins(); renderSignups(); renderNav(); renderDashboard(); renderCategories(); renderPictures();
+        renderUsers(); renderAdmins(); renderSignups(); renderNav(); renderDashboard(); renderCategories(); renderPictures(); renderReport();
       });
     }
     function loadApplications() {
@@ -2811,7 +3365,7 @@
           eventsError = null;
           events = (res.data || []).map(mapEvent);
         }
-        renderEvents(); renderDashboard(); renderCategories();
+        renderEvents(); renderDashboard(); renderCategories(); renderReport();
       });
     }
     function loadStats() {
@@ -2849,14 +3403,14 @@
           calendars = res.data || [];
           calendarHandlers = results[1].error ? [] : (results[1].data || []);
         }
-        renderCategories(); renderEvents();
+        renderCategories(); renderEvents(); renderDashboard();
       });
     }
     function loadSettings() {
       return sb.from('app_settings').select('key, value').then(function (res) {
         settings = {};
         (res.data || []).forEach(function (r) { settings[r.key] = r.value; });
-        renderBackupHistory(); renderSignups(); renderNav(); renderDashboard();
+        renderBackupHistory(); renderSignups(); renderNav(); renderDashboard(); renderReport();
       });
     }
     function loadBackupHistory() {
@@ -2907,7 +3461,7 @@
     function loadAll() {
       return Promise.all([
         loadUsers(), loadApplications(), loadEvents(), loadStats(), loadLocations(),
-        loadCategories(), loadSettings(), loadBackupHistory(), loadUsage(), loadPresets()
+        loadCategories(), loadSettings(), loadBackupHistory(), loadUsage(), loadPresets(), loadReports()
       ]).catch(function (err) { toast(errorText(err)); });
     }
     $('refresh-btn').addEventListener('click', function () {

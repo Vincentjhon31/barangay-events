@@ -70,7 +70,9 @@ ReminderPreference? _reminderPreferenceFromDbValue(String? value) => switch (val
 /// How the Month/Week grid shows a day's events: small colored [dots]
 /// (the original look), or Google-Calendar-style [titles] — a colored
 /// chip per event, with date-range events drawn as one bar across the
-/// days they span. Kept on this device only (not synced to the profile).
+/// days they span. Synced to `profiles.calendar_cell_style` like the
+/// appearance settings, so the choice follows the user across sessions
+/// and devices.
 enum CalendarCellStyle { dots, titles }
 
 CalendarCellStyle? _calendarCellStyleFromName(String? name) {
@@ -148,12 +150,14 @@ class ThemeController extends ChangeNotifier {
     String? language,
     String? displayMode,
     String? reminderPreference,
+    String? calendarCellStyle,
   }) async {
     final mode = _themeModeFromName(themeMode);
     final style = _uiStyleFromName(uiStyle);
     final lang = (language != null && supportedLanguageCodes.contains(language)) ? language : null;
     final display = _displayModeFromName(displayMode);
     final reminder = _reminderPreferenceFromDbValue(reminderPreference);
+    final cellStyle = _calendarCellStyleFromName(calendarCellStyle);
 
     var changed = false;
     if (mode != null && mode != _themeMode) {
@@ -176,6 +180,10 @@ class ThemeController extends ChangeNotifier {
       _reminderPreference = reminder;
       changed = true;
     }
+    if (cellStyle != null && cellStyle != _calendarCellStyle) {
+      _calendarCellStyle = cellStyle;
+      changed = true;
+    }
     if (!changed) return;
     notifyListeners();
 
@@ -185,6 +193,20 @@ class ThemeController extends ChangeNotifier {
     if (lang != null) await prefs.setString(_languagePrefKey, lang);
     if (display != null) await prefs.setString(_displayModePrefKey, display.name);
     if (reminder != null) await prefs.setString(_reminderPreferencePrefKey, reminder.dbValue);
+    if (cellStyle != null) await prefs.setString(_calendarCellStylePrefKey, cellStyle.name);
+  }
+
+  /// Writes every synced setting's current value to the signed-in user's
+  /// profile (a no-op until [attachAuthService]).
+  void _saveToProfile() {
+    unawaited(_authService?.savePreferences(
+      themeMode: _themeMode.name,
+      uiStyle: _uiStyle.name,
+      language: _language,
+      displayMode: _displayMode.name,
+      reminderPreference: _reminderPreference.dbValue,
+      calendarCellStyle: _calendarCellStyle.name,
+    ));
   }
 
   static Future<ThemeController> load() async {
@@ -226,13 +248,7 @@ class ThemeController extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_themeModePrefKey, mode.name);
-    unawaited(_authService?.savePreferences(
-      themeMode: mode.name,
-      uiStyle: _uiStyle.name,
-      language: _language,
-      displayMode: _displayMode.name,
-      reminderPreference: _reminderPreference.dbValue,
-    ));
+    _saveToProfile();
   }
 
   Future<void> setUiStyle(UiStyle style) async {
@@ -242,13 +258,7 @@ class ThemeController extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_uiStylePrefKey, style.name);
-    unawaited(_authService?.savePreferences(
-      themeMode: _themeMode.name,
-      uiStyle: style.name,
-      language: _language,
-      displayMode: _displayMode.name,
-      reminderPreference: _reminderPreference.dbValue,
-    ));
+    _saveToProfile();
   }
 
   Future<void> setLanguage(String language) async {
@@ -259,13 +269,7 @@ class ThemeController extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_languagePrefKey, sanitized);
-    unawaited(_authService?.savePreferences(
-      themeMode: _themeMode.name,
-      uiStyle: _uiStyle.name,
-      language: sanitized,
-      displayMode: _displayMode.name,
-      reminderPreference: _reminderPreference.dbValue,
-    ));
+    _saveToProfile();
   }
 
   Future<void> setDisplayMode(DisplayMode mode) async {
@@ -275,16 +279,9 @@ class ThemeController extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_displayModePrefKey, mode.name);
-    unawaited(_authService?.savePreferences(
-      themeMode: _themeMode.name,
-      uiStyle: _uiStyle.name,
-      language: _language,
-      displayMode: mode.name,
-      reminderPreference: _reminderPreference.dbValue,
-    ));
+    _saveToProfile();
   }
 
-  /// Local-only (see [CalendarCellStyle]) — no profile write.
   Future<void> setCalendarCellStyle(CalendarCellStyle style) async {
     if (style == _calendarCellStyle) return;
     _calendarCellStyle = style;
@@ -292,6 +289,7 @@ class ThemeController extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_calendarCellStylePrefKey, style.name);
+    _saveToProfile();
   }
 
   Future<void> setReminderPreference(ReminderPreference preference) async {
@@ -301,12 +299,6 @@ class ThemeController extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_reminderPreferencePrefKey, preference.dbValue);
-    unawaited(_authService?.savePreferences(
-      themeMode: _themeMode.name,
-      uiStyle: _uiStyle.name,
-      language: _language,
-      displayMode: _displayMode.name,
-      reminderPreference: preference.dbValue,
-    ));
+    _saveToProfile();
   }
 }
