@@ -70,6 +70,7 @@ class _AvatarPickerPageState extends State<AvatarPickerPage> {
       lguRequestStatus: p?.lguRequestStatus,
       isKioskAccount: p?.isKioskAccount ?? false,
       calendarGroupFilterIds: p?.calendarGroupFilterIds ?? const [],
+      filterTabOrder: p?.filterTabOrder ?? const [],
       adminPermissions: p?.adminPermissions ?? const {},
     );
   }

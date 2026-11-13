@@ -18,6 +18,15 @@
     but it can't catch everything.
 -->
 
+## 1.19.0
+- The app now dresses up for the season: Christmas, Araw ng mga Puso, summer, rainy days and fiesta each bring their own colors and a small decoration. You can turn this off in Settings, under "Seasonal theme".
+- Put your favorite tabs first: press and hold a tab like Public, Group or Sports, then drag it where you want it. Your order follows you to your other phones and computers.
+- Each group now has its own color, and events show "Group:" with the group's name, so you can tell at a glance whose event it is. Group admins choose the color on the group's page.
+- The calendar now shows event titles by default. Prefer dots? Switch back in Settings.
+- From now on, updates download and install right inside the app, with a progress bar.
+- See your events even without internet: the app keeps the events it last loaded and tells you when you are offline.
+- Take a photo with the camera and attach it straight to an event.
+
 ## 1.18.0
 - Post an event that happens on several dates in one go, like every weekend of the month: use "More dates" or "Repeat every week" when adding an event. Each date gets its own reminder, and everyone shares one chat and the same files.
 - When editing or deleting an event with several dates, choose just that date or all of them.

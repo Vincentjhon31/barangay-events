@@ -250,6 +250,34 @@ class AppLocalizationsFil extends AppLocalizations {
       'Ang pangalan ng bawat kaganapan sa loob ng kalendaryo, gaya ng Google Calendar.';
 
   @override
+  String get settingsSeasonal => 'Tema ayon sa panahon';
+
+  @override
+  String get settingsSeasonalHint =>
+      'Mga kulay at maliit na dekorasyon tuwing Pasko, tag-init at iba pang panahon. Ang munisipyo ang nagtatakda ng mga petsa.';
+
+  @override
+  String get settingsSeasonalOn => 'Naka-on';
+
+  @override
+  String get settingsSeasonalOnSubtitle =>
+      'May bahagyang niyebe, ulan o confetti.';
+
+  @override
+  String get settingsSeasonalNoEffects => 'Naka-on, walang nahuhulog';
+
+  @override
+  String get settingsSeasonalNoEffectsSubtitle =>
+      'Mga kulay at dekorasyon lang.';
+
+  @override
+  String get settingsSeasonalOff => 'Naka-off';
+
+  @override
+  String get settingsSeasonalOffSubtitle =>
+      'Laging gamitin ang karaniwang itsura.';
+
+  @override
   String get eventReminderNoticeLabel => 'Paalala sa event';
 
   @override
@@ -890,7 +918,14 @@ class AppLocalizationsFil extends AppLocalizations {
   String get moreDatesRepeatWeekly => 'Ulitin bawat linggo';
 
   @override
-  String get moreDatesPickHelp => 'Magdagdag ng petsa';
+  String get moreDatesPickHelp => 'Pumili ng mga petsa';
+
+  @override
+  String get moreDatesPickHint =>
+      'I-tap ang mga araw para idagdag o alisin. Ang mga kulay-abong araw ay sasapaw sa petsang napili na.';
+
+  @override
+  String get moreDatesDone => 'Tapos na';
 
   @override
   String get moreDatesRepeatUntil => 'Ulitin bawat linggo hanggang';
@@ -905,10 +940,6 @@ class AppLocalizationsFil extends AppLocalizations {
   String moreDatesCount(int count) {
     return '$count na petsa';
   }
-
-  @override
-  String get moreDatesOverlap =>
-      'Nagsasapaw ang petsang iyan sa isa pang petsa ng kaganapang ito.';
 
   @override
   String get moreDatesSomeOverlap =>
@@ -1075,6 +1106,31 @@ class AppLocalizationsFil extends AppLocalizations {
 
   @override
   String get addAttachmentButton => 'Magdagdag ng larawan o file';
+
+  @override
+  String get takePhotoButton => 'Kumuha ng litrato';
+
+  @override
+  String get cameraShutter => 'Kunan ng litrato';
+
+  @override
+  String get cameraSwitch => 'Palitan ang camera';
+
+  @override
+  String get cameraRetake => 'Ulitin';
+
+  @override
+  String get cameraUsePhoto => 'Gamitin ang litrato';
+
+  @override
+  String get cameraNotFound => 'Walang nakitang camera sa device na ito.';
+
+  @override
+  String get cameraPermissionDenied =>
+      'Hindi pinapayagang gamitin ng eBongabong Calendar ang camera. Payagan ito sa settings ng device, saka subukan ulit.';
+
+  @override
+  String get cameraError => 'Hindi magamit ang camera. Pakisubukan ulit.';
 
   @override
   String attachmentTooLarge(String name) {
@@ -1988,4 +2044,54 @@ class AppLocalizationsFil extends AppLocalizations {
   @override
   String get privacyLegalBody =>
       'Ang app na ito ay pinapatakbo ng Munisipalidad ng Bongabong alinsunod sa Data Privacy Act of 2012 (Republic Act No. 10173). Para sa mga tanong tungkol sa iyong data, makipag-ugnayan sa iyong opisina sa barangay o sa LGU admin team ng munisipalidad.';
+
+  @override
+  String get offlineTitle =>
+      'Offline: ipinapakita ang mga event na naka-save sa device na ito';
+
+  @override
+  String offlineLastUpdated(String time) {
+    return 'Huling na-update $time';
+  }
+
+  @override
+  String get offlineNoSavedEvents =>
+      'Wala pang naka-save na event. Lalabas ang mga ito kapag may internet na.';
+
+  @override
+  String get offlineRetryButton => 'Subukan muli';
+
+  @override
+  String updateDownloadTitle(String version) {
+    return 'Ina-update sa bersyon $version';
+  }
+
+  @override
+  String updateDownloadProgress(String received, String total) {
+    return 'Dina-download… $received sa $total MB';
+  }
+
+  @override
+  String get updateDownloadStarting => 'Dina-download…';
+
+  @override
+  String get updateOpeningInstaller => 'Binubuksan ang installer…';
+
+  @override
+  String get updateAndroidInstallHint =>
+      'Kung magtanong ang telepono mo, payagan ang pag-install mula sa eBongabong Calendar, saka i-tap ang Update. Mananatili ang iyong mga event at setting.';
+
+  @override
+  String get updateWindowsInstallHint =>
+      'Magsasara ang app, mag-a-update, at muling bubukas. Mananatili ang iyong mga event at setting.';
+
+  @override
+  String get updateDownloadFailed =>
+      'Hindi ma-download ang update. Tingnan ang internet connection mo at subukan muli.';
+
+  @override
+  String get updateRetryButton => 'Subukan muli';
+
+  @override
+  String get updateOpenDownloadPage => 'I-download sa browser';
 }

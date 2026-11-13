@@ -48,3 +48,14 @@ String randomEventColorKey({Random? random, String? excluding}) {
   final keys = eventColorPalette.keys.where((key) => key != excluding).toList();
   return keys[(random ?? Random()).nextInt(keys.length)];
 }
+
+/// A group's color: the admin-chosen [colorKey], or else a palette color
+/// derived from [groupId] so every group still gets its own steady color
+/// (same on every device — the code-unit sum is platform-stable, unlike
+/// String.hashCode).
+Color groupColor(String groupId, String? colorKey) {
+  final chosen = colorForKey(colorKey);
+  if (chosen != null) return chosen;
+  final colors = eventColorPalette.values.toList();
+  return colors[groupId.codeUnits.fold<int>(0, (sum, unit) => sum + unit) % colors.length];
+}

@@ -79,6 +79,14 @@
   "settingsCalendarDotsSubtitle": "A small colored dot for each event.",
   "settingsCalendarTitles": "Event titles",
   "settingsCalendarTitlesSubtitle": "Each event's name inside the calendar, like Google Calendar.",
+  "settingsSeasonal": "Seasonal theme",
+  "settingsSeasonalHint": "Colors and a small decoration for Christmas, summer and other seasons. The municipality sets the dates.",
+  "settingsSeasonalOn": "On",
+  "settingsSeasonalOnSubtitle": "With light snow, rain or confetti.",
+  "settingsSeasonalNoEffects": "On, nothing falling",
+  "settingsSeasonalNoEffectsSubtitle": "Colors and decoration only.",
+  "settingsSeasonalOff": "Off",
+  "settingsSeasonalOffSubtitle": "Always use the regular look.",
   "eventReminderNoticeLabel": "Event reminder",
   "eventReminderGenericTitle": "An event you're following is coming up soon",
 
@@ -343,7 +351,9 @@
   "moreDatesHint": "Same time and place on other days, like every weekend. Each date gets its own reminders, and everyone shares one chat and the same files.",
   "moreDatesAdd": "Add a date",
   "moreDatesRepeatWeekly": "Repeat every week",
-  "moreDatesPickHelp": "Add a date",
+  "moreDatesPickHelp": "Pick dates",
+  "moreDatesPickHint": "Tap days to add or remove them. Grey days would overlap a date already picked.",
+  "moreDatesDone": "Done",
   "moreDatesRepeatUntil": "Repeat every week until",
   "moreDatesFirst": "First date",
   "moreDatesRemove": "Remove this date",
@@ -351,7 +361,6 @@
   "@moreDatesCount": {
     "placeholders": { "count": { "type": "int" } }
   },
-  "moreDatesOverlap": "That date overlaps another date of this event.",
   "moreDatesSomeOverlap": "Some dates overlap each other. Remove one, or make the event shorter.",
   "moreDatesTooMany": "An event can have up to {max} dates.",
   "@moreDatesTooMany": {
@@ -416,6 +425,14 @@
   "attachmentsSectionTitle": "Attachments",
   "attachmentOpenError": "Could not open this attachment.",
   "addAttachmentButton": "Add photos or files",
+  "takePhotoButton": "Take a photo",
+  "cameraShutter": "Take the photo",
+  "cameraSwitch": "Switch camera",
+  "cameraRetake": "Retake",
+  "cameraUsePhoto": "Use photo",
+  "cameraNotFound": "No camera found on this device.",
+  "cameraPermissionDenied": "eBongabong Calendar isn't allowed to use the camera. Allow it in your device's settings, then try again.",
+  "cameraError": "Couldn't use the camera. Please try again.",
   "attachmentTooLarge": "\"{name}\" is too large (max 20 MB).",
   "@attachmentTooLarge": {
     "placeholders": { "name": { "type": "String" } }
@@ -795,5 +812,21 @@
   "privacyChangesHeading": "Changes to This Policy",
   "privacyChangesBody": "If this policy changes, the update will be reflected here with a new effective date. Continuing to use the app after a change means you accept the updated policy.",
   "privacyLegalHeading": "Compliance",
-  "privacyLegalBody": "This app is operated by the Municipality of Bongabong in line with the Data Privacy Act of 2012 (Republic Act No. 10173). For questions about your data, contact your barangay office or the municipality's LGU admin team."
+  "privacyLegalBody": "This app is operated by the Municipality of Bongabong in line with the Data Privacy Act of 2012 (Republic Act No. 10173). For questions about your data, contact your barangay office or the municipality's LGU admin team.",
+  "offlineTitle": "Offline: showing events saved on this device",
+  "offlineLastUpdated": "Last updated {time}",
+  "@offlineLastUpdated": {"placeholders": {"time": {"type": "String"}}},
+  "offlineNoSavedEvents": "No saved events yet. They'll appear once you're online.",
+  "offlineRetryButton": "Retry",
+  "updateDownloadTitle": "Updating to version {version}",
+  "@updateDownloadTitle": {"placeholders": {"version": {"type": "String"}}},
+  "updateDownloadProgress": "Downloading… {received} of {total} MB",
+  "@updateDownloadProgress": {"placeholders": {"received": {"type": "String"}, "total": {"type": "String"}}},
+  "updateDownloadStarting": "Downloading…",
+  "updateOpeningInstaller": "Opening the installer…",
+  "updateAndroidInstallHint": "If your phone asks, allow installs from eBongabong Calendar, then tap Update. Your events and settings stay.",
+  "updateWindowsInstallHint": "The app will close, update itself, and open again. Your events and settings stay.",
+  "updateDownloadFailed": "The update could not be downloaded. Check your internet connection and try again.",
+  "updateRetryButton": "Try again",
+  "updateOpenDownloadPage": "Download in browser"
 }

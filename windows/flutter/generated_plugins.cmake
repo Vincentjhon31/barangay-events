@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
+  camera_windows
   firebase_core
   screen_retriever_windows
   share_plus

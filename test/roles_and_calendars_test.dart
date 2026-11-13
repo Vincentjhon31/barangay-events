@@ -204,10 +204,10 @@ void main() {
     testWidgets('a calendar shows up as an extra tab on the Calendar and Feed', (tester) async {
       await pumpApp(tester, repository: repoWithSports());
 
-      expect(find.byKey(const Key('calendar-filter-cal-sports')), findsOneWidget);
+      expect(find.byKey(const Key('calendar-filter-cal-sports'), skipOffstage: false), findsOneWidget);
       await tester.tap(find.text('Feed'));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('feed-filter-cal-sports')), findsOneWidget);
+      expect(find.byKey(const Key('feed-filter-cal-sports'), skipOffstage: false), findsOneWidget);
     });
 
     testWidgets('its tab shows only its events, and they don\'t count as Public', (tester) async {
@@ -244,7 +244,7 @@ void main() {
       repo.archiveEventCalendar('sports');
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('calendar-filter-cal-sports')), findsNothing);
+      expect(find.byKey(const Key('calendar-filter-cal-sports'), skipOffstage: false), findsNothing);
       await openToday(tester);
       // No leftover invisible filter: today's other event shows.
       expect(find.text('Mayor Staff Meeting'), findsOneWidget);

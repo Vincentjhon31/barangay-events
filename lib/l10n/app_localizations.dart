@@ -548,6 +548,54 @@ abstract class AppLocalizations {
   /// **'Each event\'s name inside the calendar, like Google Calendar.'**
   String get settingsCalendarTitlesSubtitle;
 
+  /// No description provided for @settingsSeasonal.
+  ///
+  /// In en, this message translates to:
+  /// **'Seasonal theme'**
+  String get settingsSeasonal;
+
+  /// No description provided for @settingsSeasonalHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Colors and a small decoration for Christmas, summer and other seasons. The municipality sets the dates.'**
+  String get settingsSeasonalHint;
+
+  /// No description provided for @settingsSeasonalOn.
+  ///
+  /// In en, this message translates to:
+  /// **'On'**
+  String get settingsSeasonalOn;
+
+  /// No description provided for @settingsSeasonalOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'With light snow, rain or confetti.'**
+  String get settingsSeasonalOnSubtitle;
+
+  /// No description provided for @settingsSeasonalNoEffects.
+  ///
+  /// In en, this message translates to:
+  /// **'On, nothing falling'**
+  String get settingsSeasonalNoEffects;
+
+  /// No description provided for @settingsSeasonalNoEffectsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Colors and decoration only.'**
+  String get settingsSeasonalNoEffectsSubtitle;
+
+  /// No description provided for @settingsSeasonalOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get settingsSeasonalOff;
+
+  /// No description provided for @settingsSeasonalOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Always use the regular look.'**
+  String get settingsSeasonalOffSubtitle;
+
   /// No description provided for @eventReminderNoticeLabel.
   ///
   /// In en, this message translates to:
@@ -1613,8 +1661,20 @@ abstract class AppLocalizations {
   /// No description provided for @moreDatesPickHelp.
   ///
   /// In en, this message translates to:
-  /// **'Add a date'**
+  /// **'Pick dates'**
   String get moreDatesPickHelp;
+
+  /// No description provided for @moreDatesPickHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap days to add or remove them. Grey days would overlap a date already picked.'**
+  String get moreDatesPickHint;
+
+  /// No description provided for @moreDatesDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get moreDatesDone;
 
   /// No description provided for @moreDatesRepeatUntil.
   ///
@@ -1639,12 +1699,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count} dates'**
   String moreDatesCount(int count);
-
-  /// No description provided for @moreDatesOverlap.
-  ///
-  /// In en, this message translates to:
-  /// **'That date overlaps another date of this event.'**
-  String get moreDatesOverlap;
 
   /// No description provided for @moreDatesSomeOverlap.
   ///
@@ -1867,6 +1921,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Add photos or files'**
   String get addAttachmentButton;
+
+  /// No description provided for @takePhotoButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Take a photo'**
+  String get takePhotoButton;
+
+  /// No description provided for @cameraShutter.
+  ///
+  /// In en, this message translates to:
+  /// **'Take the photo'**
+  String get cameraShutter;
+
+  /// No description provided for @cameraSwitch.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch camera'**
+  String get cameraSwitch;
+
+  /// No description provided for @cameraRetake.
+  ///
+  /// In en, this message translates to:
+  /// **'Retake'**
+  String get cameraRetake;
+
+  /// No description provided for @cameraUsePhoto.
+  ///
+  /// In en, this message translates to:
+  /// **'Use photo'**
+  String get cameraUsePhoto;
+
+  /// No description provided for @cameraNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No camera found on this device.'**
+  String get cameraNotFound;
+
+  /// No description provided for @cameraPermissionDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'eBongabong Calendar isn\'t allowed to use the camera. Allow it in your device\'s settings, then try again.'**
+  String get cameraPermissionDenied;
+
+  /// No description provided for @cameraError.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t use the camera. Please try again.'**
+  String get cameraError;
 
   /// No description provided for @attachmentTooLarge.
   ///
@@ -3391,6 +3493,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This app is operated by the Municipality of Bongabong in line with the Data Privacy Act of 2012 (Republic Act No. 10173). For questions about your data, contact your barangay office or the municipality\'s LGU admin team.'**
   String get privacyLegalBody;
+
+  /// No description provided for @offlineTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline: showing events saved on this device'**
+  String get offlineTitle;
+
+  /// No description provided for @offlineLastUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Last updated {time}'**
+  String offlineLastUpdated(String time);
+
+  /// No description provided for @offlineNoSavedEvents.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved events yet. They\'ll appear once you\'re online.'**
+  String get offlineNoSavedEvents;
+
+  /// No description provided for @offlineRetryButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get offlineRetryButton;
+
+  /// No description provided for @updateDownloadTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Updating to version {version}'**
+  String updateDownloadTitle(String version);
+
+  /// No description provided for @updateDownloadProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading… {received} of {total} MB'**
+  String updateDownloadProgress(String received, String total);
+
+  /// No description provided for @updateDownloadStarting.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading…'**
+  String get updateDownloadStarting;
+
+  /// No description provided for @updateOpeningInstaller.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening the installer…'**
+  String get updateOpeningInstaller;
+
+  /// No description provided for @updateAndroidInstallHint.
+  ///
+  /// In en, this message translates to:
+  /// **'If your phone asks, allow installs from eBongabong Calendar, then tap Update. Your events and settings stay.'**
+  String get updateAndroidInstallHint;
+
+  /// No description provided for @updateWindowsInstallHint.
+  ///
+  /// In en, this message translates to:
+  /// **'The app will close, update itself, and open again. Your events and settings stay.'**
+  String get updateWindowsInstallHint;
+
+  /// No description provided for @updateDownloadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The update could not be downloaded. Check your internet connection and try again.'**
+  String get updateDownloadFailed;
+
+  /// No description provided for @updateRetryButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get updateRetryButton;
+
+  /// No description provided for @updateOpenDownloadPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Download in browser'**
+  String get updateOpenDownloadPage;
 }
 
 class _AppLocalizationsDelegate

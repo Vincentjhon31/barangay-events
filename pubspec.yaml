@@ -17,6 +17,8 @@ dependencies:
   # goes missing at link time. 8.x's only defect is a hardcoded `compileSdk 34`
   # — corrected by the compileSdk floor in android/build.gradle.kts.
   file_picker: ^8.0.0
+  # Checks in-app update downloads (lib/app_update_service_io.dart).
+  crypto: ^3.0.6
   firebase_core: ^4.11.0
   firebase_messaging: ^16.4.1
   flutter:
@@ -38,6 +40,9 @@ dependencies:
   table_calendar: ^3.2.0
   url_launcher: ^6.3.2
   window_manager: ^0.4.3
+  camera: ^0.12.2
+  camera_windows: ^0.3.0+1
+  flutter_svg: ^2.4.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -51,6 +56,8 @@ flutter:
     - assets/avatars/animal/
     - assets/avatars/person/
     - assets/icons/
+    # Seasonal theme decorations (lib/seasonal_theme.dart).
+    - assets/seasons/
     # User-facing release notes (lib/whats_new.dart).
     - assets/whats_new.md
     - docs/download-qr.png

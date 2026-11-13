@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_service.dart' show AppAuthService;
 import 'liquid_glass_components.dart' show UiStyle;
 import 'responsive_scale.dart' show DisplayMode;
+import 'seasonal_theme.dart';
 
 const String _themeModePrefKey = 'app_theme_mode';
 const String _uiStylePrefKey = 'app_ui_style';
@@ -13,6 +15,11 @@ const String _displayModePrefKey = 'app_display_mode';
 const String _languagePrefKey = 'app_language';
 const String _reminderPreferencePrefKey = 'app_reminder_preference';
 const String _calendarCellStylePrefKey = 'app_calendar_cell_style';
+const String _seasonConfigPrefKey = 'app_season_config';
+const String _seasonPrefPrefKey = 'app_season_pref';
+
+/// A person's own choice about seasonal themes, kept on the device.
+enum SeasonPref { on, noEffects, off }
 
 /// Supported language codes — kept as a plain string (not an enum) since
 /// this maps directly onto both the `profiles.language` column and
@@ -68,7 +75,7 @@ ReminderPreference? _reminderPreferenceFromDbValue(String? value) => switch (val
     };
 
 /// How the Month/Week grid shows a day's events: small colored [dots]
-/// (the original look), or Google-Calendar-style [titles] — a colored
+/// (the original look), or Google-Calendar-style [titles] (the default) — a colored
 /// chip per event, with date-range events drawn as one bar across the
 /// days they span. Synced to `profiles.calendar_cell_style` like the
 /// appearance settings, so the choice follows the user across sessions
@@ -96,8 +103,18 @@ class ThemeController extends ChangeNotifier {
     // On by default: every event someone can see gets a reminder unless
     // they turn it off (matches profiles.reminder_preference's default).
     ReminderPreference initialReminderPreference = ReminderPreference.oneHour,
-    CalendarCellStyle initialCalendarCellStyle = CalendarCellStyle.dots,
-  })  : _themeMode = initial,
+    // Event titles by default (matches profiles.calendar_cell_style).
+    CalendarCellStyle initialCalendarCellStyle = CalendarCellStyle.titles,
+    // No seasons unless asked for, so a test's look doesn't depend on the
+    // date it runs; the real app starts from [load], which defaults to the
+    // automatic seasons.
+    SeasonConfig initialSeasonConfig = SeasonConfig.off,
+    SeasonPref initialSeasonPref = SeasonPref.on,
+    DateTime Function() now = DateTime.now,
+  })  : _seasonConfig = initialSeasonConfig,
+        _seasonPref = initialSeasonPref,
+        _now = now,
+        _themeMode = initial,
         _uiStyle = initialStyle,
         _displayMode = initialDisplayMode,
         _language = _sanitizeLanguage(initialLanguage),
@@ -127,6 +144,44 @@ class ThemeController extends ChangeNotifier {
 
   CalendarCellStyle _calendarCellStyle;
   CalendarCellStyle get calendarCellStyle => _calendarCellStyle;
+
+  SeasonConfig _seasonConfig;
+  SeasonPref _seasonPref;
+  SeasonPref get seasonPref => _seasonPref;
+  final DateTime Function() _now;
+
+  /// The seasonal look to show now, or null for the regular one.
+  Season? get activeSeason => _seasonPref == SeasonPref.off ? null : _seasonConfig.seasonOn(_now());
+  bool get seasonEffects => _seasonPref == SeasonPref.on;
+
+  /// Reads the superadmin's seasonal setting from the server. Set once in
+  /// main(); null in tests.
+  Future<Object?> Function()? seasonConfigFetcher;
+
+  /// Picks up a season change made in the portal (called at launch and each
+  /// time the app comes back to the front). Offline or failing, the last
+  /// saved setting stays.
+  Future<void> refreshSeasonConfig() async {
+    final fetch = seasonConfigFetcher;
+    if (fetch == null) return;
+    try {
+      final config = SeasonConfig.fromJson(await fetch());
+      final encoded = jsonEncode(config.toJson());
+      if (encoded == jsonEncode(_seasonConfig.toJson())) return;
+      _seasonConfig = config;
+      notifyListeners();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_seasonConfigPrefKey, encoded);
+    } catch (_) {}
+  }
+
+  Future<void> setSeasonPref(SeasonPref pref) async {
+    if (pref == _seasonPref) return;
+    _seasonPref = pref;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_seasonPrefPrefKey, pref.name);
+  }
 
   AppAuthService? _authService;
 
@@ -229,7 +284,18 @@ class ThemeController extends ChangeNotifier {
     final storedLanguage = prefs.getString(_languagePrefKey);
     final storedReminderPreference = prefs.getString(_reminderPreferencePrefKey);
     final storedCalendarCellStyle = prefs.getString(_calendarCellStylePrefKey);
+    var seasonConfig = const SeasonConfig();
+    try {
+      final stored = prefs.getString(_seasonConfigPrefKey);
+      if (stored != null) seasonConfig = SeasonConfig.fromJson(jsonDecode(stored));
+    } catch (_) {}
+    final storedSeasonPref = prefs.getString(_seasonPrefPrefKey);
     return ThemeController(
+      initialSeasonConfig: seasonConfig,
+      initialSeasonPref: SeasonPref.values.firstWhere(
+        (value) => value.name == storedSeasonPref,
+        orElse: () => SeasonPref.on,
+      ),
       initial: mode,
       initialStyle: style,
       initialDisplayMode: displayMode,
@@ -237,7 +303,7 @@ class ThemeController extends ChangeNotifier {
       initialReminderPreference:
           _reminderPreferenceFromDbValue(storedReminderPreference) ?? ReminderPreference.oneHour,
       initialCalendarCellStyle:
-          _calendarCellStyleFromName(storedCalendarCellStyle) ?? CalendarCellStyle.dots,
+          _calendarCellStyleFromName(storedCalendarCellStyle) ?? CalendarCellStyle.titles,
     );
   }
 

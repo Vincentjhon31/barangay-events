@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'avatar_catalog.dart';
 import 'file_api.dart';
+import 'offline_cache.dart';
 
 /// Where a "Forgot password?" reset email's link sends the browser —
 /// Supabase's web SDK auto-detects the recovery token in that page's URL
@@ -65,6 +66,7 @@ class AppUserProfile {
     this.lguRequestStatus,
     this.isKioskAccount = false,
     this.calendarGroupFilterIds = const [],
+    this.filterTabOrder = const [],
     this.adminPermissions = const {},
   });
 
@@ -104,6 +106,12 @@ class AppUserProfile {
   /// profile [toJson] save, since filter taps happen far more often than
   /// profile edits.
   final List<String> calendarGroupFilterIds;
+
+  /// The user's own order for the Calendar/Feed filter tabs ('all',
+  /// 'public', 'shared', 'personal', 'cal:<id>'), set by long-press
+  /// dragging a tab. Empty = default order. Saved via
+  /// `AppAuthService.saveFilterTabOrder`, like [calendarGroupFilterIds].
+  final List<String> filterTabOrder;
 
   /// Which [AdminPermission]s the superadmin has switched on/off for this
   /// account (only used when [role] is 'admin'). Server-assigned like
@@ -176,6 +184,10 @@ class AppUserProfile {
                   ?.map((id) => id as String)
                   .toList() ??
               const [],
+      filterTabOrder: (json['filter_tab_order'] as List<dynamic>?)
+              ?.map((value) => value as String)
+              .toList() ??
+          const [],
       adminPermissions: _readAdminPermissions(json['admin_permissions']),
     );
   }
@@ -297,6 +309,9 @@ abstract class AppAuthService {
   /// more often than appearance changes.
   Future<void> saveCalendarGroupFilter(List<String> groupIds);
 
+  /// Persists [AppUserProfile.filterTabOrder].
+  Future<void> saveFilterTabOrder(List<String> order);
+
   /// Confirms [passcode] against the signed-in kiosk account's stored
   /// exit passcode (see `verify_kiosk_passcode` — the passcode itself is
   /// never sent back to the client). Returns `false` on an ordinary
@@ -358,19 +373,30 @@ class SupabaseAuthService implements AppAuthService {
     );
   }
 
-  Future<AppUserProfile?> fetchUserProfile() async {
-    try {
-      final user = _client.auth.currentUser;
-      if (user == null) {
-        return null;
-      }
+  /// The saved profile lets the app open offline with the person's real
+  /// role (an LGU member still sees Group events and the Groups tab) instead
+  /// of the role-less sign-in details.
+  final OfflineCache _offline = OfflineCache();
 
+  Future<AppUserProfile?> fetchUserProfile() async {
+    final user = _client.auth.currentUser;
+    if (user == null) {
+      return null;
+    }
+    try {
       final response =
           await _client.from('profiles').select().eq('id', user.id).single();
-
+      unawaited(_offline.writeJson(offlineCacheName('profile', user.id), response));
       return AppUserProfile.fromJson(response);
     } catch (e) {
-      // Profile doesn't exist yet, return basic profile from auth
+      // Offline: the profile saved last time. Otherwise (e.g. the profile
+      // doesn't exist yet) the basic profile from sign-in.
+      final saved = await _offline.readJson(offlineCacheName('profile', user.id));
+      if (saved is Map) {
+        try {
+          return AppUserProfile.fromJson(Map<String, dynamic>.from(saved));
+        } catch (_) {}
+      }
       return currentUser;
     }
   }
@@ -601,6 +627,13 @@ class SupabaseAuthService implements AppAuthService {
   }
 
   @override
+  Future<void> saveFilterTabOrder(List<String> order) async {
+    final user = _client.auth.currentUser;
+    if (user == null) return;
+    await _client.from('profiles').update({'filter_tab_order': order}).eq('id', user.id);
+  }
+
+  @override
   Future<bool> verifyKioskPasscode(String passcode) async {
     final result = await _client.rpc(
       'verify_kiosk_passcode',
@@ -622,6 +655,9 @@ class SupabaseAuthService implements AppAuthService {
 
   @override
   Future<void> signOut() async {
+    // Nothing of this account stays on the device: its saved events
+    // (including group and personal ones), calendars, and profile.
+    await _offline.clear();
     await _client.auth.signOut();
   }
 
@@ -755,6 +791,7 @@ class MemoryAuthService implements AppAuthService {
       lguRequestStatus: current.lguRequestStatus,
       isKioskAccount: current.isKioskAccount,
       calendarGroupFilterIds: current.calendarGroupFilterIds,
+      filterTabOrder: current.filterTabOrder,
       adminPermissions: current.adminPermissions,
     );
     _controller.add(true);
@@ -779,6 +816,7 @@ class MemoryAuthService implements AppAuthService {
       lguRequestStatus: current.lguRequestStatus,
       isKioskAccount: current.isKioskAccount,
       calendarGroupFilterIds: current.calendarGroupFilterIds,
+      filterTabOrder: current.filterTabOrder,
       adminPermissions: current.adminPermissions,
     );
   }
@@ -807,6 +845,7 @@ class MemoryAuthService implements AppAuthService {
       lguRequestStatus: current.lguRequestStatus,
       isKioskAccount: current.isKioskAccount,
       calendarGroupFilterIds: current.calendarGroupFilterIds,
+      filterTabOrder: current.filterTabOrder,
       adminPermissions: current.adminPermissions,
     );
     _controller.add(true);
@@ -903,6 +942,31 @@ class MemoryAuthService implements AppAuthService {
       lguRequestStatus: current.lguRequestStatus,
       isKioskAccount: current.isKioskAccount,
       calendarGroupFilterIds: groupIds,
+      filterTabOrder: current.filterTabOrder,
+      adminPermissions: current.adminPermissions,
+    );
+  }
+
+  @override
+  Future<void> saveFilterTabOrder(List<String> order) async {
+    final current = _currentUser;
+    if (current == null) return;
+    _currentUser = AppUserProfile(
+      id: current.id,
+      email: current.email,
+      displayName: current.displayName,
+      department: current.department,
+      phoneNumber: current.phoneNumber,
+      streetAddress: current.streetAddress,
+      barangay: current.barangay,
+      city: current.city,
+      bio: current.bio,
+      avatarUrl: current.avatarUrl,
+      role: current.role,
+      lguRequestStatus: current.lguRequestStatus,
+      isKioskAccount: current.isKioskAccount,
+      calendarGroupFilterIds: current.calendarGroupFilterIds,
+      filterTabOrder: order,
       adminPermissions: current.adminPermissions,
     );
   }

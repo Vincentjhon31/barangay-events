@@ -10,6 +10,7 @@ import 'auth_service.dart';
 import 'avatar_image.dart';
 import 'avatar_picker_page.dart';
 import 'create_group_page.dart';
+import 'event_colors.dart';
 import 'event_store.dart';
 import 'group_members_page.dart';
 import 'join_group_page.dart';
@@ -492,6 +493,7 @@ class _ProfileInformationPageState extends State<ProfileInformationPage> {
       lguRequestStatus: widget.initialProfile?.lguRequestStatus,
       isKioskAccount: widget.initialProfile?.isKioskAccount ?? false,
       calendarGroupFilterIds: widget.initialProfile?.calendarGroupFilterIds ?? const [],
+      filterTabOrder: widget.initialProfile?.filterTabOrder ?? const [],
       adminPermissions: widget.initialProfile?.adminPermissions ?? const {},
     );
 
@@ -1051,7 +1053,7 @@ class _GroupsTabState extends State<GroupsTab> {
           children: [
             IconBadge(
               icon: FontAwesomeIcons.peopleGroup,
-              tint: colorScheme.primary,
+              tint: groupColor(group.id, group.colorKey),
               size: 38,
               iconSize: 15,
             ),
@@ -1123,9 +1125,9 @@ class _GroupsTabState extends State<GroupsTab> {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
-          const IconBadge(
+          IconBadge(
             icon: FontAwesomeIcons.peopleGroup,
-            tint: Color(0xFF1F9D65),
+            tint: groupColor(group.id, group.colorKey),
             size: 38,
             iconSize: 15,
           ),
@@ -1561,6 +1563,43 @@ class SettingsPage extends StatelessWidget {
                       subtitle: l10n.settingsCalendarTitlesSubtitle,
                       selected: cellStyle == CalendarCellStyle.titles,
                       onTap: () => themeController.setCalendarCellStyle(CalendarCellStyle.titles),
+                    ),
+                  ],
+                ),
+                _SettingsSection(
+                  id: 'seasonal',
+                  icon: FontAwesomeIcons.snowflake,
+                  title: l10n.settingsSeasonal,
+                  summary: switch (themeController.seasonPref) {
+                    SeasonPref.on => l10n.settingsSeasonalOn,
+                    SeasonPref.noEffects => l10n.settingsSeasonalNoEffects,
+                    SeasonPref.off => l10n.settingsSeasonalOff,
+                  },
+                  hint: l10n.settingsSeasonalHint,
+                  children: [
+                    _ThemeOptionTile(
+                      key: const Key('settings-season-on'),
+                      icon: FontAwesomeIcons.snowflake,
+                      label: l10n.settingsSeasonalOn,
+                      subtitle: l10n.settingsSeasonalOnSubtitle,
+                      selected: themeController.seasonPref == SeasonPref.on,
+                      onTap: () => themeController.setSeasonPref(SeasonPref.on),
+                    ),
+                    _ThemeOptionTile(
+                      key: const Key('settings-season-no-effects'),
+                      icon: FontAwesomeIcons.palette,
+                      label: l10n.settingsSeasonalNoEffects,
+                      subtitle: l10n.settingsSeasonalNoEffectsSubtitle,
+                      selected: themeController.seasonPref == SeasonPref.noEffects,
+                      onTap: () => themeController.setSeasonPref(SeasonPref.noEffects),
+                    ),
+                    _ThemeOptionTile(
+                      key: const Key('settings-season-off'),
+                      icon: FontAwesomeIcons.ban,
+                      label: l10n.settingsSeasonalOff,
+                      subtitle: l10n.settingsSeasonalOffSubtitle,
+                      selected: themeController.seasonPref == SeasonPref.off,
+                      onTap: () => themeController.setSeasonPref(SeasonPref.off),
                     ),
                   ],
                 ),

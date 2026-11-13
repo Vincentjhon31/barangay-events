@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><radialGradient id="gGold" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#FFF3B0"/><stop offset="0.5" stop-color="#F5B82E"/><stop offset="1" stop-color="#B9770E"/></radialGradient><linearGradient id="gRing" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFE9A0"/><stop offset="0.5" stop-color="#F0B429"/><stop offset="1" stop-color="#A9690A"/></linearGradient></defs><path d="M19 47v9M45 47v9" stroke="url(#gRing)" stroke-width="2" fill="none"/>
+<circle cx="19" cy="58" r="3.5" fill="url(#gGold)"/><circle cx="45" cy="58" r="3.5" fill="url(#gGold)"/>
+<circle cx="32" cy="30" r="25" fill="none" stroke="url(#gRing)" stroke-width="3.5"/>
+<g fill="#FF7566"><path d="M32 30L26.71 22.72 32 8z"/><path d="M32 30L37.29 22.72 52.92 23.2z"/><path d="M32 30L40.56 32.78 44.93 47.8z"/><path d="M32 30L32 39 19.07 47.8z"/><path d="M32 30L23.44 32.78 11.08 23.2z"/></g>
+<g fill="#B3211B"><path d="M32 30L32 8 37.29 22.72z"/><path d="M32 30L52.92 23.2 40.56 32.78z"/><path d="M32 30L44.93 47.8 32 39z"/><path d="M32 30L19.07 47.8 23.44 32.78z"/><path d="M32 30L11.08 23.2 26.71 22.72z"/></g>
+<circle cx="32" cy="30" r="4" fill="url(#gGold)"/>
+<path d="M12 20a25 25 0 0116-13" stroke="#fff" stroke-opacity="0.7" stroke-width="2" stroke-linecap="round" fill="none"/></svg>

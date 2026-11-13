@@ -3,6 +3,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import 'seasonal_theme.dart';
+
 bool isDarkContext(BuildContext context) => Theme.of(context).brightness == Brightness.dark;
 
 /// Formats a time as 12-hour with AM/PM (e.g. "9:00 AM"), regardless of the
@@ -188,6 +190,9 @@ class LiquidGlassBackdrop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = isDarkContext(context);
+    // A season swaps the three glow colors; the layout never changes.
+    final orbs = SeasonScope.maybeOf(context)?.season?.orbs ??
+        const [Color(0xFF2B7FFF), Color(0xFF1F9D65), Color(0xFFFFA726)];
 
     if (isSolidStyle(context)) {
       // Solid palette: a flat background, no orbs, no blur — the cheapest
@@ -199,7 +204,9 @@ class LiquidGlassBackdrop extends StatelessWidget {
 
     // The whole backdrop is static, so it renders once into a cached layer
     // instead of re-blurring the screen every frame.
-    return RepaintBoundary(
+    return Stack(
+      children: [
+        RepaintBoundary(
       child: Stack(
         children: [
           Container(
@@ -230,17 +237,17 @@ class LiquidGlassBackdrop extends StatelessWidget {
                   Positioned(
                     top: -60,
                     right: -30,
-                    child: BlurOrb(color: const Color(0xFF2B7FFF).withValues(alpha: dark ? 0.28 : 0.20), size: 220),
+                    child: BlurOrb(color: orbs[0].withValues(alpha: dark ? 0.28 : 0.20), size: 220),
                   ),
                   Positioned(
                     top: 220,
                     left: -50,
-                    child: BlurOrb(color: const Color(0xFF1F9D65).withValues(alpha: dark ? 0.22 : 0.18), size: 200),
+                    child: BlurOrb(color: orbs[1].withValues(alpha: dark ? 0.22 : 0.18), size: 200),
                   ),
                   Positioned(
                     bottom: 160,
                     right: 0,
-                    child: BlurOrb(color: const Color(0xFFFFA726).withValues(alpha: dark ? 0.14 : 0.14), size: 160),
+                    child: BlurOrb(color: orbs[2].withValues(alpha: dark ? 0.14 : 0.14), size: 160),
                   ),
                 ],
               ),
@@ -248,6 +255,10 @@ class LiquidGlassBackdrop extends StatelessWidget {
           ),
         ],
       ),
+        ),
+        // Outside the cached layer above, so only the few particles repaint.
+        const Positioned.fill(child: SeasonEffectLayer()),
+      ],
     );
   }
 }

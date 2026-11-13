@@ -26,6 +26,26 @@ STATE = {
 }
 
 
+# Calendar API keys (api_list_events / api_list_calendars). The real checks
+# live in the database; this only plays back what it answers.
+API_KEY_OK = 'ecal_' + 'a' * 64
+API_KEYS = {
+    API_KEY_OK: 'ok',
+    'ecal_' + 'b' * 64: 'rate_limited',
+    'ecal_' + 'c' * 64: 'not_set_up',
+    'ecal_' + 'd' * 64: 'revoked',
+}
+SPORTS = '10000000-0000-4000-8000-000000000001'
+SAMPLE_EVENT = {
+    'id': '1730000000000001', 'title': 'Foundation Day', 'description': 'Program at the plaza', 'location': 'Municipal Plaza',
+    'start': '2026-11-07T10:00:00+08:00', 'end': '2026-11-07T12:00:00+08:00', 'all_day': False,
+    'days': [{'date': '2026-11-07', 'start': '2026-11-07T10:00:00+08:00', 'end': '2026-11-07T12:00:00+08:00', 'all_day': False}],
+    'type': 'public', 'calendar': None, 'color': None, 'contact_number': None,
+    'posted_by': {'name': 'Ana Cruz', 'office': 'MDRRMO'}, 'posted_at': '2026-11-01T09:30:00+08:00', 'series_id': None,
+}
+API_CALLS = []
+
+
 def eq(query, field):
     values = query.get(field)
     if not values:
@@ -69,6 +89,34 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == '/auth/v1/user':
             return self.send(200, {'id': uid}) if uid else self.send(401, {'message': 'invalid JWT'})
+
+        # The calendar API is called without a login (as anon).
+        if path in ('/rest/v1/rpc/api_list_events', '/rest/v1/rpc/api_list_calendars') and method == 'POST':
+            body = self.body() or {}
+            API_CALLS.append({'path': path, 'body': body, 'authorization': self.headers.get('Authorization'),
+                              'apikey': self.headers.get('apikey')})
+            kind = API_KEYS.get(body.get('p_key'))
+            if kind == 'not_set_up':
+                return self.send(404, {'code': 'PGRST202', 'message': 'Could not find the function public.' + path.rsplit('/', 1)[1]})
+            if kind in (None, 'revoked'):
+                return self.send(401, {'code': 'PT401', 'message': 'invalid_api_key', 'details': None, 'hint': None})
+            if kind == 'rate_limited':
+                return self.send(429, {'code': 'PT429', 'message': 'rate_limited', 'details': None, 'hint': '42'})
+            if path.endswith('api_list_calendars'):
+                return self.send(200, {'public_events': True, 'calendars': [
+                    {'id': SPORTS, 'name': 'Sports', 'color': '#2FA36B', 'icon': 'basketball', 'archived': False}]})
+            if body.get('p_event_id') == 'missing':
+                return self.send(404, {'code': 'PT404', 'message': 'not_found', 'details': None, 'hint': None})
+            if body.get('p_event_id'):
+                return self.send(200, {'event': SAMPLE_EVENT})
+            if body.get('p_from') and body.get('p_to') and body['p_to'] < body['p_from']:
+                return self.send(400, {'code': 'PT400', 'message': 'invalid_parameter', 'details': '"to" is before "from".', 'hint': None})
+            return self.send(200, {'from': body.get('p_from', '2026-11-06'), 'to': body.get('p_to', '2026-12-06'), 'count': 1,
+                                   'offset': body.get('p_offset', 0), 'limit': body.get('p_limit', 500), 'has_more': False,
+                                   'events': [SAMPLE_EVENT]})
+        if path == '/__api_calls':
+            return self.send(200, API_CALLS)
+
         if uid is None:
             return self.send(401, {'message': 'JWT required'})
 

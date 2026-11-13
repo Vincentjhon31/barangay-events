@@ -148,6 +148,43 @@ void main() {
     }
   });
 
+  testWidgets('"Add a date" ticks several dates on one calendar, then Done adds them all', (tester) async {
+    final repo = MemoryEventRepository.seeded();
+    await pumpApp(tester, repo);
+    await tester.tap(find.byKey(const Key('calendar-add-event-fab')));
+    await tester.pumpAndSettle();
+    final fields = find.byType(TextField);
+    await tester.enterText(fields.at(0), 'Zumba Night');
+    await tester.enterText(fields.at(1), 'Plaza');
+
+    await scrollAndTap(tester, find.byKey(const Key('add-event-add-date')));
+    final calendar = find.byKey(const Key('add-event-more-dates-calendar'));
+    // Next month: every day there is in the future, whatever today is.
+    await tester.tap(find.descendant(of: calendar, matching: find.byIcon(Icons.chevron_right)));
+    await tester.pumpAndSettle();
+    Future<void> tapDay(int day) async {
+      await tester.tap(find.descendant(of: calendar, matching: find.text('$day')));
+      await tester.pumpAndSettle();
+    }
+
+    await tapDay(10);
+    await tapDay(17);
+    await tapDay(24);
+    await tapDay(17); // untick
+    expect(find.descendant(of: find.byType(AlertDialog), matching: find.text('3 dates')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('add-event-more-dates-done')));
+    await tester.pumpAndSettle();
+    expect(find.text('3 dates'), findsOneWidget);
+
+    await scrollAndTap(tester, find.text('Save event'));
+    final rows = await rowsTitled(repo, 'Zumba Night');
+    final now = DateTime.now();
+    expect(rows, hasLength(3));
+    expect(rows.skip(1).map((e) => DateTime(e.startTime.year, e.startTime.month, e.startTime.day)),
+        [DateTime(now.year, now.month + 1, 10), DateTime(now.year, now.month + 1, 24)]);
+    expect(rows.every((e) => e.seriesId == rows.first.id), isTrue);
+  });
+
   testWidgets('dates that overlap ones already on the list are skipped, and one can be removed', (tester) async {
     final repo = MemoryEventRepository.seeded();
     await pumpApp(tester, repo);

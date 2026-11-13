@@ -3959,3 +3959,602 @@ create trigger rehome_event_series
   for each row execute function public.rehome_event_series();
 
 notify pgrst, 'reload schema';
+
+-- ============================================================
+-- Calendar API for other LGU systems (November 2026). Safe to re-run.
+--   Lets another LGU system (e.g. the new intranet website) read the
+--   calendar as JSON, so the LGU keeps ONE calendar instead of building a
+--   second one. Read-only.
+--   * api_keys: one row per system that may read. The superadmin makes
+--     keys on the portal's API page. Requests are checked against the key's
+--     SHA-256 hash; the key itself is kept encrypted in Supabase Vault so
+--     the superadmin can copy it again (admin_reveal_api_key), and it's
+--     deleted from Vault when the key is revoked. Each key reads Public
+--     events and/or the custom calendars (all of them, including ones added
+--     later, or only chosen ones) and/or the events of groups the
+--     superadmin ticks for it — never Personal events, and no group that
+--     isn't ticked. Revoking stops it on the next request.
+--   * api_list_events / api_list_calendars: called for every request by
+--     the Hostinger endpoint api/events.php, as anon with the publishable
+--     key (so Hostinger still holds no secret key). The API key is checked
+--     in here, and each key may make up to 300 requests a minute, which
+--     stops a runaway script from loading the database. Errors use
+--     PostgREST's PTxxx codes, so they arrive as that HTTP status.
+--   * Times come out as ISO 8601 with +08:00 (they're stored as Philippine
+--     wall clock labeled UTC — see "Reminder timing fix"). Each event also
+--     lists its days: in the app, a multi-day event's start and end times
+--     apply on EACH day (unless that day has its own hours), not as one
+--     continuous block, and "days" spells that out for other systems.
+--   * api_keys' own times (created_at, last_used_at, revoked_at) are real
+--     moments (now()), not the event convention.
+--   * API keys aren't part of backups: after restoring onto a new back
+--     end, make new keys.
+--   Also upload hostinger/public_html/api/events.php (hostinger/README.md);
+--   hostinger/CALENDAR_API.md is the guide for the system's developer.
+-- ============================================================
+
+create table if not exists public.api_keys (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(trim(name)) between 1 and 80),
+  -- The start of the key ("ecal_1a2b3c4d"), so the portal can show which
+  -- key is which without keeping the key itself.
+  key_prefix text not null,
+  key_hash text not null unique,
+  include_public boolean not null default true,
+  -- null = every calendar, including ones added later; '{}' = none.
+  calendar_ids uuid[],
+  created_at timestamptz not null default now(),
+  created_by uuid references public.profiles(id) on delete set null,
+  last_used_at timestamptz,
+  request_count bigint not null default 0,
+  revoked_at timestamptz,
+  rate_window_start timestamptz,
+  rate_window_count integer not null default 0,
+  -- Groups whose events this key may read ('{}' = none).
+  group_ids uuid[] not null default '{}',
+  -- The key itself, encrypted in vault.secrets (null for keys made before
+  -- keys could be copied again, and after revoking).
+  vault_secret_id uuid
+);
+alter table public.api_keys add column if not exists group_ids uuid[] not null default '{}';
+alter table public.api_keys add column if not exists vault_secret_id uuid;
+alter table public.api_keys enable row level security;
+-- No policies on purpose: nothing reads or writes this table directly,
+-- only the functions below.
+revoke all on table public.api_keys from anon, authenticated;
+
+-- A stored event time (Philippine wall clock labeled UTC) as real ISO 8601.
+create or replace function public.api_iso(p_ts timestamptz)
+returns text language sql stable set search_path = public as $$
+  select to_char(p_ts at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS') || '+08:00';
+$$;
+
+-- A Philippine date plus minutes after midnight as ISO 8601.
+create or replace function public.api_day_iso(p_day date, p_minutes integer)
+returns text language sql stable set search_path = public as $$
+  select to_char(p_day::timestamp, 'YYYY-MM-DD') || 'T'
+    || lpad((least(greatest(p_minutes, 0), 1439) / 60)::text, 2, '0') || ':'
+    || lpad((least(greatest(p_minutes, 0), 1439) % 60)::text, 2, '0') || ':00+08:00';
+$$;
+
+-- The app's color labels (lib/event_colors.dart) as hex.
+create or replace function public.api_color(p_key text)
+returns text language sql immutable set search_path = public as $$
+  select case p_key
+    when 'tomato' then '#E85D50'
+    when 'tangerine' then '#F0932B'
+    when 'banana' then '#F2C94C'
+    when 'basil' then '#2FA36B'
+    when 'peacock' then '#2B8FD6'
+    when 'blueberry' then '#5B6ACF'
+    when 'grape' then '#9B59B6'
+    when 'graphite' then '#7A8288'
+  end;
+$$;
+
+-- One event as the API shows it. Takes the row as jsonb (to_jsonb(e)), so
+-- a column from a block that hasn't been run yet just comes out empty.
+-- Builds json, not jsonb, so the fields keep this order in the output
+-- (jsonb would sort them).
+create or replace function public.api_event_json(p jsonb, p_calendar_color text)
+returns json language plpgsql stable set search_path = public as $$
+declare
+  v_start timestamp := (p->>'start_time')::timestamptz at time zone 'UTC';
+  v_end timestamp := (p->>'end_time')::timestamptz at time zone 'UTC';
+  v_start_min integer := extract(hour from v_start)::integer * 60 + extract(minute from v_start)::integer;
+  v_end_min integer := extract(hour from v_end)::integer * 60 + extract(minute from v_end)::integer;
+  v_multi boolean := v_end::date > v_start::date;
+  v_overrides jsonb := case when jsonb_typeof(p->'daily_overrides') = 'array'
+                         then p->'daily_overrides' else '[]'::jsonb end;
+  v_location text := btrim(coalesce(p->>'location', ''));
+  v_days json[] := '{}';
+  v_day date;
+  v_o jsonb;
+  v_from integer;
+  v_to integer;
+begin
+  -- One entry per day. A day with its own hours (daily_overrides) uses
+  -- them; otherwise a multi-day event's start and end times are that
+  -- day's window, as in the app. If the end time is earlier than the start
+  -- (e.g. 10 PM to 2 AM the next day), the event is one continuous stretch.
+  for v_day in
+    select d::date
+      from generate_series(v_start::date::timestamp, least(v_end::date, v_start::date + 366)::timestamp, interval '1 day') d
+  loop
+    v_o := null;
+    select o into v_o
+      from jsonb_array_elements(v_overrides) o
+      where left(o->>'day', 10) = to_char(v_day::timestamp, 'YYYY-MM-DD')
+        and (o->>'start_minutes') ~ '^[0-9]{1,4}$'
+        and (o->>'end_minutes') ~ '^[0-9]{1,4}$'
+      limit 1;
+    if v_o is not null then
+      v_from := (v_o->>'start_minutes')::integer;
+      v_to := (v_o->>'end_minutes')::integer;
+    elsif v_multi and v_end_min <= v_start_min then
+      v_from := case when v_day = v_start::date then v_start_min else 0 end;
+      v_to := case when v_day = v_end::date then v_end_min else 1439 end;
+    else
+      v_from := v_start_min;
+      v_to := v_end_min;
+    end if;
+    v_days := v_days || json_build_object(
+      'date', to_char(v_day::timestamp, 'YYYY-MM-DD'),
+      'start', public.api_day_iso(v_day, v_from),
+      'end', public.api_day_iso(v_day, v_to),
+      'all_day', v_from = 0 and v_to >= 1439);
+  end loop;
+
+  return json_build_object(
+    'id', p->>'id',
+    'title', p->>'title',
+    'description', coalesce(p->>'description', ''),
+    -- 'Other' is what the app saves when no venue was given.
+    'location', case when lower(v_location) in ('', 'other') then null else v_location end,
+    'start', public.api_iso((p->>'start_time')::timestamptz),
+    'end', public.api_iso((p->>'end_time')::timestamptz),
+    'all_day', v_start_min = 0 and v_end_min >= 1439,
+    'days', to_json(v_days),
+    -- The app calls 'shared' events Group events.
+    'type', case when p->>'event_type' = 'shared' then 'group' else p->>'event_type' end,
+    'calendar', case when p->>'event_type' = 'calendar' and p->>'calendar_id' is not null
+                  then json_build_object('id', p->>'calendar_id', 'name', p->>'calendar_name') end,
+    'group', case when p->>'event_type' = 'shared' and p->>'group_id' is not null
+               then json_build_object('id', p->>'group_id', 'name', p->>'group_name') end,
+    'color', public.api_color(coalesce(p->>'color_key', p_calendar_color)),
+    'contact_number', nullif(btrim(coalesce(p->>'contact_number', '')), ''),
+    'posted_by', json_build_object(
+      'name', nullif(btrim(coalesce(p->>'created_by_name', '')), ''),
+      'office', nullif(btrim(coalesce(p->>'created_by_department', '')), '')),
+    'posted_at', public.api_iso((p->>'created_at')::timestamptz),
+    -- The same value on every date of an event held on several dates.
+    'series_id', p->>'series_id'
+  );
+end $$;
+
+-- Checks an API key and counts the request. Returns the key's row; a bad
+-- or revoked key is HTTP 401, too many requests this minute HTTP 429 (hint
+-- = seconds to wait). Rejected requests aren't counted (the error rolls
+-- the count back).
+create or replace function public.api_key_use(p_key text)
+returns public.api_keys
+language plpgsql security definer set search_path = public as $$
+declare
+  v_key api_keys;
+  v_hash text;
+begin
+  if p_key is null or p_key !~ '^ecal_[0-9a-f]{64}$' then
+    raise exception 'invalid_api_key' using errcode = 'PT401';
+  end if;
+  v_hash := encode(sha256(convert_to(p_key, 'UTF8')), 'hex');
+  update api_keys k set
+    rate_window_count = case when k.rate_window_start > now() - interval '1 minute'
+                          then k.rate_window_count + 1 else 1 end,
+    rate_window_start = case when k.rate_window_start > now() - interval '1 minute'
+                          then k.rate_window_start else now() end,
+    request_count = k.request_count + 1,
+    last_used_at = now()
+  where k.key_hash = v_hash and k.revoked_at is null
+  returning k.* into v_key;
+  if not found then
+    raise exception 'invalid_api_key' using errcode = 'PT401';
+  end if;
+  if v_key.rate_window_count > 300 then
+    raise exception 'rate_limited' using errcode = 'PT429',
+      hint = greatest(1, ceil(extract(epoch from v_key.rate_window_start + interval '1 minute' - now())))::text;
+  end if;
+  return v_key;
+end $$;
+
+-- The one rule for what a key may read: Public events if allowed, events
+-- in its calendars, and events of the groups ticked for it. Never Personal
+-- events, and never a group that isn't ticked.
+drop function if exists public.api_key_can_read(public.api_keys, text, uuid);
+create or replace function public.api_key_can_read(p_key public.api_keys, p_event_type text, p_calendar_id uuid, p_group_id uuid)
+returns boolean language sql immutable set search_path = public as $$
+  select coalesce(
+    (p_event_type = 'public' and p_key.include_public)
+    or (p_event_type = 'calendar'
+        and (p_key.calendar_ids is null or p_calendar_id = any(p_key.calendar_ids)))
+    or (p_event_type = 'shared' and p_group_id = any(p_key.group_ids)),
+    false);
+$$;
+
+-- Events the key may read that overlap [from, to] (Philippine dates;
+-- default today to 30 days ahead, at most 366 days), oldest first, or one
+-- event by id.
+create or replace function public.api_list_events(
+  p_key text,
+  p_from date default null,
+  p_to date default null,
+  p_type text default null,
+  p_calendar_id uuid default null,
+  p_event_id text default null,
+  p_limit integer default 500,
+  p_offset integer default 0
+)
+returns json
+language plpgsql security definer set search_path = public as $$
+declare
+  v_key api_keys;
+  v_from date;
+  v_to date;
+  v_limit integer := coalesce(p_limit, 500);
+  v_offset integer := coalesce(p_offset, 0);
+  v_event json;
+  v_events json;
+  v_more boolean;
+begin
+  v_key := public.api_key_use(p_key);
+
+  if p_event_id is not null then
+    select public.api_event_json(to_jsonb(e), c.color_key) into v_event
+      from barangay_events e
+      left join event_calendars c on c.id = e.calendar_id
+      where e.id = p_event_id
+        and public.api_key_can_read(v_key, e.event_type, e.calendar_id, e.group_id);
+    if v_event is null then
+      raise exception 'not_found' using errcode = 'PT404';
+    end if;
+    return json_build_object('event', v_event);
+  end if;
+
+  v_from := coalesce(p_from, (now() at time zone 'Asia/Manila')::date);
+  v_to := coalesce(p_to, v_from + 30);
+  if v_to < v_from then
+    raise exception 'invalid_parameter' using errcode = 'PT400', detail = '"to" is before "from".';
+  end if;
+  if v_to - v_from > 366 then
+    raise exception 'invalid_parameter' using errcode = 'PT400', detail = 'Ask for at most 366 days at a time.';
+  end if;
+  if p_type is not null and p_type not in ('public', 'calendar', 'group') then
+    raise exception 'invalid_parameter' using errcode = 'PT400', detail = '"type" must be public, calendar, or group.';
+  end if;
+  if v_limit not between 1 and 1000 or v_offset < 0 then
+    raise exception 'invalid_parameter' using errcode = 'PT400', detail = '"limit" must be 1 to 1000, and "offset" 0 or more.';
+  end if;
+
+  with picked as (
+    select to_jsonb(e) as row_json, c.color_key as calendar_color, e.start_time, e.id
+      from barangay_events e
+      left join event_calendars c on c.id = e.calendar_id
+      where public.api_key_can_read(v_key, e.event_type, e.calendar_id, e.group_id)
+        and (p_type is null or e.event_type = case p_type when 'group' then 'shared' else p_type end)
+        and (p_calendar_id is null or e.calendar_id = p_calendar_id)
+        -- Overlaps the dates, comparing in the stored convention.
+        and e.start_time < ((v_to + 1)::timestamp at time zone 'UTC')
+        and e.end_time >= (v_from::timestamp at time zone 'UTC')
+      order by e.start_time, e.id
+      limit v_limit + 1 offset v_offset
+  ), numbered as (
+    select p.*, row_number() over (order by p.start_time, p.id) as n from picked p
+  )
+  select coalesce(json_agg(public.api_event_json(n.row_json, n.calendar_color) order by n.n)
+                    filter (where n.n <= v_limit), '[]'::json),
+         count(*) > v_limit
+    into v_events, v_more
+    from numbered n;
+
+  return json_build_object(
+    'from', to_char(v_from::timestamp, 'YYYY-MM-DD'),
+    'to', to_char(v_to::timestamp, 'YYYY-MM-DD'),
+    'count', json_array_length(v_events),
+    'offset', v_offset,
+    'limit', v_limit,
+    'has_more', v_more,
+    'events', v_events
+  );
+end $$;
+
+-- What the key may read: whether Public events, which calendars (archived
+-- ones too — their events still show in the app, under All), and which groups.
+create or replace function public.api_list_calendars(p_key text)
+returns json
+language plpgsql security definer set search_path = public as $$
+declare
+  v_key api_keys;
+begin
+  v_key := public.api_key_use(p_key);
+  return json_build_object(
+    'public_events', v_key.include_public,
+    'calendars', coalesce((
+      select json_agg(json_build_object(
+          'id', c.id,
+          'name', c.name,
+          'color', public.api_color(c.color_key),
+          'icon', c.icon,
+          'archived', c.archived_at is not null)
+        order by c.archived_at is not null, c.sort_order, c.name)
+      from event_calendars c
+      where v_key.calendar_ids is null or c.id = any(v_key.calendar_ids)
+    ), '[]'::json),
+    'groups', coalesce((
+      select json_agg(json_build_object('id', g.id, 'name', g.name) order by lower(g.name))
+      from groups g
+      where g.id = any(v_key.group_ids)
+    ), '[]'::json));
+end $$;
+
+-- ---- Portal (superadmin only) ----
+
+create or replace function public.admin_list_api_keys()
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can manage API keys';
+  end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+        'id', k.id,
+        'name', k.name,
+        'key_prefix', k.key_prefix,
+        'include_public', k.include_public,
+        'calendar_ids', k.calendar_ids,
+        'group_ids', k.group_ids,
+        'can_copy', k.vault_secret_id is not null,
+        'created_at', k.created_at,
+        'created_by_name', coalesce(nullif(btrim(p.display_name), ''), p.email),
+        'last_used_at', k.last_used_at,
+        'request_count', k.request_count,
+        'revoked_at', k.revoked_at)
+      order by k.revoked_at is not null, k.created_at desc)
+    from api_keys k
+    left join profiles p on p.id = k.created_by
+  ), '[]'::jsonb);
+end $$;
+
+-- A key's calendars and groups, cleaned up (duplicates dropped); null
+-- calendars = all of them. Stops if one doesn't exist or the key would
+-- read nothing.
+drop function if exists public.admin_api_key_calendars(boolean, uuid[]);
+create or replace function public.admin_api_key_scope(
+  p_include_public boolean, p_calendar_ids uuid[], p_group_ids uuid[],
+  out o_calendar_ids uuid[], out o_group_ids uuid[]
+)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  o_calendar_ids := case when p_calendar_ids is null then null
+                    else array(select distinct x from unnest(p_calendar_ids) x where x is not null) end;
+  o_group_ids := array(select distinct x from unnest(coalesce(p_group_ids, '{}')) x where x is not null);
+  if exists (select 1 from unnest(coalesce(o_calendar_ids, '{}')) x where not exists (select 1 from event_calendars c where c.id = x)) then
+    raise exception 'One of the chosen calendars no longer exists. Refresh the page and try again.';
+  end if;
+  if exists (select 1 from unnest(o_group_ids) x where not exists (select 1 from groups g where g.id = x)) then
+    raise exception 'One of the chosen groups no longer exists. Refresh the page and try again.';
+  end if;
+  if not coalesce(p_include_public, false) and o_calendar_ids is not null and cardinality(o_calendar_ids) = 0
+     and cardinality(o_group_ids) = 0 then
+    raise exception 'Choose at least one thing this key can read.';
+  end if;
+end $$;
+
+-- Makes a key, and keeps it encrypted in Vault so it can be copied again.
+drop function if exists public.admin_create_api_key(text, boolean, uuid[]);
+create or replace function public.admin_create_api_key(p_name text, p_include_public boolean, p_calendar_ids uuid[], p_group_ids uuid[] default '{}')
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  v_scope record;
+  v_key text;
+  v_id uuid := gen_random_uuid();
+begin
+  if not exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can manage API keys';
+  end if;
+  if char_length(btrim(coalesce(p_name, ''))) not between 1 and 80 then
+    raise exception 'Give the key a name of up to 80 characters, like the system that will use it.';
+  end if;
+  select * into v_scope from public.admin_api_key_scope(p_include_public, p_calendar_ids, p_group_ids);
+  -- 32 random bytes from two random UUIDs (gen_random_uuid uses the
+  -- server's secure random source): 64 hex characters.
+  v_key := 'ecal_' || encode(uuid_send(gen_random_uuid()) || uuid_send(gen_random_uuid()), 'hex');
+  insert into api_keys (id, name, key_prefix, key_hash, include_public, calendar_ids, group_ids, created_by, vault_secret_id)
+    values (v_id, btrim(p_name), left(v_key, 13), encode(sha256(convert_to(v_key, 'UTF8')), 'hex'),
+            coalesce(p_include_public, false), v_scope.o_calendar_ids, v_scope.o_group_ids, auth.uid(),
+            vault.create_secret(v_key, 'ecalendar_api_key_' || v_id, 'eCalendar API key'));
+  return jsonb_build_object('id', v_id, 'key', v_key, 'key_prefix', left(v_key, 13));
+end $$;
+
+drop function if exists public.admin_update_api_key(uuid, text, boolean, uuid[]);
+create or replace function public.admin_update_api_key(p_id uuid, p_name text, p_include_public boolean, p_calendar_ids uuid[], p_group_ids uuid[] default '{}')
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_scope record;
+begin
+  if not exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can manage API keys';
+  end if;
+  if char_length(btrim(coalesce(p_name, ''))) not between 1 and 80 then
+    raise exception 'Give the key a name of up to 80 characters, like the system that will use it.';
+  end if;
+  select * into v_scope from public.admin_api_key_scope(p_include_public, p_calendar_ids, p_group_ids);
+  update api_keys set name = btrim(p_name), include_public = coalesce(p_include_public, false),
+      calendar_ids = v_scope.o_calendar_ids, group_ids = v_scope.o_group_ids
+    where id = p_id;
+  if not found then
+    raise exception 'That API key no longer exists.';
+  end if;
+end $$;
+
+-- The key itself, for the superadmin to copy again; null for keys made
+-- before keys were kept, and for revoked keys.
+create or replace function public.admin_reveal_api_key(p_id uuid)
+returns text
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can manage API keys';
+  end if;
+  return (select ds.decrypted_secret from api_keys k
+          join vault.decrypted_secrets ds on ds.id = k.vault_secret_id
+          where k.id = p_id and k.revoked_at is null);
+end $$;
+
+-- Revoking is permanent (to reconnect, make a new key); the row stays so
+-- the portal still shows it was used, but the kept copy of the key goes.
+create or replace function public.admin_revoke_api_key(p_id uuid)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_secret uuid;
+begin
+  if not exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can manage API keys';
+  end if;
+  select k.vault_secret_id into v_secret from api_keys k where k.id = p_id;
+  update api_keys set revoked_at = coalesce(revoked_at, now()), vault_secret_id = null where id = p_id;
+  if not found then
+    raise exception 'That API key no longer exists.';
+  end if;
+  delete from vault.secrets where id = v_secret;
+end $$;
+
+create or replace function public.admin_delete_api_key(p_id uuid)
+returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can manage API keys';
+  end if;
+  delete from vault.secrets where id = (select k.vault_secret_id from api_keys k where k.id = p_id);
+  delete from api_keys where id = p_id;
+end $$;
+
+-- Every group, for choosing which ones a key may read (private ones too:
+-- only the superadmin sees this list).
+create or replace function public.admin_list_groups()
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'superadmin') then
+    raise exception 'Only a superadmin can list all groups';
+  end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+        'id', g.id, 'name', g.name, 'is_private', g.is_private,
+        'members', (select count(*) from group_members m where m.group_id = g.id))
+      order by lower(g.name))
+    from groups g
+  ), '[]'::jsonb);
+end $$;
+
+-- Who may call what. The helpers only run inside the functions above.
+revoke all on function public.api_iso(timestamptz) from public, anon, authenticated;
+revoke all on function public.api_day_iso(date, integer) from public, anon, authenticated;
+revoke all on function public.api_color(text) from public, anon, authenticated;
+revoke all on function public.api_event_json(jsonb, text) from public, anon, authenticated;
+revoke all on function public.api_key_use(text) from public, anon, authenticated;
+revoke all on function public.api_key_can_read(public.api_keys, text, uuid, uuid) from public, anon, authenticated;
+revoke all on function public.admin_api_key_scope(boolean, uuid[], uuid[]) from public, anon, authenticated;
+-- Called by api/events.php without a login: the API key is the check.
+revoke all on function public.api_list_events(text, date, date, text, uuid, text, integer, integer) from public;
+grant execute on function public.api_list_events(text, date, date, text, uuid, text, integer, integer) to anon, authenticated;
+revoke all on function public.api_list_calendars(text) from public;
+grant execute on function public.api_list_calendars(text) to anon, authenticated;
+-- The portal: superadmin checked inside each one.
+revoke all on function public.admin_list_api_keys() from public, anon;
+grant execute on function public.admin_list_api_keys() to authenticated;
+revoke all on function public.admin_create_api_key(text, boolean, uuid[], uuid[]) from public, anon;
+grant execute on function public.admin_create_api_key(text, boolean, uuid[], uuid[]) to authenticated;
+revoke all on function public.admin_update_api_key(uuid, text, boolean, uuid[], uuid[]) from public, anon;
+grant execute on function public.admin_update_api_key(uuid, text, boolean, uuid[], uuid[]) to authenticated;
+revoke all on function public.admin_reveal_api_key(uuid) from public, anon;
+grant execute on function public.admin_reveal_api_key(uuid) to authenticated;
+revoke all on function public.admin_list_groups() from public, anon;
+grant execute on function public.admin_list_groups() to authenticated;
+revoke all on function public.admin_revoke_api_key(uuid) from public, anon;
+grant execute on function public.admin_revoke_api_key(uuid) to authenticated;
+revoke all on function public.admin_delete_api_key(uuid) from public, anon;
+grant execute on function public.admin_delete_api_key(uuid) to authenticated;
+
+notify pgrst, 'reload schema';
+
+-- ============================================================
+-- Filter tab order, Event titles by default, group colors (November 2026).
+-- Safe to re-run.
+-- ============================================================
+
+-- Each user's own order for the Calendar/Feed filter tabs (long-press and
+-- drag a tab in the app). '[]' = default order.
+alter table public.profiles add column if not exists filter_tab_order jsonb not null default '[]'::jsonb;
+
+-- Calendar shows event titles by default instead of dots. Existing users
+-- are switched once (they all had 'dots' only because it was the column
+-- default); anyone who picks Dots again afterwards keeps it.
+alter table public.profiles alter column calendar_cell_style set default 'titles';
+do $$
+begin
+  if exists (select 1 from public.app_settings where key = 'migration_calendar_titles_default') then
+    return;
+  end if;
+  update public.profiles set calendar_cell_style = 'titles' where calendar_cell_style = 'dots';
+  insert into public.app_settings (key, value) values ('migration_calendar_titles_default', to_jsonb(now()));
+end $$;
+
+-- Group color label (a key of the app's event color palette). null = the
+-- app derives a steady color from the group id.
+alter table public.groups add column if not exists color_key text;
+
+create or replace function public.set_group_color(p_group_id uuid, p_color_key text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (
+    select 1 from group_members where group_id = p_group_id and user_id = auth.uid() and role = 'admin'
+  ) then
+    raise exception 'Only an admin of this group can change its color';
+  end if;
+  if p_color_key not in ('tomato', 'tangerine', 'banana', 'basil', 'peacock', 'blueberry', 'grape', 'graphite') then
+    raise exception 'Unknown color';
+  end if;
+  update groups set color_key = p_color_key where id = p_group_id;
+end $$;
+revoke all on function public.set_group_color(uuid, text) from public, anon;
+grant execute on function public.set_group_color(uuid, text) to authenticated;
+
+notify pgrst, 'reload schema';
+
+
+-- ============================================================================
+-- Seasonal themes (November 2026)
+-- ============================================================================
+-- The app's seasonal looks (Christmas, summer, ...) are built into the app;
+-- *which* one shows and on what dates is this one app_settings row, edited
+-- by the superadmin in the portal (System -> Seasonal theme). app_settings
+-- is superadmin-only, so everyone else (guests included) reads just this
+-- row through the function below. No row = the app's built-in dates.
+create or replace function public.get_seasonal_theme()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select value from public.app_settings where key = 'seasonal_theme';
+$$;
+
+revoke all on function public.get_seasonal_theme() from public;
+grant execute on function public.get_seasonal_theme() to anon, authenticated;
+
+notify pgrst, 'reload schema';

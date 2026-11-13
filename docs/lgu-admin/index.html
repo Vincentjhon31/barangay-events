@@ -303,6 +303,37 @@
     .radio-stack label { display: flex; gap: 10px; align-items: flex-start; font-size: 14.5px; cursor: pointer; }
     .radio-stack input { margin-top: 3px; }
 
+    /* ---------- API ---------- */
+    .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace; }
+    input.mono { font-size: 13.5px; }
+    .key-row { grid-template-columns: minmax(200px, 1fr) minmax(220px, 1.2fr) auto; }
+    .key-row .mono { font-size: 13px; }
+    .scope-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .scope-choices { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+    .scope-choices .scope-cals { display: flex; flex-wrap: wrap; gap: 6px 16px; padding-left: 26px; }
+    .scope-choices .help { font-size: 12.5px; color: var(--ink-3); }
+    /* minmax(0, ...): long example lines scroll inside their box instead of widening the page. */
+    #view-api { grid-template-columns: minmax(0, 1fr); }
+    .api-guide { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+    .api-guide p { margin: 0; color: var(--ink-2); font-size: 14px; }
+    .api-guide h3 { font-size: 14.5px; margin-bottom: 6px; }
+    .api-guide code { font-family: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace; font-size: 13px; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+    .api-params { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; font-size: 14px; }
+    .api-params dt { font-weight: 700; }
+    .api-params dd { margin: 0; color: var(--ink-2); }
+    pre.code {
+      margin: 12px 0 0; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--surface-2); color: var(--ink);
+      font-family: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace; font-size: 12.5px; line-height: 1.5;
+      overflow: auto; max-height: 460px; white-space: pre;
+    }
+    .api-guide pre.code { margin: 0; }
+    @media (max-width: 899px) {
+      .key-row { grid-template-columns: 1fr; }
+      .key-row > .actions { justify-content: flex-start; }
+      .api-params { grid-template-columns: 1fr; gap: 2px; }
+      .api-params dd { margin-bottom: 8px; }
+    }
+
     /* Tablet: icon rail */
     @media (max-width: 1099px) {
       :root { --sidebar: 84px; }
@@ -920,6 +951,47 @@
           </div>
         </section>
 
+        <!-- API (other LGU systems reading the calendar) -->
+        <section id="view-api" class="stack hidden">
+          <div class="panel">
+            <div class="panel-head"><div><h2>API keys</h2><p>A key lets another LGU system, like the intranet website, read the calendar's events as data, so it doesn't need a calendar of its own. Make one key for each system: you can see when each was last used, and switch one off without touching the others.</p></div></div>
+            <div class="panel-body" style="border-bottom:1px solid var(--line)">
+              <form id="apikey-form" class="form-narrow" style="max-width:640px">
+                <div class="field"><label for="apikey-name">Name</label><input id="apikey-name" type="text" maxlength="80" required autocomplete="off" placeholder="e.g. LGU intranet website"><span class="help">The system that will use it, so you can tell keys apart.</span></div>
+                <div class="field"><span class="label" id="apikey-scope-label">What it can read</span><div class="scope-choices" id="apikey-scope" role="group" aria-labelledby="apikey-scope-label"></div></div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <button class="btn primary" type="submit" id="apikey-submit">Create key</button>
+                  <button class="btn ghost hidden" type="button" id="apikey-cancel">Cancel editing</button>
+                </div>
+              </form>
+              <div id="apikey-msg"></div>
+            </div>
+            <ul class="rows" id="apikeys-list"></ul>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div><h2>Connecting a system</h2><p>Send this to the system's developer, and give them the key separately (not in a group chat).</p></div><span class="spacer"></span><button class="btn ghost sm" type="button" id="api-copy-guide">Copy instructions</button></div>
+            <div class="panel-body api-guide" id="api-guide"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div><h2>Try a key</h2><p>Shows exactly what a system using the key receives. The key isn't saved anywhere.</p></div></div>
+            <div class="panel-body">
+              <form id="apitry-form" class="form-narrow" style="max-width:640px">
+                <div class="field"><label for="apitry-key">API key</label><input id="apitry-key" type="password" required autocomplete="off" spellcheck="false" placeholder="ecal_…"></div>
+                <div class="field-row">
+                  <div class="field"><label for="apitry-from">From</label><input id="apitry-from" type="date"></div>
+                  <div class="field"><label for="apitry-to">To</label><input id="apitry-to" type="date"></div>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <button class="btn primary" type="submit">Get events</button>
+                  <button class="btn ghost" type="button" id="apitry-calendars">Get calendars</button>
+                </div>
+              </form>
+              <div id="apitry-msg"></div>
+              <pre class="code hidden" id="apitry-out" tabindex="0" aria-label="API response"></pre>
+            </div>
+          </div>
+        </section>
+
         <!-- System -->
         <section id="view-system" class="stack hidden">
           <div class="panel">
@@ -942,6 +1014,47 @@
                 <button class="btn primary" type="submit">Save limits</button>
               </form>
               <div id="limits-msg"></div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div><h2>Seasonal theme</h2><p>The colors and decoration the app shows for each season. Changes reach everyone the next time they open the app. No update or download is needed.</p></div></div>
+            <div class="panel-body">
+              <form id="season-form" class="form-narrow">
+                <div class="field"><label for="season-mode">What the app shows</label>
+                  <select id="season-mode">
+                    <option value="auto">Automatic, by the dates below</option>
+                    <option value="off">No seasonal theme</option>
+                    <option value="xmas">Always Christmas</option>
+                    <option value="hearts">Always Araw ng mga Puso</option>
+                    <option value="summer">Always Summer</option>
+                    <option value="rainy">Always Rainy</option>
+                    <option value="fiesta">Always Fiesta</option>
+                  </select>
+                  <span class="help">"Always" shows that season now, whatever the date, until you change it back.</span></div>
+                <div class="field-row">
+                  <div class="field"><label for="season-xmas-start">Christmas starts</label><input id="season-xmas-start" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
+                  <div class="field"><label for="season-xmas-end">Christmas ends</label><input id="season-xmas-end" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
+                </div>
+                <div class="field-row">
+                  <div class="field"><label for="season-hearts-start">Araw ng mga Puso starts</label><input id="season-hearts-start" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
+                  <div class="field"><label for="season-hearts-end">Araw ng mga Puso ends</label><input id="season-hearts-end" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
+                </div>
+                <div class="field-row">
+                  <div class="field"><label for="season-summer-start">Summer starts</label><input id="season-summer-start" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
+                  <div class="field"><label for="season-summer-end">Summer ends</label><input id="season-summer-end" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
+                </div>
+                <div class="field-row">
+                  <div class="field"><label for="season-rainy-start">Rainy starts</label><input id="season-rainy-start" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
+                  <div class="field"><label for="season-rainy-end">Rainy ends</label><input id="season-rainy-end" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
+                </div>
+                <div class="field-row">
+                  <div class="field"><label for="season-fiesta-start">Fiesta starts</label><input id="season-fiesta-start" type="date"></div>
+                  <div class="field"><label for="season-fiesta-end">Fiesta ends</label><input id="season-fiesta-end" type="date"></div>
+                </div>
+                <span class="help">Seasons repeat every year (month and day, like 12-01). Fiesta is for one set of dates; leave it empty when there is none. If dates overlap, Fiesta wins.</span>
+                <button class="btn primary" type="submit">Save seasonal theme</button>
+              </form>
+              <div id="season-msg"></div>
             </div>
           </div>
         </section>
@@ -1061,6 +1174,18 @@
       <button class="btn ghost" type="button" id="confirm-cancel">Cancel</button>
       <button class="btn danger-ghost hidden" type="button" id="confirm-alt"></button>
       <button class="btn primary" type="button" id="confirm-ok"></button>
+    </div>
+  </dialog>
+
+  <!-- A new API key: the only time it's shown -->
+  <dialog id="apikey-dialog" aria-labelledby="apikey-dialog-title">
+    <div class="dlg-head"><h2 id="apikey-dialog-title">Copy the key</h2><p>Give it only to the people running that system. You can copy it again here with "Copy key" until it's revoked; if it leaks, make a new key and revoke this one.</p></div>
+    <div class="dlg-body">
+      <div class="field"><label for="apikey-new">Key for <span id="apikey-new-name"></span></label><input id="apikey-new" class="mono" type="text" readonly spellcheck="false" autocomplete="off"></div>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn ghost" type="button" id="apikey-done">Done</button>
+      <button class="btn primary" type="button" id="apikey-copy">Copy key</button>
     </div>
   </dialog>
 
@@ -1329,6 +1454,7 @@
       { id: 'calendars', label: 'Calendars', sub: 'Extra calendars in the app, like Sports, and who handles them', icon: '<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>' },
       { id: 'pictures', label: 'Pictures', sub: 'Profile picture choices, and uploaded photos', icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/>' },
       { id: 'backups', label: 'Backups', sub: 'Download all app data, or restore it from a backup', icon: '<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/>' },
+      { id: 'api', label: 'API', sub: 'Let other LGU systems, like the intranet website, read the calendar', icon: '<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>' },
       { id: 'system', label: 'System', sub: 'Database and file storage usage', icon: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.7-4 3-9 3s-9-1.3-9-3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/>' },
       { id: 'settings', label: 'Settings', sub: 'Your account, appearance, and event locations', icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>' }
     ];
@@ -2769,6 +2895,333 @@
     });
     renderCalendarForm(null);
 
+    // ---------- API (other LGU systems reading the calendar) ----------
+    // A key lets one outside system read Public events, calendars, and
+    // chosen groups as JSON from api/events.php on the Hostinger site. Keys
+    // are made and checked in the database ("Calendar API" block in
+    // barangay_events.sql); the key is kept in Supabase Vault so it can be
+    // copied again until it's revoked.
+    var CALENDAR_API_URL = FILE_API + '/events.php';
+    var apiKeys = [];
+    var apiKeysError = null;
+    var apiGroups = [];
+    var editingApiKey = null;
+    // The form's choices, kept here so a refresh doesn't undo them.
+    var apiForm = { includePublic: true, allCalendars: true, calendarIds: [], groupIds: [] };
+
+    function apiKeyById(id) { return apiKeys.filter(function (k) { return k.id === id; })[0]; }
+    function apiGroupById(id) { return apiGroups.filter(function (g) { return g.id === id; })[0]; }
+    // api_keys' times are real moments (not the events' wall-clock convention).
+    function formatMoment(iso) {
+      return iso ? new Date(iso).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }) : '';
+    }
+    function copyText(text, done) {
+      if (!navigator.clipboard) { toast('This browser can\'t copy from here. Select the text and copy it by hand.'); return; }
+      navigator.clipboard.writeText(text).then(function () { toast(done); }, function () { toast('Couldn\'t copy. Select the text and copy it by hand.'); });
+    }
+    function apiScopePills(k) {
+      var pills = [];
+      if (k.include_public) pills.push('<span class="pill public">Public events</span>');
+      if (k.calendar_ids == null) {
+        pills.push('<span class="pill">Every calendar</span>');
+      } else {
+        k.calendar_ids.forEach(function (id) {
+          var c = calendarById(id);
+          pills.push(c
+            ? '<span class="pill calendar" style="--c:' + (COLORS[c.color_key] || 'var(--owner)') + '">' + esc(c.name) + '</span>'
+            : '<span class="pill">A deleted calendar</span>');
+        });
+      }
+      (k.group_ids || []).forEach(function (id) {
+        var g = apiGroupById(id);
+        pills.push('<span class="pill">' + (g ? 'Group: ' + esc(g.name) : 'A deleted group') + '</span>');
+      });
+      return pills.join('');
+    }
+    function renderApiScope() {
+      var cals = calendars.slice().sort(function (a, b) {
+        return (a.archived_at ? 1 : 0) - (b.archived_at ? 1 : 0) || (a.sort_order || 0) - (b.sort_order || 0);
+      });
+      $('apikey-scope').innerHTML =
+        '<label class="check"><input type="checkbox" data-api-scope="public"' + (apiForm.includePublic ? ' checked' : '') + '> Public events</label>' +
+        '<label class="check"><input type="checkbox" data-api-scope="all"' + (apiForm.allCalendars ? ' checked' : '') + '> Every calendar, including ones you add later</label>' +
+        (apiForm.allCalendars ? '' : (cals.length
+          ? '<div class="scope-cals">' + cals.map(function (c) {
+              return '<label class="check"><input type="checkbox" data-api-cal="' + esc(c.id) + '"' + (apiForm.calendarIds.indexOf(c.id) >= 0 ? ' checked' : '') + '> ' +
+                esc(c.name) + (c.archived_at ? ' (archived)' : '') + '</label>';
+            }).join('') + '</div>'
+          : '<span class="help">There are no calendars yet.</span>')) +
+        '<span class="label" style="margin-top:6px">Groups</span>' +
+        (apiGroups.length
+          ? '<div class="scope-cals" style="padding-left:0">' + apiGroups.map(function (g) {
+              return '<label class="check"><input type="checkbox" data-api-group="' + esc(g.id) + '"' + (apiForm.groupIds.indexOf(g.id) >= 0 ? ' checked' : '') + '> ' +
+                esc(g.name) + ' <span class="muted">(' + (g.is_private ? 'private, ' : '') + esc(String(g.members)) + (g.members === 1 ? ' member' : ' members') + ')</span></label>';
+            }).join('') + '</div>'
+          : '<span class="help">There are no groups yet.</span>') +
+        '<span class="help">A ticked group\'s events go to this system even though they\'re normally only for its members, so tick only groups whose events it should show. Personal events are never shared.</span>';
+    }
+    $('apikey-scope').addEventListener('change', function (e) {
+      var box = e.target;
+      if (box.dataset.apiScope === 'public') {
+        apiForm.includePublic = box.checked;
+      } else if (box.dataset.apiScope === 'all') {
+        apiForm.allCalendars = box.checked;
+        renderApiScope();
+      } else if (box.dataset.apiCal) {
+        apiForm.calendarIds = apiForm.calendarIds.filter(function (id) { return id !== box.dataset.apiCal; });
+        if (box.checked) apiForm.calendarIds.push(box.dataset.apiCal);
+      } else if (box.dataset.apiGroup) {
+        apiForm.groupIds = apiForm.groupIds.filter(function (id) { return id !== box.dataset.apiGroup; });
+        if (box.checked) apiForm.groupIds.push(box.dataset.apiGroup);
+      }
+    });
+    function renderApiKeyForm(k) {
+      apiForm = k
+        // Deleted groups drop off, or saving would be refused.
+        ? { includePublic: !!k.include_public, allCalendars: k.calendar_ids == null, calendarIds: (k.calendar_ids || []).slice(),
+            groupIds: (k.group_ids || []).filter(apiGroupById) }
+        : { includePublic: true, allCalendars: true, calendarIds: [], groupIds: [] };
+      $('apikey-name').value = k ? k.name : '';
+      $('apikey-submit').textContent = k ? 'Save changes' : 'Create key';
+      $('apikey-cancel').classList.toggle('hidden', !k);
+      renderApiScope();
+    }
+    function renderApiKeys() {
+      if (apiKeysError) {
+        $('apikeys-list').innerHTML = '<li class="empty"><strong>API keys aren\'t set up yet</strong>' + esc(apiKeysError) + '</li>';
+        return;
+      }
+      $('apikeys-list').innerHTML = apiKeys.length ? apiKeys.map(function (k) {
+        var n = Number(k.request_count) || 0;
+        var status = k.revoked_at
+          ? 'Revoked ' + esc(formatMoment(k.revoked_at))
+          : (k.last_used_at ? 'Last used ' + esc(formatMoment(k.last_used_at)) + ' &middot; ' + esc(n.toLocaleString()) + (n === 1 ? ' request' : ' requests') : 'Not used yet');
+        return '<li class="row key-row' + (k.revoked_at ? ' past' : '') + '">' +
+          '<div style="min-width:0"><strong>' + esc(k.name) + '</strong>' +
+            '<div class="muted"><span class="mono">' + esc(k.key_prefix) + '&hellip;</span> &middot; made ' + esc(formatJoined(k.created_at)) +
+            (k.created_by_name ? ' by ' + esc(k.created_by_name) : '') + '</div></div>' +
+          '<div style="min-width:0"><div class="scope-list">' + apiScopePills(k) + '</div><div class="muted" style="margin-top:4px">' + status + '</div></div>' +
+          '<div class="actions">' + (k.revoked_at
+            ? '<span class="pill rejected">Revoked</span><button class="btn danger-ghost sm" type="button" data-apikey-delete="' + esc(k.id) + '">Delete</button>'
+            : '<button class="btn ghost sm" type="button" data-apikey-show="' + esc(k.id) + '">Copy key</button>' +
+              '<button class="btn ghost sm" type="button" data-apikey-edit="' + esc(k.id) + '">Edit</button>' +
+              '<button class="btn danger-ghost sm" type="button" data-apikey-revoke="' + esc(k.id) + '">Revoke</button>') +
+          '</div></li>';
+      }).join('') : '<li class="empty"><strong>No API keys yet</strong>Make one above for each system that should read the calendar.</li>';
+    }
+    function showNewApiKey(name, key) {
+      $('apikey-new-name').textContent = name;
+      $('apikey-new').value = key;
+      $('apikey-dialog').showModal();
+      $('apikey-new').select();
+    }
+    $('apikey-copy').addEventListener('click', function () {
+      copyText($('apikey-new').value, 'Key copied. Keep it somewhere safe, like a password manager.');
+    });
+    $('apikey-done').addEventListener('click', function () { $('apikey-dialog').close(); });
+    // However the dialog closes, the key leaves the page.
+    $('apikey-dialog').addEventListener('close', function () { $('apikey-new').value = ''; });
+    $('apikey-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var name = $('apikey-name').value.trim();
+      if (!name) return;
+      var msg = $('apikey-msg');
+      var calendarIds = apiForm.allCalendars ? null : apiForm.calendarIds.slice();
+      if (!apiForm.includePublic && calendarIds && !calendarIds.length && !apiForm.groupIds.length) {
+        notice(msg, 'Choose at least one thing this key can read.', 'error');
+        return;
+      }
+      var btn = $('apikey-submit');
+      var editing = editingApiKey;
+      busy(btn, true, editing ? 'Saving…' : 'Creating…');
+      var request = editing
+        ? sb.rpc('admin_update_api_key', { p_id: editing.id, p_name: name, p_include_public: apiForm.includePublic, p_calendar_ids: calendarIds, p_group_ids: apiForm.groupIds })
+        : sb.rpc('admin_create_api_key', { p_name: name, p_include_public: apiForm.includePublic, p_calendar_ids: calendarIds, p_group_ids: apiForm.groupIds });
+      request.then(function (res) {
+        if (res.error) throw res.error;
+        // Before the form resets, so the button gets its new label back.
+        busy(btn, false);
+        notice(msg, '', '');
+        editingApiKey = null;
+        renderApiKeyForm(null);
+        if (editing) toast('Saved "' + name + '". It applies from the next request.');
+        else showNewApiKey(name, res.data.key);
+        return loadApiKeys();
+      }).catch(function (err) {
+        busy(btn, false);
+        notice(msg, esc(missingBackend(err) ? SETUP_HINT : errorText(err)), 'error');
+      });
+    });
+    $('apikey-cancel').addEventListener('click', function () {
+      editingApiKey = null;
+      renderApiKeyForm(null);
+      notice($('apikey-msg'), '', '');
+    });
+    $('apikeys-list').addEventListener('click', function (e) {
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      var d = btn.dataset;
+      if (d.apikeyShow) {
+        var shown = apiKeyById(d.apikeyShow);
+        busy(btn, true, 'Opening…');
+        sb.rpc('admin_reveal_api_key', { p_id: shown.id }).then(function (res) {
+          busy(btn, false);
+          if (res.error) throw res.error;
+          if (res.data) showNewApiKey(shown.name, res.data);
+          else toast('This key was made before keys could be copied again. Make a new key for ' + shown.name + ', then revoke this one.');
+        }).catch(function (err) { busy(btn, false); toast(errorText(err)); });
+      } else if (d.apikeyEdit) {
+        editingApiKey = apiKeyById(d.apikeyEdit);
+        renderApiKeyForm(editingApiKey);
+        $('apikey-name').focus();
+      } else if (d.apikeyRevoke) {
+        var k = apiKeyById(d.apikeyRevoke);
+        confirmDialog({
+          title: 'Revoke the key for ' + k.name + '?',
+          text: 'Anything using it stops getting calendar data right away. This can\'t be undone: to connect again, make a new key.',
+          confirm: 'Revoke key', danger: true
+        }).then(function (ok) {
+          if (!ok) return;
+          busy(btn, true, 'Revoking…');
+          sb.rpc('admin_revoke_api_key', { p_id: k.id }).then(function (res) {
+            if (res.error) throw res.error;
+            toast('Revoked the key for ' + k.name + '.');
+            if (editingApiKey && editingApiKey.id === k.id) { editingApiKey = null; renderApiKeyForm(null); }
+            return loadApiKeys();
+          }).catch(function (err) { busy(btn, false); toast(errorText(err)); });
+        });
+      } else if (d.apikeyDelete) {
+        var r = apiKeyById(d.apikeyDelete);
+        confirmDialog({ title: 'Delete the revoked key for ' + r.name + '?', text: 'It disappears from this list. It already can\'t be used.', confirm: 'Delete', danger: true }).then(function (ok) {
+          if (!ok) return;
+          busy(btn, true, 'Deleting…');
+          sb.rpc('admin_delete_api_key', { p_id: r.id }).then(function (res) {
+            if (res.error) throw res.error;
+            return loadApiKeys();
+          }).catch(function (err) { busy(btn, false); toast(errorText(err)); });
+        });
+      }
+    });
+
+    // What to send the system's developer (the full guide is
+    // hostinger/CALENDAR_API.md). One list feeds the page and the copy.
+    var API_PARAMS = [
+      ['from, to', 'Dates like 2026-11-30, Philippine time. Without them: today to 30 days ahead. Up to 366 days per request.'],
+      ['type', '"public", "calendar", or "group": only that kind of event.'],
+      ['calendar', 'Only one calendar, by its id (see action=calendars).'],
+      ['id', 'One event, by its id.'],
+      ['action=calendars', 'Instead of events: the calendars (with ids and colors) and groups this key can read.'],
+      ['limit, offset', 'Up to 1000 events per request (500 if not given); "has_more" says when there are more.'],
+      ['pretty=1', 'Indented JSON, easier to read in a browser.']
+    ];
+    var API_FIELDS = [
+      ['id, title, description', ''],
+      ['location', 'null when no venue was given'],
+      ['start, end', 'ISO 8601 with the Philippine offset, e.g. 2026-11-07T10:00:00+08:00'],
+      ['all_day', 'true for all-day events'],
+      ['days', 'one entry per day with that day\'s own start and end. An event on several days runs at its times on each day, so show these instead of one long block'],
+      ['type, calendar, group', '"public"; "calendar" with the calendar\'s id and name; or "group" with the group\'s id and name'],
+      ['color', 'the event\'s color label as hex, or null'],
+      ['contact_number', 'the event\'s contact number, or null'],
+      ['posted_by, posted_at', 'who posted it (name, office) and when'],
+      ['series_id', 'the same on every date of an event held on several separate dates']
+    ];
+    var API_ERRORS = [
+      ['401', 'the key is missing, mistyped, or revoked'],
+      ['400', 'a parameter isn\'t valid (the message says which)'],
+      ['429', 'more than 300 requests a minute with one key: wait the seconds in Retry-After. Keep the results for a few minutes instead of asking on every page view'],
+      ['404', 'the event id doesn\'t exist, or the key can\'t read it']
+    ];
+    function apiExample() {
+      var url = CALENDAR_API_URL + '?from=2026-11-01&to=2026-11-30';
+      return [
+        '# Any language: an HTTP GET with the key in the X-API-Key header',
+        'curl -H "X-API-Key: YOUR_KEY" "' + url + '"',
+        '',
+        '// JavaScript, on the server (Node 18 or newer)',
+        "const res = await fetch('" + url + "', {",
+        "  headers: { 'X-API-Key': process.env.ECAL_API_KEY },",
+        '});',
+        'const { events } = await res.json();',
+        '',
+        '// PHP',
+        "$context = stream_context_create(['http' => ['header' => 'X-API-Key: ' . getenv('ECAL_API_KEY')]]);",
+        "$data = json_decode(file_get_contents('" + url + "', false, $context), true);"
+      ].join('\n');
+    }
+    function renderApiGuide() {
+      function list(rows) {
+        return '<dl class="api-params">' + rows.map(function (r) {
+          return '<dt><code>' + esc(r[0]) + '</code></dt><dd>' + esc(r[1]) + '</dd>';
+        }).join('') + '</dl>';
+      }
+      $('api-guide').innerHTML =
+        '<div><h3>Address</h3><p><code>GET ' + esc(CALENDAR_API_URL) + '</code></p></div>' +
+        '<div><h3>Key</h3><p>Send it in an <code>X-API-Key</code> header on every request. Keep it in the website\'s server settings, not in a web page\'s code where visitors can see it.</p></div>' +
+        '<div><h3>What to ask for (all optional)</h3>' + list(API_PARAMS) + '</div>' +
+        '<div><h3>Examples</h3><pre class="code" tabindex="0">' + esc(apiExample()) + '</pre></div>' +
+        '<div><h3>What comes back</h3><p style="margin-bottom:8px">JSON with <code>events</code>, a list where each event has:</p>' + list(API_FIELDS) + '</div>' +
+        '<div><h3>If something\'s wrong</h3><p style="margin-bottom:8px">The JSON has <code>error.code</code> and <code>error.message</code>.</p>' + list(API_ERRORS) + '</div>';
+    }
+    function apiGuideText() {
+      function lines(rows) {
+        return rows.map(function (r) { return '  ' + r[0] + (r[1] ? ': ' + r[1] : ''); }).join('\n');
+      }
+      return [
+        'eBongabong Calendar API (read-only)',
+        '',
+        'Address: GET ' + CALENDAR_API_URL,
+        'Key: send it in an X-API-Key header on every request. Keep it in the website\'s server settings, not in a web page\'s code.',
+        '',
+        'What to ask for (all optional):',
+        lines(API_PARAMS),
+        '',
+        'Examples:',
+        apiExample(),
+        '',
+        'What comes back: JSON with "events", a list where each event has:',
+        lines(API_FIELDS),
+        '',
+        'Errors come back as JSON with error.code and error.message:',
+        lines(API_ERRORS)
+      ].join('\n');
+    }
+    $('api-copy-guide').addEventListener('click', function () {
+      copyText(apiGuideText(), 'Instructions copied. Paste them into a message to the developer.');
+    });
+    renderApiGuide();
+
+    function tryApi(query) {
+      var key = $('apitry-key').value.trim();
+      var msg = $('apitry-msg');
+      var out = $('apitry-out');
+      if (!key) { notice(msg, 'Paste a key first.', 'error'); return; }
+      notice(msg, '', '');
+      out.textContent = 'Asking ' + CALENDAR_API_URL + query + ' …';
+      out.classList.remove('hidden');
+      fetch(CALENDAR_API_URL + query, { headers: { 'X-API-Key': key } }).then(function (r) {
+        return r.text().then(function (text) {
+          var shown = text;
+          try { shown = JSON.stringify(JSON.parse(text), null, 2); } catch (err) { /* not JSON: show it as it came */ }
+          // textContent, never innerHTML: event titles are free text.
+          out.textContent = 'HTTP ' + r.status + '\n' + shown;
+          if (r.ok) notice(msg, 'This is what a system using this key receives.', 'ok');
+        });
+      }).catch(function () {
+        out.classList.add('hidden');
+        notice(msg, 'Couldn\'t reach ' + esc(CALENDAR_API_URL) + '. Check that events.php is uploaded to the api folder on Hostinger.', 'error');
+      });
+    }
+    $('apitry-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var q = [];
+      if ($('apitry-from').value) q.push('from=' + $('apitry-from').value);
+      if ($('apitry-to').value) q.push('to=' + $('apitry-to').value);
+      tryApi(q.length ? '?' + q.join('&') : '');
+    });
+    $('apitry-calendars').addEventListener('click', function () { tryApi('?action=calendars'); });
+    renderApiKeyForm(null);
+
     // ---------- Profile pictures ----------
     function renderPictures() {
       document.querySelectorAll('[data-preset-cat]').forEach(function (b) {
@@ -3269,6 +3722,45 @@
       }).catch(function (err) { notice($('limits-msg'), esc(errorText(err)), 'error'); }).then(function () { busy(btn, false); });
     });
 
+    // ---------- Seasonal theme ----------
+    // Kept in app_settings 'seasonal_theme'; the app reads it through the
+    // get_seasonal_theme RPC. Same defaults as lib/seasonal_theme.dart.
+    var SEASON_DEFAULTS = { xmas: ['12-01', '01-06'], hearts: ['02-01', '02-14'], summer: ['03-01', '05-31'], rainy: ['06-01', '08-31'], fiesta: ['', ''] };
+    function renderSeason() {
+      var saved = settings.seasonal_theme || {}, dates = saved.dates || {};
+      $('season-mode').value = saved.mode || 'auto';
+      Object.keys(SEASON_DEFAULTS).forEach(function (id) {
+        var d = dates[id] || {};
+        $('season-' + id + '-start').value = typeof d.start === 'string' ? d.start : SEASON_DEFAULTS[id][0];
+        $('season-' + id + '-end').value = typeof d.end === 'string' ? d.end : SEASON_DEFAULTS[id][1];
+      });
+    }
+    function validMonthDay(v) {
+      var m = /^(\d\d)-(\d\d)$/.exec(v);
+      return !!m && +m[1] >= 1 && +m[1] <= 12 && +m[2] >= 1 && +m[2] <= 31;
+    }
+    $('season-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var value = { mode: $('season-mode').value, dates: {} }, problem = '';
+      Object.keys(SEASON_DEFAULTS).forEach(function (id) {
+        var start = $('season-' + id + '-start').value.trim(), end = $('season-' + id + '-end').value.trim();
+        if (id === 'fiesta') {
+          if (!start !== !end) problem = 'Give the fiesta both a start and an end date, or leave both empty.';
+          else if (start && end < start) problem = 'The fiesta ends before it starts.';
+        } else if (!validMonthDay(start) || !validMonthDay(end)) {
+          problem = 'Write season dates as month-day, like 12-01.';
+        }
+        value.dates[id] = { start: start, end: end };
+      });
+      if (problem) { notice($('season-msg'), esc(problem), 'error'); return; }
+      var btn = e.target.querySelector('button[type="submit"]');
+      busy(btn, true, 'Saving…');
+      saveSetting('seasonal_theme', value).then(function () {
+        notice($('season-msg'), '', '');
+        toast('Seasonal theme saved.');
+      }).catch(function (err) { notice($('season-msg'), esc(errorText(err)), 'error'); }).then(function () { busy(btn, false); });
+    });
+
     // ---------- Settings ----------
     document.querySelectorAll('[data-jump]').forEach(function (a) {
       a.addEventListener('click', function (e) { e.preventDefault(); $(a.dataset.jump).scrollIntoView({ behavior: 'smooth', block: 'start' }); });
@@ -3403,14 +3895,32 @@
           calendars = res.data || [];
           calendarHandlers = results[1].error ? [] : (results[1].data || []);
         }
-        renderCategories(); renderEvents(); renderDashboard();
+        renderCategories(); renderEvents(); renderDashboard(); renderApiScope(); renderApiKeys();
+      });
+    }
+    function loadApiKeys() {
+      // Groups first, so the rows can name them; an older database without
+      // admin_list_groups just shows no groups.
+      return sb.rpc('admin_list_groups').then(function (g) {
+        apiGroups = g.error ? [] : (g.data || []);
+        if (!editingApiKey) renderApiScope();
+        return sb.rpc('admin_list_api_keys');
+      }).then(function (res) {
+        if (res.error) {
+          apiKeys = [];
+          apiKeysError = missingBackend(res.error) ? 'Run the "Calendar API" block at the end of supabase/barangay_events.sql in the Supabase SQL editor.' : errorText(res.error);
+        } else {
+          apiKeysError = null;
+          apiKeys = res.data || [];
+        }
+        renderApiKeys();
       });
     }
     function loadSettings() {
       return sb.from('app_settings').select('key, value').then(function (res) {
         settings = {};
         (res.data || []).forEach(function (r) { settings[r.key] = r.value; });
-        renderBackupHistory(); renderSignups(); renderNav(); renderDashboard(); renderReport();
+        renderBackupHistory(); renderSignups(); renderNav(); renderDashboard(); renderReport(); renderSeason();
       });
     }
     function loadBackupHistory() {
@@ -3461,7 +3971,7 @@
     function loadAll() {
       return Promise.all([
         loadUsers(), loadApplications(), loadEvents(), loadStats(), loadLocations(),
-        loadCategories(), loadSettings(), loadBackupHistory(), loadUsage(), loadPresets(), loadReports()
+        loadCategories(), loadSettings(), loadBackupHistory(), loadUsage(), loadPresets(), loadReports(), loadApiKeys()
       ]).catch(function (err) { toast(errorText(err)); });
     }
     $('refresh-btn').addEventListener('click', function () {

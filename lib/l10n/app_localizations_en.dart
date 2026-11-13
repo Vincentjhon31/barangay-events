@@ -245,6 +245,31 @@ class AppLocalizationsEn extends AppLocalizations {
       'Each event\'s name inside the calendar, like Google Calendar.';
 
   @override
+  String get settingsSeasonal => 'Seasonal theme';
+
+  @override
+  String get settingsSeasonalHint =>
+      'Colors and a small decoration for Christmas, summer and other seasons. The municipality sets the dates.';
+
+  @override
+  String get settingsSeasonalOn => 'On';
+
+  @override
+  String get settingsSeasonalOnSubtitle => 'With light snow, rain or confetti.';
+
+  @override
+  String get settingsSeasonalNoEffects => 'On, nothing falling';
+
+  @override
+  String get settingsSeasonalNoEffectsSubtitle => 'Colors and decoration only.';
+
+  @override
+  String get settingsSeasonalOff => 'Off';
+
+  @override
+  String get settingsSeasonalOffSubtitle => 'Always use the regular look.';
+
+  @override
   String get eventReminderNoticeLabel => 'Event reminder';
 
   @override
@@ -883,7 +908,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get moreDatesRepeatWeekly => 'Repeat every week';
 
   @override
-  String get moreDatesPickHelp => 'Add a date';
+  String get moreDatesPickHelp => 'Pick dates';
+
+  @override
+  String get moreDatesPickHint =>
+      'Tap days to add or remove them. Grey days would overlap a date already picked.';
+
+  @override
+  String get moreDatesDone => 'Done';
 
   @override
   String get moreDatesRepeatUntil => 'Repeat every week until';
@@ -898,10 +930,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String moreDatesCount(int count) {
     return '$count dates';
   }
-
-  @override
-  String get moreDatesOverlap =>
-      'That date overlaps another date of this event.';
 
   @override
   String get moreDatesSomeOverlap =>
@@ -1066,6 +1094,31 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get addAttachmentButton => 'Add photos or files';
+
+  @override
+  String get takePhotoButton => 'Take a photo';
+
+  @override
+  String get cameraShutter => 'Take the photo';
+
+  @override
+  String get cameraSwitch => 'Switch camera';
+
+  @override
+  String get cameraRetake => 'Retake';
+
+  @override
+  String get cameraUsePhoto => 'Use photo';
+
+  @override
+  String get cameraNotFound => 'No camera found on this device.';
+
+  @override
+  String get cameraPermissionDenied =>
+      'eBongabong Calendar isn\'t allowed to use the camera. Allow it in your device\'s settings, then try again.';
+
+  @override
+  String get cameraError => 'Couldn\'t use the camera. Please try again.';
 
   @override
   String attachmentTooLarge(String name) {
@@ -1965,4 +2018,53 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get privacyLegalBody =>
       'This app is operated by the Municipality of Bongabong in line with the Data Privacy Act of 2012 (Republic Act No. 10173). For questions about your data, contact your barangay office or the municipality\'s LGU admin team.';
+
+  @override
+  String get offlineTitle => 'Offline: showing events saved on this device';
+
+  @override
+  String offlineLastUpdated(String time) {
+    return 'Last updated $time';
+  }
+
+  @override
+  String get offlineNoSavedEvents =>
+      'No saved events yet. They\'ll appear once you\'re online.';
+
+  @override
+  String get offlineRetryButton => 'Retry';
+
+  @override
+  String updateDownloadTitle(String version) {
+    return 'Updating to version $version';
+  }
+
+  @override
+  String updateDownloadProgress(String received, String total) {
+    return 'Downloading… $received of $total MB';
+  }
+
+  @override
+  String get updateDownloadStarting => 'Downloading…';
+
+  @override
+  String get updateOpeningInstaller => 'Opening the installer…';
+
+  @override
+  String get updateAndroidInstallHint =>
+      'If your phone asks, allow installs from eBongabong Calendar, then tap Update. Your events and settings stay.';
+
+  @override
+  String get updateWindowsInstallHint =>
+      'The app will close, update itself, and open again. Your events and settings stay.';
+
+  @override
+  String get updateDownloadFailed =>
+      'The update could not be downloaded. Check your internet connection and try again.';
+
+  @override
+  String get updateRetryButton => 'Try again';
+
+  @override
+  String get updateOpenDownloadPage => 'Download in browser';
 }

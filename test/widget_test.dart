@@ -9,8 +9,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/gestures.dart' show kLongPressTimeout;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:table_calendar/table_calendar.dart';
 
@@ -18,6 +20,7 @@ import 'package:eCalendar/main.dart';
 import 'package:eCalendar/attachment_image_viewer.dart';
 import 'package:eCalendar/avatar_catalog.dart';
 import 'package:eCalendar/avatar_picker_page.dart';
+import 'package:eCalendar/camera_capture_page.dart';
 import 'package:eCalendar/day_detail_page.dart';
 import 'package:eCalendar/event_colors.dart';
 import 'package:eCalendar/event_conflicts.dart';
@@ -26,6 +29,7 @@ import 'package:eCalendar/auth_service.dart';
 import 'package:eCalendar/group_members_page.dart';
 import 'package:eCalendar/l10n/app_localizations.dart';
 import 'package:eCalendar/liquid_glass_components.dart';
+import 'package:eCalendar/offline_cache.dart';
 import 'package:eCalendar/profile_pages.dart';
 import 'package:eCalendar/push_notifications.dart';
 import 'package:eCalendar/responsive_scale.dart';
@@ -331,6 +335,68 @@ void main() {
     expect(find.byType(CalendarScreen), findsOneWidget);
   });
 
+  group('offline', () {
+    testWidgets('the Offline bar shows when the server can\'t be reached, with when the saved copy is from',
+        (WidgetTester tester) async {
+      final repository = MemoryEventRepository.seeded();
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repository,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('offline-bar')), findsNothing);
+
+      final savedAt = DateTime(2026, 11, 6, 14, 41);
+      repository.syncStatusNotifier.value = EventSyncStatus.offline(savedAt);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('offline-bar')), findsOneWidget);
+      expect(find.text('Offline: showing events saved on this device'), findsOneWidget);
+      expect(find.text('Last updated ${DateFormat('MMM d, h:mm a').format(savedAt)}'), findsOneWidget);
+      // The saved events are still on screen underneath.
+      expect(find.byType(CalendarScreen), findsOneWidget);
+
+      // Retry re-opens the events stream; nothing breaks while offline.
+      await tester.tap(find.byKey(const Key('offline-bar-retry')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('offline-bar')), findsOneWidget);
+
+      repository.syncStatusNotifier.value = const EventSyncStatus.online();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('offline-bar')), findsNothing);
+    });
+
+    testWidgets('offline with nothing saved yet says the events will come once online',
+        (WidgetTester tester) async {
+      final repository = MemoryEventRepository.seeded()
+        ..syncStatusNotifier.value = const EventSyncStatus.offline(null);
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => repository,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text("No saved events yet. They'll appear once you're online."), findsOneWidget);
+    });
+
+    testWidgets('guests see the Offline bar too', (WidgetTester tester) async {
+      final repository = MemoryEventRepository.seeded()
+        ..syncStatusNotifier.value = EventSyncStatus.offline(DateTime(2026, 11, 6, 9, 5));
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedOut(),
+          eventRepositoryFactory: () async => repository,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('welcome-continue-as-guest')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('offline-bar')), findsOneWidget);
+    });
+  });
+
   testWidgets('can add a new calendar event', (WidgetTester tester) async {
     await tester.pumpWidget(
       BarangayCalendarApp(
@@ -463,19 +529,21 @@ void main() {
     // identical chip labels and stays mounted alongside Calendar in the
     // shared IndexedStack.
     await tester.scrollUntilVisible(
-      find.byKey(const Key('calendar-filter-personal')),
+      find.byKey(const Key('calendar-filter-all')),
       -300,
       scrollable: find.byType(Scrollable).first,
     );
     await tester.pumpAndSettle();
 
     // The Personal filter hides the public event.
+    await tester.ensureVisible(find.byKey(const Key('calendar-filter-personal'), skipOffstage: false));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('calendar-filter-personal')));
     await tester.pumpAndSettle();
     expect(find.text('Cleanup Drive'), findsNothing);
 
     // The Public filter shows it again.
-    await tester.ensureVisible(find.byKey(const Key('calendar-filter-public')));
+    await tester.ensureVisible(find.byKey(const Key('calendar-filter-public'), skipOffstage: false));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('calendar-filter-public')));
     await tester.pumpAndSettle();
@@ -992,7 +1060,7 @@ void main() {
     // The filter row is its own horizontal-scrolling strip, and on a
     // realistically narrow phone width not every chip fits without
     // scrolling to it first.
-    await tester.ensureVisible(find.byKey(const Key('feed-filter-personal')));
+    await tester.ensureVisible(find.byKey(const Key('feed-filter-personal'), skipOffstage: false));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('feed-filter-personal')));
     await tester.pumpAndSettle();
@@ -1002,7 +1070,7 @@ void main() {
 
     // Back to "All" clears the filter — scrolled out of view to the left
     // after scrolling to reach "Personal" above.
-    await tester.ensureVisible(find.byKey(const Key('feed-filter-all')));
+    await tester.ensureVisible(find.byKey(const Key('feed-filter-all'), skipOffstage: false));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('feed-filter-all')));
     await tester.pumpAndSettle();
@@ -1290,7 +1358,8 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.ensureVisible(find.textContaining('24 members'));
-    expect(find.textContaining("Mayor's Office Updates"), findsOneWidget);
+    // The details sheet, plus the Feed card's "Group: …" pill behind it.
+    expect(find.textContaining("Mayor's Office Updates"), findsWidgets);
     expect(find.textContaining('24 members'), findsOneWidget);
   });
 
@@ -2277,7 +2346,24 @@ void main() {
       await tester.pumpAndSettle();
 
       await openTodayDetail(tester);
-      expect(find.text("Posted to Mayor's Office Updates"), findsOneWidget);
+      final tag = find.byKey(const Key('event-group-tag-seed-mayor-meeting'));
+      expect(tester.widget<Text>(tag).data, "Group: Mayor's Office Updates");
+      // In the group's own color (none picked yet, so the derived one).
+      expect(tester.widget<Text>(tag).style?.color, groupColor('grp-mayor', null));
+    });
+
+    test('groupColor uses the picked color, else a steady palette color', () {
+      expect(groupColor('any-id', 'grape'), eventColorPalette['grape']);
+      expect(eventColorPalette.values, contains(groupColor('grp-mayor', null)));
+      expect(groupColor('grp-mayor', null), groupColor('grp-mayor', 'not-a-key'));
+    });
+
+    test('a group admin can set the group color', () async {
+      final repo = MemoryEventRepository.seeded();
+      final group = await repo.createGroup('Color Club');
+      await repo.setGroupColor(group.id, 'tomato');
+      final mine = await repo.listMyGroups();
+      expect(mine.firstWhere((g) => g.id == group.id).colorKey, 'tomato');
     });
 
     testWidgets('calendar dots and date-range bars use each event\'s color label',
@@ -2310,6 +2396,7 @@ void main() {
         BarangayCalendarApp(
           authServiceFactory: () async => MemoryAuthService.signedIn(),
           eventRepositoryFactory: () async => repo,
+          themeController: ThemeController(initialCalendarCellStyle: CalendarCellStyle.dots),
         ),
       );
       await tester.pumpAndSettle();
@@ -2339,16 +2426,61 @@ void main() {
     });
   });
 
+  group('filter tab order', () {
+    testWidgets('long-press dragging a tab moves it and saves the order', (WidgetTester tester) async {
+      final auth = MemoryAuthService.signedIn();
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => auth,
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final public = find.byKey(const Key('calendar-filter-public'));
+      final all = find.byKey(const Key('calendar-filter-all'));
+      final gesture = await tester.startGesture(tester.getCenter(public));
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+      for (var i = 0; i < 10; i++) {
+        await gesture.moveBy(const Offset(-15, 0));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(auth.currentUser?.filterTabOrder.first, 'public');
+      expect(tester.getCenter(public).dx, lessThan(tester.getCenter(all).dx));
+    });
+
+    testWidgets('a saved order is used when the app opens', (WidgetTester tester) async {
+      final auth = MemoryAuthService.signedIn();
+      await auth.saveFilterTabOrder(['personal', 'all']);
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => auth,
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      double x(String id) => tester.getCenter(find.byKey(Key('calendar-filter-$id'))).dx;
+      expect(x('personal'), lessThan(x('all')));
+      // Tabs the saved order doesn't mention keep their default order after it.
+      expect(x('all'), lessThan(x('public')));
+    });
+  });
+
   group('calendar cell style follows the profile', () {
-    test('picking Event titles saves it to the profile', () async {
+    test('picking Dots saves it to the profile', () async {
       SharedPreferences.setMockInitialValues({});
       final auth = MemoryAuthService.signedIn();
       final controller = ThemeController()..attachAuthService(auth);
 
-      await controller.setCalendarCellStyle(CalendarCellStyle.titles);
+      // Titles is the default, so switching to Dots is the change to save.
+      await controller.setCalendarCellStyle(CalendarCellStyle.dots);
 
       final saved = await auth.fetchPreferences();
-      expect(saved?.calendarCellStyle, 'titles');
+      expect(saved?.calendarCellStyle, 'dots');
     });
 
     test('a saved choice is restored on the next session', () async {
@@ -2368,7 +2500,13 @@ void main() {
 
       await controller.applyRemote(calendarCellStyle: 'bogus');
 
-      expect(controller.calendarCellStyle, CalendarCellStyle.dots);
+      expect(controller.calendarCellStyle, CalendarCellStyle.titles);
+    });
+
+    test('a fresh install shows event titles', () async {
+      SharedPreferences.setMockInitialValues({});
+      expect((await ThemeController.load()).calendarCellStyle, CalendarCellStyle.titles);
+      expect(ThemeController().calendarCellStyle, CalendarCellStyle.titles);
     });
   });
 
@@ -2418,7 +2556,7 @@ void main() {
     Finder chip(String id, DateTime day) => find.byKey(Key('calendar-chip-$id-${day.year}-${day.month}-${day.day}'));
 
     testWidgets('can be switched on in Settings', (WidgetTester tester) async {
-      final themeController = ThemeController();
+      final themeController = ThemeController(initialCalendarCellStyle: CalendarCellStyle.dots);
       await tester.pumpWidget(
         BarangayCalendarApp(
           authServiceFactory: () async => MemoryAuthService.signedIn(),
@@ -2463,7 +2601,7 @@ void main() {
     });
 
     testWidgets('tapping the selected Month tab offers Dots / Event titles', (WidgetTester tester) async {
-      final themeController = ThemeController();
+      final themeController = ThemeController(initialCalendarCellStyle: CalendarCellStyle.dots);
       await tester.pumpWidget(
         BarangayCalendarApp(
           authServiceFactory: () async => MemoryAuthService.signedIn(),
@@ -2495,7 +2633,7 @@ void main() {
 
     testWidgets('from another view, Month just switches views; Week has the same menu',
         (WidgetTester tester) async {
-      final themeController = ThemeController();
+      final themeController = ThemeController(initialCalendarCellStyle: CalendarCellStyle.dots);
       await tester.pumpWidget(
         BarangayCalendarApp(
           authServiceFactory: () async => MemoryAuthService.signedIn(),
@@ -2637,7 +2775,7 @@ void main() {
       await tester.pumpAndSettle();
 
       Future<void> tapFilter(String value) async {
-        await tester.ensureVisible(find.byKey(Key('calendar-filter-$value')));
+        await tester.ensureVisible(find.byKey(Key('calendar-filter-$value'), skipOffstage: false));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(Key('calendar-filter-$value')));
         await tester.pumpAndSettle();
@@ -2747,6 +2885,8 @@ void main() {
         BarangayCalendarApp(
           authServiceFactory: () async => MemoryAuthService.signedIn(),
           eventRepositoryFactory: () async => repo,
+          // Dots, so event titles appear once (not also in the grid).
+          themeController: ThemeController(initialCalendarCellStyle: CalendarCellStyle.dots),
         ),
       );
       await tester.pumpAndSettle();
@@ -2779,6 +2919,8 @@ void main() {
         BarangayCalendarApp(
           authServiceFactory: () async => MemoryAuthService.signedIn(),
           eventRepositoryFactory: () async => repo,
+          // Dots, so event titles appear once (not also in the grid).
+          themeController: ThemeController(initialCalendarCellStyle: CalendarCellStyle.dots),
         ),
       );
       await tester.pumpAndSettle();
@@ -2932,6 +3074,56 @@ void main() {
       expect(find.textContaining('Pictures are made smaller automatically'), findsOneWidget);
     });
 
+    testWidgets('Take a photo attaches the picture from the in-app camera', (WidgetTester tester) async {
+      final original = capturePhotoWithCamera;
+      addTearDown(() => capturePhotoWithCamera = original);
+      final jpeg = Uint8List.fromList(img.encodeJpg(img.Image(width: 8, height: 6)));
+      var opened = 0;
+      capturePhotoWithCamera = (_) async {
+        opened++;
+        return jpeg;
+      };
+      await tester.pumpWidget(
+        BarangayCalendarApp(
+          authServiceFactory: () async => MemoryAuthService.signedIn(),
+          eventRepositoryFactory: () async => MemoryEventRepository.seeded(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('calendar-add-event-fab')));
+      await tester.pumpAndSettle();
+      const camera = Key('add-event-camera-button');
+      await tester.scrollUntilVisible(find.byKey(camera), 300, scrollable: find.byType(Scrollable).first);
+      // To the top, clear of the bottom bar.
+      await tester.ensureVisible(find.byKey(camera));
+      await tester.pumpAndSettle();
+
+      // Shrinking the picture runs in a real isolate.
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(camera));
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      });
+      await tester.pumpAndSettle();
+
+      expect(opened, 1);
+      expect(find.textContaining(RegExp(r'^Photo .+\.jpg$')), findsOneWidget);
+    });
+
+    testWidgets('the camera page explains when there is no camera to use', (WidgetTester tester) async {
+      // Tests have no camera plugin, so opening the camera fails.
+      await tester.pumpWidget(const MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: CameraCapturePage(),
+      ));
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+      await tester.pump();
+
+      expect(find.byKey(const Key('camera-problem')), findsOneWidget);
+      expect(find.text("Couldn't use the camera. Please try again."), findsOneWidget);
+      expect(find.byKey(const Key('camera-use-photo')), findsNothing);
+    });
+
     testWidgets('editing an event lists its files, and they can be removed',
         (WidgetTester tester) async {
       final repo = MemoryEventRepository.seeded();
@@ -2958,6 +3150,9 @@ void main() {
 
       const row = Key('existing-attachment-attachment-1');
       await tester.scrollUntilVisible(find.byKey(row), 300, scrollable: find.byType(Scrollable).first);
+      // To the top, clear of the bottom bar.
+      await tester.ensureVisible(find.byKey(row));
+      await tester.pumpAndSettle();
       expect(find.text('agenda.pdf'), findsOneWidget);
       // Attaching more is still possible while editing.
       expect(find.byKey(const Key('add-event-attachment-button')), findsOneWidget);

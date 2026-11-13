@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import 'package:eCalendar/app_update_service.dart';
 import 'package:eCalendar/app_update_service_io.dart';
 
 /// Serves [body] as the download page's latest.json on a local port.
@@ -97,5 +99,69 @@ void main() {
 
     server = await serveLatest({'error': 'down'}, status: 503);
     await expectLater(service().checkForUpdate(), throwsA(isA<HttpException>()));
+  });
+
+  group('in-app download', () {
+    late Directory dir;
+    late List<int> apk;
+    late int requests;
+    late List<File> installed;
+
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('update_test');
+      apk = List.generate(300 * 1024, (i) => i % 251);
+      requests = 0;
+      installed = [];
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) {
+        requests++;
+        request.response
+          ..contentLength = apk.length
+          ..add(apk);
+        unawaited(request.response.close());
+      });
+    });
+
+    tearDown(() => dir.delete(recursive: true));
+
+    DownloadPageUpdateService downloader() => DownloadPageUpdateService(
+          downloadDirectory: dir,
+          install: (file) async => installed.add(file),
+        );
+
+    AppUpdateInfo update(String sha) => AppUpdateInfo(
+          latestVersion: '1.19.0+31',
+          releaseUrl: 'https://calendar.bongabong.gov.ph/download/',
+          downloadUrl: 'http://127.0.0.1:${server.port}/e-calendar.bin',
+          sha256: sha,
+          size: apk.length,
+        );
+
+    test('shows progress, checks the file, opens the installer, and reuses a finished download', () async {
+      final good = update(sha256.convert(apk).toString());
+
+      final progress = await downloader().downloadAndInstall(good).toList();
+
+      expect(progress, isNotEmpty);
+      expect(progress.last, 1);
+      expect(progress.whereType<double>(), orderedEquals([...progress.whereType<double>()]..sort()));
+      expect(installed, hasLength(1));
+      expect(await installed.single.readAsBytes(), apk);
+      expect(dir.listSync().map((f) => f.path).where((p) => p.endsWith('.part')), isEmpty);
+
+      // Closing the installer and tapping Update again doesn't download twice.
+      await downloader().downloadAndInstall(good).toList();
+      expect(requests, 1);
+      expect(installed, hasLength(2));
+    });
+
+    test('a damaged download is deleted and never installed', () async {
+      await expectLater(
+        downloader().downloadAndInstall(update('0' * 64)).toList(),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(installed, isEmpty);
+      expect(dir.listSync(), isEmpty);
+    });
   });
 }

@@ -5,9 +5,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:table_calendar/table_calendar.dart';
 
 import 'attachment_image_viewer.dart';
 import 'auth_service.dart' show AppUserProfile;
+import 'camera_capture_page.dart';
 import 'event_calendars.dart';
 import 'event_colors.dart';
 import 'event_store.dart';
@@ -499,33 +501,121 @@ class _AddEventPageState extends State<AddEventPage> {
 
   static final DateTime _lastPickableDate = DateTime(2030, 12, 31);
 
-  Future<void> _addMoreDate() async {
+  /// A month calendar where several dates can be ticked at once; Done
+  /// replaces [_moreDates] with whatever is ticked, Cancel changes nothing.
+  Future<void> _pickMoreDates() async {
     final l10n = AppLocalizations.of(context)!;
-    if (_moreDates.length + 1 >= _maxDates) {
-      _showMessage(l10n.moreDatesTooMany(_maxDates));
-      return;
-    }
-    // Suggest the first free day after the latest date.
-    final latest = [_startDate, ..._moreDates].reduce((a, b) => a.isAfter(b) ? a : b);
-    var suggestion = DateTime(latest.year, latest.month, latest.day + _spanDays + 1);
-    if (suggestion.isBefore(_today)) suggestion = _today;
-    if (suggestion.isAfter(_lastPickableDate)) suggestion = _lastPickableDate;
-    final picked = await showDatePicker(
+    final first = _utcDay(_startDate);
+    final today = _utcDay(_today);
+    final last = _utcDay(_lastPickableDate);
+    // Past dates (editing an older series) can't be shown but are kept.
+    final picked = {for (final day in _moreDates) _utcDay(day)};
+    var focused = first.isBefore(today) ? today : (first.isAfter(last) ? last : first);
+
+    bool overlapsOther(DateTime day) => [first, ...picked]
+        .any((other) => other != day && day.difference(other).inDays.abs() <= _spanDays);
+
+    final result = await showDialog<Set<DateTime>>(
       context: context,
-      initialDate: suggestion,
-      firstDate: _today,
-      lastDate: _lastPickableDate,
-      helpText: l10n.moreDatesPickHelp,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final colorScheme = Theme.of(context).colorScheme;
+          final textTheme = Theme.of(context).textTheme;
+          return AlertDialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            title: Text(l10n.moreDatesPickHelp),
+            content: SizedBox(
+              width: 360,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        l10n.moreDatesPickHint,
+                        style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                    TableCalendar(
+                      key: const Key('add-event-more-dates-calendar'),
+                      firstDay: today,
+                      lastDay: last,
+                      focusedDay: focused,
+                      rowHeight: 44,
+                      availableGestures: AvailableGestures.horizontalSwipe,
+                      headerStyle: const HeaderStyle(formatButtonVisible: false, titleCentered: true),
+                      calendarStyle: CalendarStyle(
+                        outsideDaysVisible: false,
+                        isTodayHighlighted: false,
+                        selectedDecoration: BoxDecoration(color: colorScheme.primary, shape: BoxShape.circle),
+                        selectedTextStyle: TextStyle(color: colorScheme.onPrimary, fontWeight: FontWeight.w700),
+                      ),
+                      selectedDayPredicate: (day) => picked.contains(_utcDay(day)),
+                      enabledDayPredicate: (day) {
+                        final key = _utcDay(day);
+                        if (picked.contains(key)) return true;
+                        return picked.length + 1 < _maxDates && !overlapsOther(key);
+                      },
+                      calendarBuilders: CalendarBuilders(
+                        // The first date can't be unticked here: it's set above.
+                        prioritizedBuilder: (context, day, _) => _utcDay(day) == first
+                            ? Center(
+                                child: Container(
+                                  width: 36,
+                                  height: 36,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: colorScheme.primary, width: 2),
+                                  ),
+                                  child: Text('${day.day}', style: TextStyle(color: colorScheme.primary)),
+                                ),
+                              )
+                            : null,
+                      ),
+                      onDaySelected: (day, focusedDay) => setDialogState(() {
+                        focused = focusedDay;
+                        final key = _utcDay(day);
+                        if (!picked.remove(key)) picked.add(key);
+                      }),
+                      onPageChanged: (focusedDay) => focused = focusedDay,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      child: Text(
+                        picked.length + 1 >= _maxDates
+                            ? l10n.moreDatesTooMany(_maxDates)
+                            : l10n.moreDatesCount(picked.length + 1),
+                        style: textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700, color: colorScheme.primary),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text(l10n.cancel),
+              ),
+              FilledButton(
+                key: const Key('add-event-more-dates-done'),
+                onPressed: () => Navigator.pop(dialogContext, picked),
+                child: Text(l10n.moreDatesDone),
+              ),
+            ],
+          );
+        },
+      ),
     );
-    if (picked == null || !mounted) return;
-    final day = DateTime(picked.year, picked.month, picked.day);
-    if (_overlapsADate(day)) {
-      _showMessage(l10n.moreDatesOverlap);
-      return;
-    }
+    if (result == null || !mounted) return;
     setState(() {
       _moreDates
-        ..add(day)
+        ..clear()
+        ..addAll(result.map((day) => DateTime(day.year, day.month, day.day)))
         ..sort();
       _recomputeConflicts();
     });
@@ -1006,7 +1096,6 @@ class _AddEventPageState extends State<AddEventPage> {
         ],
       );
       final picked = result?.files ?? const [];
-      final existing = widget.existingEvent;
 
       for (final file in picked) {
         if (_attachmentCount >= _maxAttachments) {
@@ -1019,38 +1108,7 @@ class _AddEventPageState extends State<AddEventPage> {
         }
         final raw = file.bytes;
         if (raw == null) continue;
-        final prepared = await _prepareFile(file.name, raw, file.extension);
-        if (prepared.bytes.length > _maxAttachmentBytes) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(l10n.attachmentTooLarge(file.name))),
-            );
-          }
-          continue;
-        }
-
-        if (existing != null) {
-          // Already has a real id — upload right away instead of holding
-          // it in _pendingAttachments, which only exists to bridge the
-          // "no id yet" gap for a brand-new event.
-          try {
-            await widget.eventRepository.uploadEventAttachment(
-              existing.homeId,
-              prepared.name,
-              prepared.bytes,
-              mimeType: prepared.mimeType,
-            );
-            await _loadExistingAttachments(existing.homeId);
-          } catch (error) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('${l10n.attachmentUploadError(file.name)} $error')),
-              );
-            }
-          }
-        } else if (mounted) {
-          setState(() => _pendingAttachments.add(prepared));
-        }
+        await _addPrepared(await _prepareFile(file.name, raw, file.extension), file.name);
       }
     } catch (_) {
       // The file picker call itself failing (e.g. the browser blocked or
@@ -1060,6 +1118,61 @@ class _AddEventPageState extends State<AddEventPage> {
           SnackBar(content: Text(l10n.attachmentPickError)),
         );
       }
+    } finally {
+      if (mounted) setState(() => _pickingAttachments = false);
+    }
+  }
+
+  /// Adds one prepared file: uploaded right away when editing, otherwise
+  /// held until the new event is saved.
+  Future<void> _addPrepared(_PendingAttachment prepared, String shownName) async {
+    final l10n = AppLocalizations.of(context)!;
+    if (prepared.bytes.length > _maxAttachmentBytes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.attachmentTooLarge(shownName))),
+      );
+      return;
+    }
+    final existing = widget.existingEvent;
+    if (existing != null) {
+      // Already has a real id — upload right away instead of holding
+      // it in _pendingAttachments, which only exists to bridge the
+      // "no id yet" gap for a brand-new event.
+      try {
+        await widget.eventRepository.uploadEventAttachment(
+          existing.homeId,
+          prepared.name,
+          prepared.bytes,
+          mimeType: prepared.mimeType,
+        );
+        await _loadExistingAttachments(existing.homeId);
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${l10n.attachmentUploadError(shownName)} $error')),
+          );
+        }
+      }
+    } else if (mounted) {
+      setState(() => _pendingAttachments.add(prepared));
+    }
+  }
+
+  /// Takes a picture with the in-app camera and attaches it.
+  Future<void> _takePhoto() async {
+    final l10n = AppLocalizations.of(context)!;
+    if (_attachmentCount >= _maxAttachments) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.attachmentLimitReached(_maxAttachments))),
+      );
+      return;
+    }
+    final bytes = await capturePhotoWithCamera(context);
+    if (bytes == null || !mounted) return;
+    setState(() => _pickingAttachments = true);
+    try {
+      final name = 'Photo ${DateFormat('yyyy-MM-dd HH.mm.ss').format(DateTime.now())}.jpg';
+      await _addPrepared(await _prepareFile(name, bytes, 'jpg'), name);
     } finally {
       if (mounted) setState(() => _pickingAttachments = false);
     }
@@ -1319,7 +1432,7 @@ class _AddEventPageState extends State<AddEventPage> {
                 runSpacing: 10,
                 children: [
                   for (final key in eventColorPalette.keys)
-                    _ColorSwatch(
+                    EventColorSwatch(
                       colorKey: key,
                       selected: _colorKey == key,
                       onTap: () => setState(() => _colorKey = _colorKey == key ? null : key),
@@ -1468,20 +1581,28 @@ class _AddEventPageState extends State<AddEventPage> {
                     ),
               ),
               const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  key: const Key('add-event-attachment-button'),
-                  onPressed: _pickingAttachments ? null : () => unawaited(_pickAttachments()),
-                  icon: _pickingAttachments
-                      ? const SizedBox(
-                          height: 14,
-                          width: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const FaIcon(FontAwesomeIcons.paperclip, size: 14),
-                  label: Text(l10n.addAttachmentButton),
-                ),
+              Wrap(
+                spacing: 4,
+                children: [
+                  TextButton.icon(
+                    key: const Key('add-event-attachment-button'),
+                    onPressed: _pickingAttachments ? null : () => unawaited(_pickAttachments()),
+                    icon: _pickingAttachments
+                        ? const SizedBox(
+                            height: 14,
+                            width: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const FaIcon(FontAwesomeIcons.paperclip, size: 14),
+                    label: Text(l10n.addAttachmentButton),
+                  ),
+                  TextButton.icon(
+                    key: const Key('add-event-camera-button'),
+                    onPressed: _pickingAttachments ? null : () => unawaited(_takePhoto()),
+                    icon: const FaIcon(FontAwesomeIcons.camera, size: 14),
+                    label: Text(l10n.takePhotoButton),
+                  ),
+                ],
               ),
               if (_existingAttachments.isNotEmpty || _pendingAttachments.isNotEmpty) ...[
                 const SizedBox(height: 8),
@@ -1632,7 +1753,7 @@ class _AddEventPageState extends State<AddEventPage> {
   }
 
   /// "More dates": other days this event happens on, e.g. every weekend of
-  /// a month — added one by one, or every week up to a picked date. Each is
+  /// a month — ticked on a calendar, or every week up to a picked date. Each is
   /// a copy of the first date (same length, times and per-day schedule).
   Widget _buildMoreDates() {
     final l10n = AppLocalizations.of(context)!;
@@ -1724,7 +1845,7 @@ class _AddEventPageState extends State<AddEventPage> {
               children: [
                 OutlinedButton.icon(
                   key: const Key('add-event-add-date'),
-                  onPressed: _saving ? null : () => unawaited(_addMoreDate()),
+                  onPressed: _saving ? null : () => unawaited(_pickMoreDates()),
                   icon: const FaIcon(FontAwesomeIcons.plus, size: 12),
                   label: Text(l10n.moreDatesAdd),
                 ),
@@ -1872,9 +1993,11 @@ class _AddEventPageState extends State<AddEventPage> {
 }
 
 /// A tappable color circle in the event-color picker (see [eventColorPalette]).
+/// Also used by the group color picker in GroupMembersPage.
 /// Tapping the already-selected swatch clears it back to "no color chosen".
-class _ColorSwatch extends StatelessWidget {
-  const _ColorSwatch({
+class EventColorSwatch extends StatelessWidget {
+  const EventColorSwatch({
+    super.key,
     required this.colorKey,
     required this.selected,
     required this.onTap,

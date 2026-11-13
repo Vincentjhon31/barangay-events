@@ -4,12 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'app_update_service.dart';
 import 'faq_page.dart';
 import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
+import 'update_download_dialog.dart';
 import 'whats_new.dart';
 
 /// About page: installed version, a manual "check for updates" action, and
@@ -73,15 +73,6 @@ class _AboutPageState extends State<AboutPage> {
       setState(() => _error = AppLocalizations.of(context)!.checkUpdateError);
     } finally {
       if (mounted) setState(() => _checking = false);
-    }
-  }
-
-  Future<void> _openDownload(String url) async {
-    final launched = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    if (!launched && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.openUpdateLinkError)),
-      );
     }
   }
 
@@ -266,7 +257,7 @@ class _AboutPageState extends State<AboutPage> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                 ),
-                onPressed: () => unawaited(_openDownload(release.downloadUrl)),
+                onPressed: () => unawaited(showUpdateDownloadDialog(context, widget.updateService!, release.asUpdate)),
                 icon: const FaIcon(FontAwesomeIcons.download, size: 14),
                 label: Text(l10n.updateNowButton),
               ),

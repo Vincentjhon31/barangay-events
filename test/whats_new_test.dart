@@ -44,6 +44,9 @@ class _FakeUpdateService implements AppUpdateService {
         isNewerThanInstalled: true,
         whatsNew: publicNotesFromReleaseBody(_releaseBody),
       );
+
+  @override
+  Stream<double?> downloadAndInstall(AppUpdateInfo update) => const Stream.empty();
 }
 
 /// Asset reads are real I/O, which never finishes inside a widget test's

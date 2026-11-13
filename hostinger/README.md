@@ -56,6 +56,8 @@ calendar/
 
 ## ⚠️ When you upload a new Flutter web build
 
+The site's front page is a landing page, and the web app itself is at **/app/**. Both come out of every Flutter web build (`build/web/`): `index.html` is the landing page (its source is `web/index.html`, with pictures in `web/landing/`), and `app/index.html` starts the app, loading the app's other files (`main.dart.js`, `assets/`, `canvaskit/`, …) from the site root. So upload `build/web` exactly as before, including its `app/` and `landing/` folders. Password-reset and sign-up emails still link to the front page, which passes them on to `/app/`.
+
 The API and everyone's files now live in the same folder as the web app, so:
 
 - [ ] Upload/replace the web build's files — **never delete `api/`, `media/`, `private/`, `download/`, or `lgu-admin/`**.
@@ -85,6 +87,19 @@ python scripts/publish_release.py windows e-calendar-1.17.0-setup.exe
 
 If the secret ever leaks, replace the value in both places; the old one stops working immediately.
 
+## Calendar API for other LGU systems (`api/events.php`)
+
+Lets another LGU system, such as the intranet website, read the calendar's Public events and calendars as JSON with an API key. Read-only; Group and Personal events are never included. The developer's guide is **[CALENDAR_API.md](CALENDAR_API.md)**.
+
+### One-time setup
+1. Supabase → SQL editor: run the **"Calendar API for other LGU systems"** block at the end of `supabase/barangay_events.sql` (safe to re-run).
+2. Upload `hostinger/public_html/api/events.php` into `calendar/api/`. Nothing else on the server changes, and no new secret is needed: keys are checked inside the database.
+3. Upload the updated portal (`docs/lgu-admin/index.html`) to `calendar/lgu-admin/` (and GitHub Pages, if still used).
+4. Portal → **API** → make a key for the system, copy it from the dialog (the row's "Copy key" shows it again later), tick any groups it may read, then "Copy instructions" for the developer.
+5. Check it: paste the key under **Try a key** → "Get events" should answer `HTTP 200`.
+
+If you ever restore a backup onto a new back end, make new API keys (keys aren't in backups).
+
 ## Troubleshooting
 
 | What you see | Likely cause |
@@ -97,6 +112,8 @@ If the secret ever leaks, replace the value in both places; the old one stops wo
 | Pictures upload but don't show | `media/` permissions (755), or the `MEDIA_PUBLIC_URL` address in `api-config.php`. |
 | Release fails at "Publish APK to the download page" with 503 | `private/release-upload-secret.txt` is missing or shorter than 32 characters. |
 | … with 403 | The GitHub secret `RELEASE_UPLOAD_SECRET` doesn't match the file on the server. |
+| Calendar API answers 503 `not_set_up` | The "Calendar API" SQL block hasn't been run in Supabase yet. |
+| Calendar API answers 401 for a new key | The key was cut off when copied (it's `ecal_` + 64 characters), or it was revoked. |
 | The download page says the list couldn't be loaded | `download/releases.json` was deleted (e.g. by a web deploy). Re-run the release's publish steps, or publish the current files as above. |
 
 ## Testing locally (developers)

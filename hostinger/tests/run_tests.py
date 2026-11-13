@@ -345,6 +345,98 @@ def main():
         check('the counter only sends release files', got and got[1].endswith('/download/'), got)
         s, b, _ = request('GET', API + '/download.php?action=stats')
         check('download stats count each platform', s == 200 and jbody(b) == {'android': 1, 'windows': 1, 'total': 2}, (s, b))
+
+        # ---------- Calendar API (other LGU systems, api/events.php) ----------
+        # The key checks themselves are in the database; here the mock plays
+        # back its answers, so this tests what the PHP side does with them.
+        ev_api = API + '/events.php'
+        key = 'ecal_' + 'a' * 64
+        sports = '10000000-0000-4000-8000-000000000001'
+
+        def api_calls():
+            _, raw_calls, _ = request('GET', f'http://127.0.0.1:{MOCK_PORT}/__api_calls')
+            return jbody(raw_calls)
+
+        def lower_keys(h):
+            return {k.lower(): v for k, v in h.items()}
+
+        def error_code(raw_body):
+            return (jbody(raw_body).get('error') or {}).get('code')
+
+        s, b, h = request('OPTIONS', ev_api, headers={
+            'Origin': 'https://intranet.example', 'Access-Control-Request-Method': 'GET',
+            'Access-Control-Request-Headers': 'x-api-key'})
+        h = lower_keys(h)
+        check('any website may call the calendar API from a browser',
+              s == 204 and h.get('access-control-allow-origin') == '*'
+              and 'x-api-key' in h.get('access-control-allow-headers', '').lower(), (s, h))
+
+        s, b, _ = request('GET', ev_api)
+        check('the calendar API needs a key', s == 401 and error_code(b) == 'missing_api_key', (s, b))
+        calls_before = len(api_calls())
+        s, b, _ = request('GET', ev_api, headers={'X-API-Key': 'not-a-key'})
+        check('a malformed key is refused without asking the database',
+              s == 401 and error_code(b) == 'invalid_api_key' and len(api_calls()) == calls_before, (s, b))
+
+        s, b, _ = request('GET', ev_api + '?from=2026-11-01&to=2026-11-30', headers={'X-API-Key': key})
+        data = jbody(b)
+        last = api_calls()[-1]
+        check('a valid key gets events (X-API-Key header)',
+              s == 200 and data.get('api_version') == 1 and data.get('timezone') == 'Asia/Manila'
+              and data.get('generated_at', '').endswith('+08:00') and data['events'][0]['title'] == 'Foundation Day', (s, b))
+        check('the dates go to the database as asked',
+              last['body'] == {'p_key': key, 'p_from': '2026-11-01', 'p_to': '2026-11-30'}, last)
+        check('the database is asked as anon with the public key (no login token sent)',
+              last['authorization'] is None and (last['apikey'] or '').startswith('sb_publishable_'), last)
+        check('fields keep their order',
+              list(data)[:4] == ['api_version', 'generated_at', 'timezone', 'from']
+              and list(data['events'][0])[:4] == ['id', 'title', 'description', 'location'], list(data))
+
+        s, b, _ = request('GET', ev_api, headers={'Authorization': 'Bearer ' + key})
+        check('the key also works as a Bearer token', s == 200 and api_calls()[-1]['body'] == {'p_key': key}, (s, b))
+        s, b, _ = request('GET', ev_api + '?key=' + key)
+        check('…and as ?key= for a quick test in a browser', s == 200, (s, b))
+        s, b, _ = request('GET', ev_api + '?pretty=1', headers={'X-API-Key': key})
+        check('pretty=1 indents the JSON', s == 200 and b.startswith(b'{\n'), b[:40])
+
+        s, b, _ = request('GET', ev_api + '?type=calendar&calendar=' + sports.upper() + '&limit=50&offset=10',
+                          headers={'X-API-Key': key})
+        check('filters and paging go to the database', s == 200 and api_calls()[-1]['body'] == {
+            'p_key': key, 'p_type': 'calendar', 'p_calendar_id': sports, 'p_limit': 50, 'p_offset': 10}, api_calls()[-1])
+
+        s, b, _ = request('GET', ev_api + '?type=group', headers={'X-API-Key': key})
+        check('type=group goes to the database', s == 200 and api_calls()[-1]['body'].get('p_type') == 'group', api_calls()[-1])
+
+        calls_before = len(api_calls())
+        for bad in ['from=2026-02-30', 'from=11/30/2026', 'to=2026-13-01', 'type=shared', 'type=personal',
+                    'calendar=abc', 'limit=0', 'limit=1001', 'limit=abc', 'offset=-1', 'id=../x', 'action=keys',
+                    'from[]=2026-11-01']:
+            s, b, _ = request('GET', ev_api + '?' + bad, headers={'X-API-Key': key})
+            check(f'bad parameter ({bad}) -> 400', s == 400 and error_code(b) == 'invalid_parameter', (s, b))
+        check('bad parameters never reach the database', len(api_calls()) == calls_before, len(api_calls()) - calls_before)
+        s, b, _ = request('GET', ev_api + '?from=2026-11-30&to=2026-11-01', headers={'X-API-Key': key})
+        check("the database's own checks come back as 400 with its reason",
+              s == 400 and 'before' in jbody(b)['error']['message'], (s, b))
+
+        s, b, _ = request('GET', ev_api + '?id=1730000000000001', headers={'X-API-Key': key})
+        check('one event by id', s == 200 and jbody(b).get('event', {}).get('id') == '1730000000000001'
+              and api_calls()[-1]['body'] == {'p_key': key, 'p_event_id': '1730000000000001'}, (s, b))
+        s, b, _ = request('GET', ev_api + '?id=missing', headers={'X-API-Key': key})
+        check("an event the key can't read -> 404", s == 404 and error_code(b) == 'not_found', (s, b))
+
+        s, b, _ = request('GET', ev_api + '?action=calendars', headers={'X-API-Key': key})
+        check('the calendars the key can read', s == 200 and jbody(b).get('public_events') is True
+              and jbody(b)['calendars'][0]['name'] == 'Sports' and api_calls()[-1]['path'].endswith('api_list_calendars'), (s, b))
+
+        s, b, _ = request('GET', ev_api, headers={'X-API-Key': 'ecal_' + 'd' * 64})
+        check('a revoked or unknown key -> 401', s == 401 and error_code(b) == 'invalid_api_key', (s, b))
+        s, b, h = request('GET', ev_api, headers={'X-API-Key': 'ecal_' + 'b' * 64})
+        check('too many requests -> 429 with Retry-After',
+              s == 429 and lower_keys(h).get('retry-after') == '42' and error_code(b) == 'rate_limited', (s, h))
+        s, b, _ = request('GET', ev_api, headers={'X-API-Key': 'ecal_' + 'c' * 64})
+        check('database block not run yet -> 503', s == 503 and error_code(b) == 'not_set_up', (s, b))
+        s, b, h = request('POST', ev_api, headers={'X-API-Key': key})
+        check('only GET requests', s == 405 and 'GET' in lower_keys(h).get('allow', ''), (s, b))
     finally:
         server.terminate()
         probe.terminate()

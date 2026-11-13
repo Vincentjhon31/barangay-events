@@ -19,6 +19,7 @@ import 'package:window_manager/window_manager.dart';
 import 'add_event_page.dart';
 import 'app_update_service.dart';
 import 'app_update_service_factory.dart';
+import 'update_download_dialog.dart';
 import 'attachment_image_viewer.dart';
 import 'auth_service.dart';
 import 'avatar_image.dart';
@@ -33,12 +34,14 @@ import 'event_conflicts.dart';
 import 'event_store.dart';
 import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
+import 'offline_cache.dart';
 import 'manila_clock.dart';
 import 'numeric_keypad.dart';
 import 'profile_pages.dart';
 import 'push_notifications.dart';
 import 'reset_password_page.dart';
 import 'responsive_scale.dart';
+import 'seasonal_theme.dart';
 import 'theme_controller.dart';
 import 'whats_new.dart';
 
@@ -67,6 +70,8 @@ Future<void> main() async {
   }
 
   final themeController = await ThemeController.load();
+  themeController.seasonConfigFetcher = () => Supabase.instance.client.rpc('get_seasonal_theme');
+  unawaited(themeController.refreshSeasonConfig());
   final PushNotificationService pushService =
       firebaseReady ? FirebasePushNotificationService() : const NoopPushNotificationService();
 
@@ -91,11 +96,12 @@ Future<void> main() async {
   );
 }
 
-ThemeData _buildTheme(Brightness brightness) {
+ThemeData _buildTheme(Brightness brightness, Season? season) {
   final isDark = brightness == Brightness.dark;
   return ThemeData(
     colorScheme: ColorScheme.fromSeed(
-      seedColor: const Color(0xFF2B7FFF),
+      // A season changes the highlight color everywhere at once.
+      seedColor: season?.seed ?? const Color(0xFF2B7FFF),
       brightness: brightness,
     ),
     scaffoldBackgroundColor:
@@ -185,8 +191,8 @@ class _BarangayCalendarAppState extends State<BarangayCalendarApp> {
         Intl.defaultLocale = widget.themeController.locale.toString();
         return MaterialApp(
           title: 'eBongabong Calendar',
-          theme: _buildTheme(Brightness.light),
-          darkTheme: _buildTheme(Brightness.dark),
+          theme: _buildTheme(Brightness.light, widget.themeController.activeSeason),
+          darkTheme: _buildTheme(Brightness.dark, widget.themeController.activeSeason),
           themeMode: widget.themeController.themeMode,
           locale: widget.themeController.locale,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -195,7 +201,11 @@ class _BarangayCalendarAppState extends State<BarangayCalendarApp> {
             displayMode: widget.themeController.displayMode,
             child: AppStyleScope(
               style: widget.themeController.uiStyle,
-              child: child ?? const SizedBox.shrink(),
+              child: SeasonScope(
+                season: widget.themeController.activeSeason,
+                effects: widget.themeController.seasonEffects,
+                child: child ?? const SizedBox.shrink(),
+              ),
             ),
           ),
           home: FutureBuilder<AppAuthService>(
@@ -1053,7 +1063,7 @@ class _NewEventNotice {
   final ChatPushMessage? chat;
 }
 
-class _CalendarScreenState extends State<CalendarScreen> {
+class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObserver {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   _CalendarViewMode _viewMode = _CalendarViewMode.month;
@@ -1075,6 +1085,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
   // group in the picker opened from the Group filter chip (Calendar tab
   // only — Feed keeps its own simpler all-or-nothing Group filter).
   final Set<String> _selectedGroupIds = {};
+
+  /// The user's own filter-tab order (see AppUserProfile.filterTabOrder),
+  /// shared by the Calendar and Feed rows. Empty = default order.
+  List<String> _filterTabOrder = const [];
 
   // Refreshed alongside push-topic sync (both need listMyGroups()) — used
   // by _canEditEvent to let a promoted group admin edit that group's
@@ -1288,6 +1302,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       unawaited(_chatActivity!.start());
     }
     if (_isGuestMode) _armGuestExitShrinkTimer();
+    WidgetsBinding.instance.addObserver(this);
     _eventSubscription = _listenToEvents();
     _groupMembershipSubscription = _listenToGroupMemberships();
     _calendarSubscription = widget.eventRepository.watchEventCalendars().listen(
@@ -1748,6 +1763,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         _selectedGroupIds
           ..clear()
           ..addAll(profile.calendarGroupFilterIds);
+        _filterTabOrder = profile.filterTabOrder;
       }
       // The Groups tab can disappear out from under the currently-selected
       // index once the real role loads (it defaults to showing Groups
@@ -1760,8 +1776,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
     });
   }
 
+  /// Back in the app while offline (e.g. walked back into signal): try the
+  /// server now instead of waiting for the next automatic retry.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(widget.themeController.refreshSeasonConfig());
+    if (state == AppLifecycleState.resumed && widget.eventRepository.syncStatus.value.offline) {
+      _resubscribeEvents();
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     unawaited(_eventSubscription.cancel());
     unawaited(_groupMembershipSubscription?.cancel());
     unawaited(_calendarSubscription?.cancel());
@@ -1858,13 +1885,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Future<void> _openUpdate(AppUpdateInfo update) async {
-    final uri = Uri.parse(update.downloadUrl);
-    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!launched && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open the update link.')),
-      );
-    }
+    final updateService = widget.updateService;
+    if (updateService == null) return;
+    await showUpdateDownloadDialog(context, updateService, update);
   }
 
   Future<void> _callNumber(String number) async {
@@ -1901,7 +1924,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
       body: Stack(
         children: [
           const Positioned.fill(child: LiquidGlassBackdrop()),
-          SafeArea(child: _buildCalendarTab(kiosk: true)),
+          SafeArea(
+            child: Column(
+              children: [
+                _buildOfflineBar(roomOnRight: true),
+                Expanded(child: _buildCalendarTab(kiosk: true)),
+              ],
+            ),
+          ),
           Positioned(
             top: 8,
             right: 8,
@@ -1972,7 +2002,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
       body: Stack(
         children: [
           const Positioned.fill(child: LiquidGlassBackdrop()),
-          SafeArea(child: _buildCalendarTab()),
+          SafeArea(
+            child: Column(
+              children: [
+                _buildOfflineBar(roomOnRight: true),
+                Expanded(child: _buildCalendarTab()),
+              ],
+            ),
+          ),
           Positioned(
             top: 8,
             right: 8,
@@ -2042,6 +2079,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               children: [
                 if (_availableUpdate != null)
                   _buildUpdateBanner(_availableUpdate!),
+                _buildOfflineBar(),
                 _buildNewEventNoticeSlot(),
                 Expanded(
                   child: IndexedStack(
@@ -2932,6 +2970,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
           color: colorForKey(calendar.colorKey),
         ),
     ];
+    // The user's saved order first; tabs it doesn't mention (e.g. a new
+    // calendar) keep their default place after those.
+    String tabId(String? value) => value ?? 'all';
+    int rank(String? value) {
+      final index = _filterTabOrder.indexOf(tabId(value));
+      return index < 0 ? _filterTabOrder.length : index;
+    }
+    final defaultIndex = {for (final (i, o) in options.indexed) o.value: i};
+    options.sort((a, b) {
+      final byRank = rank(a.value).compareTo(rank(b.value));
+      return byRank != 0 ? byRank : defaultIndex[a.value]!.compareTo(defaultIndex[b.value]!);
+    });
     final colorScheme = Theme.of(context).colorScheme;
     // The per-group checkbox picker only makes sense on the Calendar tab
     // (Feed keeps a simpler all-or-nothing Group filter) and only once
@@ -2943,68 +2993,89 @@ class _CalendarScreenState extends State<CalendarScreen> {
     bool isActive(String? value) =>
         value == null ? filters.isEmpty : filters.contains(value);
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
+    // Long-press a tab and drag it to reorder; saved to the account so the
+    // order follows the user to every device.
+    return SizedBox(
+      height: 18 + MediaQuery.textScalerOf(context).scale(18),
+      child: ReorderableListView(
+        scrollDirection: Axis.horizontal,
+        buildDefaultDragHandles: false,
+        // Build every tab, not just the visible ones (there are only a few).
+        cacheExtent: 2000,
+        proxyDecorator: (child, _, __) => Material(type: MaterialType.transparency, child: child),
+        onReorderItem: (oldIndex, newIndex) {
+          final ids = options.map((o) => tabId(o.value)).toList();
+          ids.insert(newIndex, ids.removeAt(oldIndex));
+          setState(() => _filterTabOrder = ids);
+          unawaited(widget.authService?.saveFilterTabOrder(ids));
+        },
         children: [
-          for (final option in options) ...[
-            InkWell(
-              key: Key('$keyPrefix-filter-${option.value?.replaceFirst(calendarValuePrefix, 'cal-') ?? 'all'}'),
-              borderRadius: BorderRadius.circular(999),
-              onTap: () => _toggleTypeFilter(filters, option.value),
-              child: GlassPanel(
-                borderRadius: 999,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                tint: isActive(option.value) ? colorScheme.primary : null,
-                tintAlpha: isActive(option.value) ? 0.22 : null,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    FaIcon(
-                      option.icon,
-                      size: 12,
-                      color: isActive(option.value)
-                          ? colorScheme.primary
-                          : (option.color ?? colorScheme.onSurfaceVariant),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      option.label,
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
+          for (final (index, option) in options.indexed)
+            ReorderableDelayedDragStartListener(
+              key: Key('$keyPrefix-filter-tab-${tabId(option.value)}'),
+              index: index,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  InkWell(
+                    key: Key('$keyPrefix-filter-${option.value?.replaceFirst(calendarValuePrefix, 'cal-') ?? 'all'}'),
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () => _toggleTypeFilter(filters, option.value),
+                    child: GlassPanel(
+                      borderRadius: 999,
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      tint: isActive(option.value) ? colorScheme.primary : null,
+                      tintAlpha: isActive(option.value) ? 0.22 : null,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          FaIcon(
+                            option.icon,
+                            size: 12,
                             color: isActive(option.value)
                                 ? colorScheme.primary
-                                : colorScheme.onSurfaceVariant,
+                                : (option.color ?? colorScheme.onSurfaceVariant),
                           ),
+                          const SizedBox(width: 6),
+                          Text(
+                            option.label,
+                            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: isActive(option.value)
+                                      ? colorScheme.primary
+                                      : colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ],
+                      ),
                     ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (option.value == EventType.shared && showGroupPicker) ...[
+                    InkWell(
+                      key: const Key('calendar-filter-group-picker'),
+                      borderRadius: BorderRadius.circular(999),
+                      onTap: _openGroupFilterPicker,
+                      child: GlassPanel(
+                        borderRadius: 999,
+                        padding: const EdgeInsets.all(8),
+                        tint: _selectedGroupIds.isNotEmpty ? colorScheme.primary : null,
+                        tintAlpha: _selectedGroupIds.isNotEmpty ? 0.22 : null,
+                        child: FaIcon(
+                          FontAwesomeIcons.sliders,
+                          size: 12,
+                          color: _selectedGroupIds.isNotEmpty
+                              ? colorScheme.primary
+                              : colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                   ],
-                ),
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-            if (option.value == EventType.shared && showGroupPicker) ...[
-              InkWell(
-                key: const Key('calendar-filter-group-picker'),
-                borderRadius: BorderRadius.circular(999),
-                onTap: _openGroupFilterPicker,
-                child: GlassPanel(
-                  borderRadius: 999,
-                  padding: const EdgeInsets.all(8),
-                  tint: _selectedGroupIds.isNotEmpty ? colorScheme.primary : null,
-                  tintAlpha: _selectedGroupIds.isNotEmpty ? 0.22 : null,
-                  child: FaIcon(
-                    FontAwesomeIcons.sliders,
-                    size: 12,
-                    color: _selectedGroupIds.isNotEmpty
-                        ? colorScheme.primary
-                        : colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-            ],
-          ],
         ],
       ),
     );
@@ -3075,12 +3146,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
               FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
-                child: Text(
-                  'eBongabong Calendar',
-                  maxLines: 1,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'eBongabong Calendar',
+                      maxLines: 1,
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SeasonDecoration(),
+                  ],
                 ),
               ),
             ],
@@ -3793,6 +3870,60 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  /// Shown while the server can't be reached: the events on screen are the
+  /// copy saved on this device (see lib/offline_cache.dart), as of when.
+  /// [roomOnRight] keeps the text clear of the kiosk/guest exit button that
+  /// floats over the top-right corner.
+  Widget _buildOfflineBar({bool roomOnRight = false}) {
+    return ValueListenableBuilder<EventSyncStatus>(
+      valueListenable: widget.eventRepository.syncStatus,
+      builder: (context, status, _) {
+        if (!status.offline) return const SizedBox.shrink();
+        final l10n = AppLocalizations.of(context)!;
+        final colorScheme = Theme.of(context).colorScheme;
+        final savedAt = status.savedAt;
+        final detail = savedAt == null
+            ? l10n.offlineNoSavedEvents
+            : l10n.offlineLastUpdated(DateFormat('MMM d, h:mm a').format(savedAt));
+        return Material(
+          key: const Key('offline-bar'),
+          color: colorScheme.surfaceContainerHighest,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(16, 6, roomOnRight ? 68 : 8, 6),
+            child: Row(
+              children: [
+                FaIcon(FontAwesomeIcons.plugCircleXmark, size: 16, color: colorScheme.onSurfaceVariant),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        l10n.offlineTitle,
+                        style: TextStyle(color: colorScheme.onSurface, fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        detail,
+                        key: const Key('offline-bar-detail'),
+                        style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12.5),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  key: const Key('offline-bar-retry'),
+                  onPressed: _resubscribeEvents,
+                  child: Text(l10n.offlineRetryButton),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -4781,7 +4912,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      _buildEventTypePill(event),
+                      // Short "Group" here; the full "Group: «name»" tag is below.
+                      _buildEventTypePill(event, showGroupName: false),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -4855,7 +4987,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   ],
                   if (groupName != null && groupName.isNotEmpty) ...[
                     const SizedBox(height: 6),
-                    _buildGroupTag(groupName),
+                    _buildGroupTag(event, groupName),
                   ],
                   if (event.description.isNotEmpty) ...[
                     const SizedBox(height: 6),
@@ -4962,11 +5094,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
-  /// "Posted to «group»" tag under a Group event's card details, in the
-  /// Group type's green so it reads as the same thing as the Group pill.
-  Widget _buildGroupTag(String groupName) {
+  /// A group event's group color: the one its admins picked, else a steady
+  /// color derived from the group id (see [groupColor]).
+  Color _groupColorFor(BarangayEvent event) {
+    final id = event.groupId ?? '';
+    return groupColor(id, _myGroups.where((group) => group.id == id).firstOrNull?.colorKey);
+  }
+
+  /// "Group: «name»" tag under a Group event's card details, in that
+  /// group's color so groups are easy to tell apart.
+  Widget _buildGroupTag(BarangayEvent event, String groupName) {
     final l10n = AppLocalizations.of(context)!;
-    final tint = _eventTypeTint(EventType.shared);
+    final tint = _groupColorFor(event);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
@@ -4981,7 +5120,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
           const SizedBox(width: 6),
           Flexible(
             child: Text(
-              l10n.postedToGroupLabel(groupName),
+              '${l10n.eventTypeGroup}: $groupName',
+              key: Key('event-group-tag-${event.id}'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -4995,17 +5135,26 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  /// The small type pill on event cards — Public/Group/Personal, or for a
-  /// calendar event that calendar's own name, icon, and color.
-  Widget _buildEventTypePill(BarangayEvent event) {
+  /// The small type pill on event cards — Public/Personal, "Group: «name»"
+  /// in that group's color, or for a calendar event that calendar's own
+  /// name, icon, and color.
+  Widget _buildEventTypePill(BarangayEvent event, {bool showGroupName = true}) {
     final type = event.eventType;
     final calendar = type == EventType.calendar ? _calendarFor(event) : null;
     final isCalendar = type == EventType.calendar;
+    final isGroup = type == EventType.shared;
+    final groupName = isGroup && showGroupName ? event.groupName?.trim() ?? '' : '';
     final tint = isCalendar
         ? (colorForKey(calendar?.colorKey) ?? const Color(0xFF8E5BD9))
-        : _eventTypeTint(type);
+        : isGroup
+            ? _groupColorFor(event)
+            : _eventTypeTint(type);
     final icon = isCalendar ? calendarIcon(calendar?.icon ?? 'tag') : _eventTypeIcon(type);
-    final label = isCalendar ? (calendar?.name ?? event.calendarName ?? 'Calendar') : _eventTypeLabel(type);
+    final label = isCalendar
+        ? (calendar?.name ?? event.calendarName ?? 'Calendar')
+        : groupName.isNotEmpty
+            ? '${_eventTypeLabel(type)}: $groupName'
+            : _eventTypeLabel(type);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -5023,6 +5172,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
           // contexts, and Flexible here would break intrinsic-width
           // computation for the latter. A hard ConstrainedBox works safely
           // in both.
+          // The "Group: «name»" pill only sits in the Feed's Wrap (bounded
+          // width), so it can shrink with Flexible there.
+          if (groupName.isNotEmpty)
+            Flexible(child: Text(label, key: Key('event-group-pill-${event.id}'), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tint)))
+          else
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 80),
             child: Text(

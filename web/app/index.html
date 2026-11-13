@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    The eBongabong Calendar web app, at calendar.bongabong.gov.ph/app/.
+    The site's front page (/) is the landing page (web/index.html); this is
+    the app's real entry point. Every other file of the Flutter build
+    (main.dart.js, assets/, canvaskit/, flutter_bootstrap.js, icons/, ...)
+    stays at the site root, so this page loads them from there: the base
+    href is "/" on purpose, not "/app/". (Flutter only fills in
+    $FLUTTER_BASE_HREF in web/index.html, so it's written out here; if the
+    site ever moves under a sub-folder, change it by hand.)
+  -->
+  <base href="/">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="The eBongabong Calendar: events and schedules of the Municipality of Bongabong, Oriental Mindoro.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="eCalendar">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>eBongabong Calendar</title>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+    This is useful to provide a custom configuration to the Flutter loader
+    or to give the user feedback during the initialization process.
+
+    For more details:
+    * https://docs.flutter.dev/platform-integration/web/initialization
+  -->
+  <style>
+    .cannot-start { font: 16px/1.5 system-ui, sans-serif; color: #e6e9f0; background: #0b0e14;
+      position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: center;
+      padding: 24px; text-align: center; }
+    .cannot-start[hidden] { display: none; }
+    .cannot-start a { color: #8fb6ff; }
+    .cannot-start small { color: #9aa3b5; margin-top: 16px; }
+  </style>
+  <noscript>
+    <div class="cannot-start"><p>The calendar needs JavaScript to run. Open
+      <a href="https://calendar.bongabong.gov.ph/app/">calendar.bongabong.gov.ph/app</a> in your browser.</p>
+      <small>App developers: turn on JavaScript in the WebView.</small></div>
+  </noscript>
+  <div class="cannot-start" id="cannot-start" hidden><p>The calendar can't start on this screen because it
+    blocks website storage. Open <a href="https://calendar.bongabong.gov.ph/app/" target="_blank" rel="noopener">calendar.bongabong.gov.ph/app</a>
+    in your browser.</p>
+    <small>App developers: turn on DOM storage in the WebView, and don't sandbox the frame.</small></div>
+  <script>
+    // Inside another app's WebView or a sandboxed frame without storage, the
+    // app dies while starting (sign-in and settings are kept in localStorage)
+    // and the screen just stays blank, so say why instead of loading it.
+    (function () {
+      var ok = false;
+      try { localStorage.setItem('_probe', '1'); localStorage.removeItem('_probe'); ok = true; } catch (e) {}
+      if (!ok) { document.getElementById('cannot-start').hidden = false; return; }
+      var s = document.createElement('script');
+      s.src = 'flutter_bootstrap.js';
+      s.async = true;
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>

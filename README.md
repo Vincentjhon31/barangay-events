@@ -34,6 +34,13 @@ The APK is written to `build/app/outputs/flutter-apk/app-release.apk`.
 flutter build web --no-tree-shake-icons
 ```
 
+The build is the whole site: `index.html` at the root is the landing page
+(source: `web/index.html` and `web/landing/`; it shows the next public events
+live and the latest release from `download/releases.json`), and the app
+itself starts from `app/index.html` (source: `web/app/index.html`). When you
+run the app locally with `flutter run -d chrome`, open `/app/` in the browser
+tab it starts.
+
 `--no-tree-shake-icons` is required — Flutter's icon tree-shaker misdetects
 which `font_awesome_flutter` glyphs are actually used (it wrongly stripped
 `shieldHalved`, `userShield`, and `mapLocationDot` down to 33 surviving

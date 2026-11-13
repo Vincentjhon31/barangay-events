@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'event_calendars.dart';
 import 'file_api.dart';
+import 'offline_cache.dart';
 
 /// Visibility levels for an event.
 abstract final class EventType {
@@ -399,11 +401,16 @@ class BarangayGroup {
     this.myRole,
     this.isVerified = false,
     this.requiresApproval = false,
+    this.colorKey,
   });
 
   final String id;
   final String name;
   final String code;
+
+  /// Color label (an `eventColorPalette` key) set by a group admin, or null
+  /// — see `groupColor` in event_colors.dart for the fallback.
+  final String? colorKey;
   final int memberCount;
   final String? createdBy;
 
@@ -436,6 +443,7 @@ class BarangayGroup {
     String? createdBy,
     bool? isVerified,
     bool? requiresApproval,
+    String? colorKey,
   }) {
     return BarangayGroup(
       id: id,
@@ -447,6 +455,7 @@ class BarangayGroup {
       myRole: myRole ?? this.myRole,
       isVerified: isVerified ?? this.isVerified,
       requiresApproval: requiresApproval ?? this.requiresApproval,
+      colorKey: colorKey ?? this.colorKey,
     );
   }
 }
@@ -732,7 +741,14 @@ class EventChatSummary {
 }
 
 abstract class EventRepository {
+  /// Every event the signed-in person can see. With no connection it shows
+  /// the copy saved on this device the last time the server answered (see
+  /// [syncStatus]), and keeps trying the server in the background.
   Stream<List<BarangayEvent>> watchAllEvents();
+
+  /// Whether the events on screen are live, or the saved copy because the
+  /// server can't be reached — drives the app's "Offline" bar.
+  ValueListenable<EventSyncStatus> get syncStatus;
 
   /// Emits whenever [userId]'s own group memberships change (joined a new
   /// group, left/was removed from one, an admin accepted their pending
@@ -830,6 +846,9 @@ abstract class EventRepository {
   /// rewrites the denormalized [BarangayEvent.groupName] on every event
   /// already posted to it, so old events don't keep showing the old name.
   Future<void> renameGroup(String groupId, String newName);
+
+  /// Sets a group's color label (group admins only — set_group_color).
+  Future<void> setGroupColor(String groupId, String colorKey);
 
   /// Hands [groupId]'s creator-only privileges to [newOwnerUserId], who
   /// must already be a member — promoted to admin as part of the
@@ -979,6 +998,13 @@ class MemoryEventRepository implements EventRepository {
   int _attachmentCounter = 0;
 
   Future<void> initialize() async {}
+
+  /// Always online in memory; tests set it to show the Offline bar.
+  final ValueNotifier<EventSyncStatus> syncStatusNotifier =
+      ValueNotifier(const EventSyncStatus.online());
+
+  @override
+  ValueListenable<EventSyncStatus> get syncStatus => syncStatusNotifier;
 
   @override
   Stream<List<BarangayEvent>> watchAllEvents() async* {
@@ -1431,6 +1457,13 @@ class MemoryEventRepository implements EventRepository {
   }
 
   @override
+  Future<void> setGroupColor(String groupId, String colorKey) async {
+    final index = _allGroups.indexWhere((group) => group.id == groupId);
+    if (index == -1) throw Exception('Group not found');
+    _allGroups[index] = _allGroups[index].copyWith(colorKey: colorKey);
+  }
+
+  @override
   Future<void> transferGroupOwnership(String groupId, String newOwnerUserId) async {
     final index = _allGroups.indexWhere((group) => group.id == groupId);
     if (index == -1) throw Exception('Group not found');
@@ -1719,9 +1752,10 @@ class MemoryEventRepository implements EventRepository {
 }
 
 class SupabaseEventRepository implements EventRepository {
-  SupabaseEventRepository(SupabaseClient client, {FileApi? fileApi})
+  SupabaseEventRepository(SupabaseClient client, {FileApi? fileApi, OfflineCache? offlineCache})
       : _client = client,
-        _fileApi = fileApi ?? FileApi(accessToken: () => client.auth.currentSession?.accessToken);
+        _fileApi = fileApi ?? FileApi(accessToken: () => client.auth.currentSession?.accessToken),
+        _offline = offlineCache ?? OfflineCache();
 
   static const String tableName = 'barangay_events';
 
@@ -1730,13 +1764,36 @@ class SupabaseEventRepository implements EventRepository {
   /// Event attachments are stored on Hostinger (see lib/file_api.dart).
   final FileApi _fileApi;
 
+  /// The copy of events and calendars kept on this device for when there's
+  /// no connection (see lib/offline_cache.dart).
+  final OfflineCache _offline;
+
+  /// The newest rows per cache name, so a re-subscribe (pull to refresh,
+  /// joining a group, a day page) shows them at once without the disk.
+  final Map<String, SavedRows> _latestRows = {};
+
+  final ValueNotifier<EventSyncStatus> _syncStatus = ValueNotifier(const EventSyncStatus.online());
+
+  @override
+  ValueListenable<EventSyncStatus> get syncStatus => _syncStatus;
+
+  /// A database error (has a code) is the server answering; anything else —
+  /// no network, a realtime connection that timed out — means offline.
+  static bool _isConnectionError(Object error) => error is! PostgrestException;
+
+  String _cacheName(String what) => offlineCacheName(what, _client.auth.currentUser?.id);
+
   @override
   Stream<List<BarangayEvent>> watchAllEvents() {
-    return _client
-        .from(tableName)
-        .stream(primaryKey: ['id'])
-        .order('start_time')
-        .map((rows) => rows.map(BarangayEvent.fromSupabase).toList());
+    return liveWithOfflineCopy(
+      cache: _offline,
+      name: _cacheName('events'),
+      latest: _latestRows,
+      live: () => _client.from(tableName).stream(primaryKey: ['id']).order('start_time'),
+      convert: (rows) => rows.map(BarangayEvent.fromSupabase).toList(),
+      isConnectionError: _isConnectionError,
+      onStatus: (status) => _syncStatus.value = status,
+    );
   }
 
   @override
@@ -1803,23 +1860,29 @@ class SupabaseEventRepository implements EventRepository {
     }
   }
 
+  /// Saved for offline use too, so a calendar's tab (e.g. Sports) still
+  /// shows with no connection. (A database without calendars yet just
+  /// keeps the built-in tabs: errors never reach the listener.)
   @override
   Stream<List<EventCalendar>> watchEventCalendars() {
-    return _client
-        .from('event_calendars')
-        .stream(primaryKey: ['id'])
-        .order('sort_order', ascending: true)
-        .map((rows) {
-          final calendars = rows
-              .map(EventCalendar.fromSupabase)
-              .where((c) => !c.isArchived && c.name.isNotEmpty)
-              .toList()
-            ..sort((a, b) {
-              final byOrder = a.sortOrder.compareTo(b.sortOrder);
-              return byOrder != 0 ? byOrder : a.name.compareTo(b.name);
-            });
-          return calendars;
-        });
+    return liveWithOfflineCopy(
+      cache: _offline,
+      name: _cacheName('calendars'),
+      latest: _latestRows,
+      live: () => _client.from('event_calendars').stream(primaryKey: ['id']).order('sort_order', ascending: true),
+      convert: (rows) {
+        final calendars = rows
+            .map(EventCalendar.fromSupabase)
+            .where((c) => !c.isArchived && c.name.isNotEmpty)
+            .toList()
+          ..sort((a, b) {
+            final byOrder = a.sortOrder.compareTo(b.sortOrder);
+            return byOrder != 0 ? byOrder : a.name.compareTo(b.name);
+          });
+        return calendars;
+      },
+      isConnectionError: _isConnectionError,
+    );
   }
 
   @override
@@ -1862,6 +1925,7 @@ class SupabaseEventRepository implements EventRepository {
       isPrivate: row['is_private'] as bool? ?? false,
       isVerified: row['is_verified'] as bool? ?? false,
       requiresApproval: row['requires_approval'] as bool? ?? false,
+      colorKey: row['color_key'] as String?,
     );
   }
 
@@ -1882,7 +1946,7 @@ class SupabaseEventRepository implements EventRepository {
 
     final rows = await _client
         .from('groups')
-        .select('id, name, code, created_by, is_private, is_verified, requires_approval, group_members(count)')
+        .select('*, group_members(count)') // '*': still works before color_key exists
         .inFilter('id', roleByGroupId.keys.toList())
         .order('name', ascending: true);
     return rows
@@ -1915,7 +1979,7 @@ class SupabaseEventRepository implements EventRepository {
     // enforces that server-side, so no client-side filtering is needed.
     final rows = await _client
         .from('groups')
-        .select('id, name, code, created_by, is_private, is_verified, requires_approval, group_members(count)')
+        .select('*, group_members(count)') // '*': still works before color_key exists
         .ilike('name', '%$trimmed%')
         .order('name', ascending: true)
         .limit(20);
@@ -2122,6 +2186,14 @@ class SupabaseEventRepository implements EventRepository {
     await _client.rpc('rename_group', params: {
       'p_group_id': groupId,
       'p_name': newName.trim(),
+    });
+  }
+
+  @override
+  Future<void> setGroupColor(String groupId, String colorKey) async {
+    await _client.rpc('set_group_color', params: {
+      'p_group_id': groupId,
+      'p_color_key': colorKey,
     });
   }
 

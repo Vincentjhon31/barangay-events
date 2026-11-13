@@ -1,11 +1,11 @@
 {
-    "name": "eCalendar",
+    "name": "eBongabong Calendar",
     "short_name": "eCalendar",
-    "start_url": ".",
+    "start_url": "/app/",
     "display": "standalone",
     "background_color": "#F8FCFF",
     "theme_color": "#2B7FFF",
-    "description": "Public barangay events calendar — view upcoming announcements and activities.",
+    "description": "Events and schedules of the Municipality of Bongabong, Oriental Mindoro.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
@@ -31,5 +31,6 @@
             "type": "image/png",
             "purpose": "maskable"
         }
-    ]
+    ],
+    "scope": "/"
 }

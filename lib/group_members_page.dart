@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 
+import 'add_event_page.dart' show EventColorSwatch;
 import 'avatar_image.dart';
+import 'event_colors.dart';
 import 'event_store.dart';
 import 'l10n/app_localizations.dart';
 import 'liquid_glass_components.dart';
@@ -50,6 +52,7 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
   late String? _createdBy = widget.group.createdBy;
   late bool _requiresApproval = widget.group.requiresApproval;
   late String _name = widget.group.name;
+  late String? _colorKey = widget.group.colorKey;
   bool _verifyBusy = false;
   bool _transferBusy = false;
   bool _joinPolicyBusy = false;
@@ -242,6 +245,21 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
       );
     } finally {
       if (mounted) setState(() => _renameBusy = false);
+    }
+  }
+
+  Future<void> _setColor(String colorKey) async {
+    final l10n = AppLocalizations.of(context)!;
+    final previous = _colorKey;
+    setState(() => _colorKey = colorKey);
+    try {
+      await widget.eventRepository.setGroupColor(widget.group.id, colorKey);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _colorKey = previous);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.couldNotUpdateGroupError)),
+      );
     }
   }
 
@@ -505,6 +523,34 @@ class _GroupMembersPageState extends State<GroupMembersPage> {
                           child: Text(l10n.renameGroupButton),
                         ),
                       ),
+              ],
+            ),
+            const Divider(height: 20),
+            Row(
+              children: [
+                FaIcon(FontAwesomeIcons.palette, size: 16, color: groupColor(widget.group.id, _colorKey)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    l10n.eventColorLabel,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final key in eventColorPalette.keys)
+                  EventColorSwatch(
+                    key: Key('group-color-$key'),
+                    colorKey: key,
+                    // Also marks the default color while none has been picked.
+                    selected: eventColorPalette[key] == groupColor(widget.group.id, _colorKey),
+                    onTap: () => unawaited(_setColor(key)),
+                  ),
               ],
             ),
             const Divider(height: 20),
