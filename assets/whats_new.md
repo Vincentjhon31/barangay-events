@@ -18,6 +18,11 @@
     but it can't catch everything.
 -->
 
+## 1.20.0
+- A warmer welcome each season: the Calendar now opens with a banner that greets you and shows a large picture for the season, like a Christmas tree with a parol and gifts in December.
+- New banners for Philippine holidays: New Year, Holy Week, Independence Day, Buwan ng Wika and Undas. Each one brings its own colors and picture on its days.
+- All the season pictures were redrawn, bigger and with more detail.
+
 ## 1.19.0
 - The app now dresses up for the season: Christmas, Araw ng mga Puso, summer, rainy days and fiesta each bring their own colors and a small decoration. You can turn this off in Settings, under "Seasonal theme".
 - Put your favorite tabs first: press and hold a tab like Public, Group or Sports, then drag it where you want it. Your order follows you to your other phones and computers.
