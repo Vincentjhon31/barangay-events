@@ -278,6 +278,25 @@ class AppLocalizationsFil extends AppLocalizations {
       'Laging gamitin ang karaniwang itsura.';
 
   @override
+  String seasonGreeting(String season) {
+    String _temp0 = intl.Intl.selectLogic(
+      season,
+      {
+        'xmas': 'Maligayang Pasko!',
+        'hearts': 'Maligayang Araw ng mga Puso!',
+        'summer': 'Masayang tag-init!',
+        'rainy': 'Ingat ngayong tag-ulan!',
+        'fiesta': 'Maligayang Pista, Bongabong!',
+        'other': 'eBongabong Calendar',
+      },
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get seasonHeroSubtitle => 'Alamin ang mga kaganapan sa Bongabong';
+
+  @override
   String get eventReminderNoticeLabel => 'Paalala sa event';
 
   @override

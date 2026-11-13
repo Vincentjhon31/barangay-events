@@ -1,4 +1,5 @@
 import 'package:eCalendar/liquid_glass_components.dart';
+import 'package:eCalendar/l10n/app_localizations.dart';
 import 'package:eCalendar/seasonal_theme.dart';
 import 'package:eCalendar/theme_controller.dart';
 import 'package:flutter/material.dart';
@@ -115,6 +116,25 @@ void main() {
       await tester.pumpWidget(app(xmas, effects: false));
       expect(find.byKey(const Key('season-decoration-xmas')), findsOneWidget);
       expect(find.byKey(const Key('season-effect')), findsNothing);
+    });
+
+    testWidgets('the banner shows the greeting and illustration only in a season', (tester) async {
+      Widget hero(Season? season) => MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            home: Scaffold(body: SeasonScope(season: season, effects: false, child: const SeasonHero())),
+          );
+      // 320 wide: the narrowest phone must fit the banner without overflow.
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      for (final season in seasons) {
+        await tester.pumpWidget(hero(season));
+        expect(find.byKey(Key('season-decoration-${season.id}')), findsOneWidget);
+      }
+      await tester.pumpWidget(hero(xmas));
+      expect(find.text('Merry Christmas!'), findsOneWidget);
+      await tester.pumpWidget(hero(null));
+      expect(find.byKey(const Key('season-hero')), findsNothing);
     });
 
     testWidgets('no season: nothing added', (tester) async {

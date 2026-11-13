@@ -87,6 +87,9 @@
   "settingsSeasonalNoEffectsSubtitle": "Colors and decoration only.",
   "settingsSeasonalOff": "Off",
   "settingsSeasonalOffSubtitle": "Always use the regular look.",
+  "seasonGreeting": "{season, select, xmas{Merry Christmas!} hearts{Happy Valentine's Day!} summer{Enjoy the summer!} rainy{Stay dry this rainy season!} fiesta{Happy Fiesta, Bongabong!} other{eBongabong Calendar}}",
+  "@seasonGreeting": {"placeholders": {"season": {"type": "String"}}},
+  "seasonHeroSubtitle": "See what's happening in Bongabong",
   "eventReminderNoticeLabel": "Event reminder",
   "eventReminderGenericTitle": "An event you're following is coming up soon",
 

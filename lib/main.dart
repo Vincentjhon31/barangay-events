@@ -2327,6 +2327,7 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
         children: [
           _buildHeader(kiosk: kiosk),
           const SizedBox(height: 18),
+          const SeasonHero(),
           _buildCalendarSearchField(),
           const SizedBox(height: 14),
           Row(
@@ -3146,18 +3147,12 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
               FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'eBongabong Calendar',
-                      maxLines: 1,
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
-                    const SeasonDecoration(),
-                  ],
+                child: Text(
+                  'eBongabong Calendar',
+                  maxLines: 1,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
                 ),
               ),
             ],

@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import 'l10n/app_localizations.dart';
+
 /// What falls slowly behind the content while a season is on.
 enum SeasonEffect { none, snow, rain, confetti }
 
@@ -12,11 +14,14 @@ enum SeasonEffect { none, snow, rain, confetti }
 /// server ([SeasonConfig]), so the superadmin changes seasons without an
 /// app update.
 class Season {
-  const Season(this.id, this.seed, this.orbs, this.asset, [this.effect = SeasonEffect.none]);
+  const Season(this.id, this.seed, this.orbs, this.hero, this.asset, [this.effect = SeasonEffect.none]);
 
   final String id;
   final Color seed;
   final List<Color> orbs;
+
+  /// The banner's two gradient colors, dark enough for white text (4.5:1).
+  final List<Color> hero;
   final String asset;
   final SeasonEffect effect;
 }
@@ -24,15 +29,15 @@ class Season {
 /// Fiesta first: where two seasons' dates overlap, the earlier one wins.
 const List<Season> seasons = [
   Season('fiesta', Color(0xFFE8703A), [Color(0xFFE84C7A), Color(0xFFF2B632), Color(0xFF19A7CE)],
-      'assets/seasons/balloons.svg', SeasonEffect.confetti),
+      [Color(0xFFC2410C), Color(0xFF7C2D12)], 'assets/seasons/balloons.svg', SeasonEffect.confetti),
   Season('xmas', Color(0xFFC8372D), [Color(0xFFC8372D), Color(0xFF1E8A52), Color(0xFFF2B632)],
-      'assets/seasons/parol.svg', SeasonEffect.snow),
+      [Color(0xFFC8372D), Color(0xFF7E1A14)], 'assets/seasons/parol.svg', SeasonEffect.snow),
   Season('hearts', Color(0xFFE84C7A), [Color(0xFFE84C7A), Color(0xFF9B59B6), Color(0xFFF29E6B)],
-      'assets/seasons/heart.svg'),
+      [Color(0xFFBE185D), Color(0xFF831843)], 'assets/seasons/heart.svg'),
   Season('summer', Color(0xFFF0932B), [Color(0xFFF2B632), Color(0xFF19A7CE), Color(0xFFFF8A3D)],
-      'assets/seasons/sun.svg'),
+      [Color(0xFF0B6E94), Color(0xFF0B4F6C)], 'assets/seasons/sun.svg'),
   Season('rainy', Color(0xFF3D7FC4), [Color(0xFF3D7FC4), Color(0xFF5B6ACF), Color(0xFF3FA79B)],
-      'assets/seasons/rain.svg', SeasonEffect.rain),
+      [Color(0xFF2C66A8), Color(0xFF1B3F73)], 'assets/seasons/rain.svg', SeasonEffect.rain),
 ];
 
 /// The superadmin's setting (app_settings 'seasonal_theme', read through the
@@ -125,9 +130,10 @@ class SeasonScope extends InheritedWidget {
   bool updateShouldNotify(SeasonScope oldWidget) => oldWidget.season != season || oldWidget.effects != effects;
 }
 
-/// The season's 3D decoration (parol, sun, ...); nothing outside a season.
+/// The season's illustration (Christmas tree, beach, ...); nothing outside
+/// a season.
 class SeasonDecoration extends StatelessWidget {
-  const SeasonDecoration({super.key, this.size = 28});
+  const SeasonDecoration({super.key, this.size = 120});
 
   final double size;
 
@@ -135,9 +141,54 @@ class SeasonDecoration extends StatelessWidget {
   Widget build(BuildContext context) {
     final season = SeasonScope.maybeOf(context)?.season;
     if (season == null) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(left: 8),
-      child: SvgPicture.asset(season.asset, key: Key('season-decoration-${season.id}'), width: size, height: size),
+    return SvgPicture.asset(season.asset, key: Key('season-decoration-${season.id}'), width: size, height: size);
+  }
+}
+
+/// The season's banner on the Calendar tab: a greeting on the season's
+/// colors beside its illustration. Nothing outside a season.
+class SeasonHero extends StatelessWidget {
+  const SeasonHero({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final season = SeasonScope.maybeOf(context)?.season;
+    if (season == null) return const SizedBox.shrink();
+    final l10n = AppLocalizations.of(context)!;
+    final text = Theme.of(context).textTheme;
+    return Container(
+      key: const Key('season-hero'),
+      margin: const EdgeInsets.only(bottom: 18),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: season.hero),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 4, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    l10n.seasonGreeting(season.id),
+                    style: text.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w800, height: 1.15),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    l10n.seasonHeroSubtitle,
+                    style: text.bodySmall?.copyWith(color: Colors.white.withValues(alpha: 0.9)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SeasonDecoration(),
+        ],
+      ),
     );
   }
 }

@@ -270,6 +270,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsSeasonalOffSubtitle => 'Always use the regular look.';
 
   @override
+  String seasonGreeting(String season) {
+    String _temp0 = intl.Intl.selectLogic(
+      season,
+      {
+        'xmas': 'Merry Christmas!',
+        'hearts': 'Happy Valentine\'s Day!',
+        'summer': 'Enjoy the summer!',
+        'rainy': 'Stay dry this rainy season!',
+        'fiesta': 'Happy Fiesta, Bongabong!',
+        'other': 'eBongabong Calendar',
+      },
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get seasonHeroSubtitle => 'See what\'s happening in Bongabong';
+
+  @override
   String get eventReminderNoticeLabel => 'Event reminder';
 
   @override

@@ -596,6 +596,18 @@ abstract class AppLocalizations {
   /// **'Always use the regular look.'**
   String get settingsSeasonalOffSubtitle;
 
+  /// No description provided for @seasonGreeting.
+  ///
+  /// In en, this message translates to:
+  /// **'{season, select, xmas{Merry Christmas!} hearts{Happy Valentine\'s Day!} summer{Enjoy the summer!} rainy{Stay dry this rainy season!} fiesta{Happy Fiesta, Bongabong!} other{eBongabong Calendar}}'**
+  String seasonGreeting(String season);
+
+  /// No description provided for @seasonHeroSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'See what\'s happening in Bongabong'**
+  String get seasonHeroSubtitle;
+
   /// No description provided for @eventReminderNoticeLabel.
   ///
   /// In en, this message translates to:
