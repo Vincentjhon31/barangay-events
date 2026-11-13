@@ -599,7 +599,7 @@ abstract class AppLocalizations {
   /// No description provided for @seasonGreeting.
   ///
   /// In en, this message translates to:
-  /// **'{season, select, xmas{Merry Christmas!} hearts{Happy Valentine\'s Day!} summer{Enjoy the summer!} rainy{Stay dry this rainy season!} fiesta{Happy Fiesta, Bongabong!} other{eBongabong Calendar}}'**
+  /// **'{season, select, xmas{Merry Christmas!} hearts{Happy Valentine\'s Day!} summer{Enjoy the summer!} rainy{Stay dry this rainy season!} fiesta{Happy Fiesta, Bongabong!} newyear{Happy New Year!} holyweek{A blessed Holy Week} independence{Happy Independence Day!} wika{Celebrating Buwan ng Wika} undas{Remembering our loved ones} other{eBongabong Calendar}}'**
   String seasonGreeting(String season);
 
   /// No description provided for @seasonHeroSubtitle.

@@ -21,6 +21,29 @@ void main() {
       expect(on(config, 2026, 11, 13), isNull);
     });
 
+    test('holidays win over the season they fall in', () {
+      const config = SeasonConfig();
+      expect(on(config, 2026, 12, 31), 'newyear');
+      expect(on(config, 2027, 1, 2), 'newyear');
+      expect(on(config, 2027, 1, 3), 'xmas');
+      expect(on(config, 2027, 6, 12), 'independence');
+      expect(on(config, 2027, 6, 13), 'rainy');
+      expect(on(config, 2027, 8, 15), 'wika');
+      expect(on(config, 2027, 11, 1), 'undas');
+      expect(on(config, 2027, 11, 3), isNull);
+    });
+
+    test('Holy Week follows Easter each year', () {
+      const config = SeasonConfig();
+      expect(SeasonConfig.holyWeek(2025), ('2025-04-13', '2025-04-20'));
+      expect(SeasonConfig.holyWeek(2026), ('2026-03-29', '2026-04-05'));
+      expect(SeasonConfig.holyWeek(2027), ('2027-03-21', '2027-03-28'));
+      expect(on(config, 2027, 3, 20), 'summer');
+      expect(on(config, 2027, 3, 21), 'holyweek');
+      expect(on(config, 2027, 3, 28), 'holyweek');
+      expect(on(config, 2027, 3, 29), 'summer');
+    });
+
     test('off shows nothing, a forced season shows on any date', () {
       expect(on(SeasonConfig.off, 2026, 12, 25), isNull);
       expect(on(const SeasonConfig(mode: 'summer'), 2026, 12, 25), 'summer');

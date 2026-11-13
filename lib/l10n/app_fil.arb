@@ -87,7 +87,7 @@
   "settingsSeasonalNoEffectsSubtitle": "Mga kulay at dekorasyon lang.",
   "settingsSeasonalOff": "Naka-off",
   "settingsSeasonalOffSubtitle": "Laging gamitin ang karaniwang itsura.",
-  "seasonGreeting": "{season, select, xmas{Maligayang Pasko!} hearts{Maligayang Araw ng mga Puso!} summer{Masayang tag-init!} rainy{Ingat ngayong tag-ulan!} fiesta{Maligayang Pista, Bongabong!} other{eBongabong Calendar}}",
+  "seasonGreeting": "{season, select, xmas{Maligayang Pasko!} hearts{Maligayang Araw ng mga Puso!} summer{Masayang tag-init!} rainy{Ingat ngayong tag-ulan!} fiesta{Maligayang Pista, Bongabong!} newyear{Manigong Bagong Taon!} holyweek{Mapagpalang Semana Santa} independence{Maligayang Araw ng Kalayaan!} wika{Maligayang Buwan ng Wika!} undas{Paggunita sa mga yumao} other{eBongabong Calendar}}",
   "seasonHeroSubtitle": "Alamin ang mga kaganapan sa Bongabong",
   "eventReminderNoticeLabel": "Paalala sa event",
   "eventReminderGenericTitle": "Malapit nang mangyari ang isang event na sinusundan mo",

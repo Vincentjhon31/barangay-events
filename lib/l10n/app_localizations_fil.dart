@@ -287,6 +287,11 @@ class AppLocalizationsFil extends AppLocalizations {
         'summer': 'Masayang tag-init!',
         'rainy': 'Ingat ngayong tag-ulan!',
         'fiesta': 'Maligayang Pista, Bongabong!',
+        'newyear': 'Manigong Bagong Taon!',
+        'holyweek': 'Mapagpalang Semana Santa',
+        'independence': 'Maligayang Araw ng Kalayaan!',
+        'wika': 'Maligayang Buwan ng Wika!',
+        'undas': 'Paggunita sa mga yumao',
         'other': 'eBongabong Calendar',
       },
     );

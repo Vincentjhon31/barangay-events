@@ -279,6 +279,11 @@ class AppLocalizationsEn extends AppLocalizations {
         'summer': 'Enjoy the summer!',
         'rainy': 'Stay dry this rainy season!',
         'fiesta': 'Happy Fiesta, Bongabong!',
+        'newyear': 'Happy New Year!',
+        'holyweek': 'A blessed Holy Week',
+        'independence': 'Happy Independence Day!',
+        'wika': 'Celebrating Buwan ng Wika',
+        'undas': 'Remembering our loved ones',
         'other': 'eBongabong Calendar',
       },
     );

@@ -26,10 +26,21 @@ class Season {
   final SeasonEffect effect;
 }
 
-/// Fiesta first: where two seasons' dates overlap, the earlier one wins.
+/// Where two seasons' dates overlap, the earlier one wins: fiesta first,
+/// then the holidays (a few days each), then the long seasons they fall in.
 const List<Season> seasons = [
   Season('fiesta', Color(0xFFE8703A), [Color(0xFFE84C7A), Color(0xFFF2B632), Color(0xFF19A7CE)],
       [Color(0xFFC2410C), Color(0xFF7C2D12)], 'assets/seasons/balloons.svg', SeasonEffect.confetti),
+  Season('newyear', Color(0xFF5B4FCF), [Color(0xFF5B4FCF), Color(0xFFF2B632), Color(0xFFE84C7A)],
+      [Color(0xFF3730A3), Color(0xFF1E1B4B)], 'assets/seasons/newyear.svg', SeasonEffect.confetti),
+  Season('holyweek', Color(0xFF7B4FB0), [Color(0xFF7B4FB0), Color(0xFFF2B632), Color(0xFF4FA35A)],
+      [Color(0xFF5B3A8C), Color(0xFF3B2363)], 'assets/seasons/holyweek.svg'),
+  Season('independence', Color(0xFF0038A8), [Color(0xFF0038A8), Color(0xFFCE1126), Color(0xFFFCD116)],
+      [Color(0xFF0B2A7A), Color(0xFF061440)], 'assets/seasons/flag.svg'),
+  Season('wika', Color(0xFF1E8A52), [Color(0xFF1E8A52), Color(0xFFF2B632), Color(0xFFB9770E)],
+      [Color(0xFF15803D), Color(0xFF14532D)], 'assets/seasons/kubo.svg'),
+  Season('undas', Color(0xFF7A5AA8), [Color(0xFF7A5AA8), Color(0xFFF2B632), Color(0xFF3D7FC4)],
+      [Color(0xFF4C3A78), Color(0xFF2A1F4D)], 'assets/seasons/candles.svg'),
   Season('xmas', Color(0xFFC8372D), [Color(0xFFC8372D), Color(0xFF1E8A52), Color(0xFFF2B632)],
       [Color(0xFFC8372D), Color(0xFF7E1A14)], 'assets/seasons/parol.svg', SeasonEffect.snow),
   Season('hearts', Color(0xFFE84C7A), [Color(0xFFE84C7A), Color(0xFF9B59B6), Color(0xFFF29E6B)],
@@ -56,7 +67,25 @@ class SeasonConfig {
     'summer': ('03-01', '05-31'),
     'rainy': ('06-01', '08-31'),
     'fiesta': ('', ''),
+    'newyear': ('12-30', '01-02'),
+    'holyweek': ('', ''), // empty = worked out each year, see [holyWeek]
+    'independence': ('06-10', '06-12'),
+    'wika': ('08-01', '08-31'),
+    'undas': ('10-31', '11-02'),
   };
+
+  /// Palm Sunday to Easter Sunday of [year], as one-time dates. Holy Week
+  /// moves every year, so it is computed instead of set in the portal.
+  static (String, String) holyWeek(int year) {
+    // Anonymous Gregorian algorithm for Easter Sunday.
+    final a = year % 19, b = year ~/ 100, c = year % 100;
+    final h = (19 * a + b - b ~/ 4 - (b - (b + 8) ~/ 25 + 1) ~/ 3 + 15) % 30;
+    final l = (32 + 2 * (b % 4) + 2 * (c ~/ 4) - h - c % 4) % 7;
+    final n = h + l - 7 * ((a + 11 * h + 22 * l) ~/ 451) + 114;
+    final month = n ~/ 31, day = n % 31 + 1;
+    String iso(DateTime d) => d.toIso8601String().substring(0, 10);
+    return (iso(DateTime(year, month, day - 7)), iso(DateTime(year, month, day)));
+  }
 
   final String mode;
   final Map<String, (String, String)> dates;
@@ -93,7 +122,8 @@ class SeasonConfig {
     }
     if (mode != 'auto') return null;
     for (final season in seasons) {
-      final range = dates[season.id];
+      var range = dates[season.id];
+      if (season.id == 'holyweek' && range?.$1 == '') range = holyWeek(day.year);
       if (range != null && _inRange(day, range.$1, range.$2)) return season;
     }
     return null;

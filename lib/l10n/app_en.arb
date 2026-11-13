@@ -87,7 +87,7 @@
   "settingsSeasonalNoEffectsSubtitle": "Colors and decoration only.",
   "settingsSeasonalOff": "Off",
   "settingsSeasonalOffSubtitle": "Always use the regular look.",
-  "seasonGreeting": "{season, select, xmas{Merry Christmas!} hearts{Happy Valentine's Day!} summer{Enjoy the summer!} rainy{Stay dry this rainy season!} fiesta{Happy Fiesta, Bongabong!} other{eBongabong Calendar}}",
+  "seasonGreeting": "{season, select, xmas{Merry Christmas!} hearts{Happy Valentine's Day!} summer{Enjoy the summer!} rainy{Stay dry this rainy season!} fiesta{Happy Fiesta, Bongabong!} newyear{Happy New Year!} holyweek{A blessed Holy Week} independence{Happy Independence Day!} wika{Celebrating Buwan ng Wika} undas{Remembering our loved ones} other{eBongabong Calendar}}",
   "@seasonGreeting": {"placeholders": {"season": {"type": "String"}}},
   "seasonHeroSubtitle": "See what's happening in Bongabong",
   "eventReminderNoticeLabel": "Event reminder",

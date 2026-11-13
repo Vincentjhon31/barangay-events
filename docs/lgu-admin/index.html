@@ -1029,6 +1029,11 @@
                     <option value="summer">Always Summer</option>
                     <option value="rainy">Always Rainy</option>
                     <option value="fiesta">Always Fiesta</option>
+                    <option value="newyear">Always New Year</option>
+                    <option value="holyweek">Always Holy Week</option>
+                    <option value="independence">Always Independence Day</option>
+                    <option value="wika">Always Buwan ng Wika</option>
+                    <option value="undas">Always Undas</option>
                   </select>
                   <span class="help">"Always" shows that season now, whatever the date, until you change it back.</span></div>
                 <div class="field-row">
@@ -1048,10 +1053,26 @@
                   <div class="field"><label for="season-rainy-end">Rainy ends</label><input id="season-rainy-end" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
                 </div>
                 <div class="field-row">
+                  <div class="field"><label for="season-newyear-start">New Year starts</label><input id="season-newyear-start" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
+                  <div class="field"><label for="season-newyear-end">New Year ends</label><input id="season-newyear-end" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
+                </div>
+                <div class="field-row">
+                  <div class="field"><label for="season-independence-start">Independence Day starts</label><input id="season-independence-start" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
+                  <div class="field"><label for="season-independence-end">Independence Day ends</label><input id="season-independence-end" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
+                </div>
+                <div class="field-row">
+                  <div class="field"><label for="season-wika-start">Buwan ng Wika starts</label><input id="season-wika-start" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
+                  <div class="field"><label for="season-wika-end">Buwan ng Wika ends</label><input id="season-wika-end" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
+                </div>
+                <div class="field-row">
+                  <div class="field"><label for="season-undas-start">Undas starts</label><input id="season-undas-start" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
+                  <div class="field"><label for="season-undas-end">Undas ends</label><input id="season-undas-end" type="text" inputmode="numeric" placeholder="MM-DD" pattern="\d\d-\d\d" required></div>
+                </div>
+                <div class="field-row">
                   <div class="field"><label for="season-fiesta-start">Fiesta starts</label><input id="season-fiesta-start" type="date"></div>
                   <div class="field"><label for="season-fiesta-end">Fiesta ends</label><input id="season-fiesta-end" type="date"></div>
                 </div>
-                <span class="help">Seasons repeat every year (month and day, like 12-01). Fiesta is for one set of dates; leave it empty when there is none. If dates overlap, Fiesta wins.</span>
+                <span class="help">Seasons and holidays repeat every year (month and day, like 12-01). Holy Week has no dates here: the app follows Palm Sunday to Easter by itself each year. Fiesta is for one set of dates; leave it empty when there is none. If dates overlap, Fiesta wins, then a holiday, then the season.</span>
                 <button class="btn primary" type="submit">Save seasonal theme</button>
               </form>
               <div id="season-msg"></div>
@@ -3725,7 +3746,8 @@
     // ---------- Seasonal theme ----------
     // Kept in app_settings 'seasonal_theme'; the app reads it through the
     // get_seasonal_theme RPC. Same defaults as lib/seasonal_theme.dart.
-    var SEASON_DEFAULTS = { xmas: ['12-01', '01-06'], hearts: ['02-01', '02-14'], summer: ['03-01', '05-31'], rainy: ['06-01', '08-31'], fiesta: ['', ''] };
+    var SEASON_DEFAULTS = { xmas: ['12-01', '01-06'], hearts: ['02-01', '02-14'], summer: ['03-01', '05-31'], rainy: ['06-01', '08-31'], fiesta: ['', ''],
+      newyear: ['12-30', '01-02'], independence: ['06-10', '06-12'], wika: ['08-01', '08-31'], undas: ['10-31', '11-02'] };
     function renderSeason() {
       var saved = settings.seasonal_theme || {}, dates = saved.dates || {};
       $('season-mode').value = saved.mode || 'auto';
